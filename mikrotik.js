@@ -11,7 +11,7 @@ async function disableUserQueue(username) {
     const cleanUser = atPos > 0 ? username.substring(0, atPos) : username;
     const targetQueueName = `<hotspot-${cleanUser}>`;
 
-    console.log(`🔄 [MikroTik] محاولة الاتصال بالراوتر: ${process.env.MIKROTIK_HOST}:${process.env.MIKROTIK_PORT || 8728}...`);
+    console.log(`🔄 [MikroTik] محاولة فتح السرعة للمستخدم: ${cleanUser}...`);
 
     const client = new RouterOSClient({
         host: process.env.MIKROTIK_HOST,
@@ -23,13 +23,17 @@ async function disableUserQueue(username) {
 
     try {
         const api = await client.connect();
-        console.log('✅ [MikroTik] تم الاتصال بالمايكروتك بنجاح!');
+        console.log('✅ [MikroTik] تم الاتصال بالمايكروتك بنجاح');
 
         const queueMenu = api.menu('/queue/simple');
-        
-        // جلب جميع الكيوز للبحث
         const queues = await queueMenu.get();
-        const matchedQueue = queues.find(q => q.name === targetQueueName || q.name === cleanUser);
+
+        // البحث عن الكيوز الخاص بالكارت
+        const matchedQueue = queues.find(q => 
+            q.name === targetQueueName || 
+            q.name === `<hotspot-${cleanUser}>` ||
+            q.name === cleanUser
+        );
 
         if (!matchedQueue) {
             console.log(`⚠️ [MikroTik] لم يتم العثور على كيوز باسم: ${targetQueueName}`);
@@ -39,18 +43,23 @@ async function disableUserQueue(username) {
 
         console.log(`📌 [MikroTik] وجدنا الكيوز: ${matchedQueue.name} (ID: ${matchedQueue['.id']})`);
 
-        // تنفيذ التعطيل الصحيح الخاص بمكتبة routeros-client
-        await queueMenu.where('.id', matchedQueue['.id']).set({ disabled: 'yes' });
-
-        console.log(`🚀 [MikroTik] تم تعطيل الكيوز بنجاح: ${matchedQueue.name}`);
+        // إلغاء تقييد السرعة عبر حذف/تعطيل الكيوز الديناميكي (Dynamic Queue)
+        try {
+            await queueMenu.remove(matchedQueue['.id']);
+            console.log(`🚀 [MikroTik] تم إزالة الكيوز الديناميكي بنجاح وانطلقت السرعة العالية: ${matchedQueue.name}`);
+        } catch (removeErr) {
+            // كخيار احتياطي في حال عدم قبول الحذف
+            await queueMenu.where('.id', matchedQueue['.id']).exec('disable');
+            console.log(`🚀 [MikroTik] تم تعطيل الكيوز الديناميكي بنجاح: ${matchedQueue.name}`);
+        }
 
         await client.close();
-        return { success: true, message: `تم تعطيل الكيوز ${matchedQueue.name} بنجاح` };
+        return { success: true, message: `تم فتح السرعة العالية للمستخدم ${cleanUser}` };
 
     } catch (error) {
-        console.error('❌ [MikroTik] فشل الاتصال أو التنفيذ:', error.message || error);
+        console.error('❌ [MikroTik] خطأ أثناء تنفيذ العملية:', error.message || error);
         try { await client.close(); } catch (e) {}
-        return { success: false, error: `تعذر الاتصال بالمايكروتك: ${error.message}` };
+        return { success: false, error: `فشل التنفيذ: ${error.message}` };
     }
 }
 
