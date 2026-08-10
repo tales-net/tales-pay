@@ -10,7 +10,7 @@ const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 
 const app = express();
-const PORT = process.env.MIKROTIK_PORT || 3333;
+const PORT = process.env.PORT || 3333;
 
 // رابط صفحة تسجيل دخول الهوتسبوت أو صفحة الشبكة الرئيسية
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
