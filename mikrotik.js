@@ -5,12 +5,10 @@ async function disableUserQueue(username) {
     if (!username) {
         return {
             success: false,
-            status: 'INVALID_USER',
             error: 'اسم المستخدم غير موجود'
         };
     }
 
-    // استخراج اسم المستخدم بدون @speed_high
     const atPos = username.indexOf('@');
 
     const cleanUser =
@@ -20,15 +18,16 @@ async function disableUserQueue(username) {
 
     const targetQueueName = `<hotspot-${cleanUser}>`;
 
-    console.log(
-        `🔄 [MikroTik] البحث عن: ${targetQueueName}`
-    );
+    console.log("================================");
+    console.log("USER  =", cleanUser);
+    console.log("QUEUE =", targetQueueName);
+    console.log("================================");
 
     const client = new RouterOSClient({
         host: process.env.MIKROTIK_HOST,
         user: process.env.MIKROTIK_USER,
         password: process.env.MIKROTIK_PASSWORD,
-        port: parseInt(process.env.MIKROTIK_PORT || '9595'),
+        port: parseInt(process.env.MIKROTIK_PORT || '8728'),
         timeout: 10
     });
 
@@ -36,21 +35,19 @@ async function disableUserQueue(username) {
 
         const api = await client.connect();
 
+        console.log("✅ MikroTik connected");
+
         const queueMenu = api.menu('/queue/simple');
 
-        // البحث بالاسم الكامل فقط
+        // البحث عن Queue المطلوبة فقط
         const queues = await queueMenu
             .where('name', targetQueueName)
             .get();
 
-        // --------------------------------
-        // لا توجد Queue
-        // --------------------------------
-
         if (!queues || queues.length === 0) {
 
             console.log(
-                `⚡ [HIGH SPEED] لا توجد Queue: ${targetQueueName}`
+                "⚡ Queue غير موجودة - السرعة العالية مفعلة بالفعل"
             );
 
             return {
@@ -63,42 +60,30 @@ async function disableUserQueue(username) {
             };
         }
 
-        // --------------------------------
-        // تحديد Queue واحدة فقط
-        // --------------------------------
-
         const targetQueue = queues[0];
         const targetId = targetQueue['.id'];
 
-        console.log(
-            `📌 [QUEUE FOUND] ${targetQueue.name}`
-        );
+        console.log("🎯 FOUND =", targetQueue.name);
+        console.log("🆔 ID =", targetId);
 
-        console.log(
-            `🆔 [QUEUE ID] ${targetId}`
-        );
-
-        // حماية إضافية
+        // التأكد من الاسم
         if (targetQueue.name !== targetQueueName) {
 
             return {
                 success: false,
                 status: 'QUEUE_MISMATCH',
-                error: 'الـ Queue ليست Queue الخاصة بالمستخدم'
+                error: 'Queue غير مطابقة'
             };
         }
 
-        // --------------------------------
         // إذا كانت Disabled بالفعل
-        // --------------------------------
-
         if (
             targetQueue.disabled === 'true' ||
             targetQueue.disabled === true
         ) {
 
             console.log(
-                `⚡ Queue بالفعل Disabled`
+                "⚡ Queue already disabled"
             );
 
             return {
@@ -112,41 +97,81 @@ async function disableUserQueue(username) {
             };
         }
 
-        // --------------------------------
-        // تعطيل Queue فقط
-        // لا يتم حذفها
-        // --------------------------------
+        // تنفيذ DISABLE
+        console.log("⚡ Sending DISABLE...");
 
         await queueMenu
             .where('.id', targetId)
             .exec('disable');
 
+        console.log("✅ DISABLE command sent");
+
+        // ---------------------------------
+        // التحقق من MikroTik
+        // ---------------------------------
+
+        const verifyQueues = await queueMenu
+            .where('.id', targetId)
+            .get();
+
+        if (!verifyQueues || verifyQueues.length === 0) {
+
+            return {
+                success: false,
+                status: 'VERIFY_FAILED',
+                error: 'تعذر التحقق من Queue'
+            };
+        }
+
+        const verifyQueue = verifyQueues[0];
+
         console.log(
-            `🚀 [SUCCESS] تم تعطيل Queue: ${targetQueueName}`
+            "🔎 VERIFY DISABLED =",
+            verifyQueue.disabled
         );
 
+        if (
+            verifyQueue.disabled === 'true' ||
+            verifyQueue.disabled === true
+        ) {
+
+            console.log(
+                "🚀 SUCCESS: Queue DISABLED"
+            );
+
+            return {
+                success: true,
+                status: 'HIGH_SPEED_ENABLED',
+                username: cleanUser,
+                queue: targetQueueName,
+                queueId: targetId,
+                message:
+                    `تم تفعيل السرعة العالية للمستخدم ${cleanUser}`
+            };
+
+        }
+
         return {
-            success: true,
-            status: 'HIGH_SPEED_ENABLED',
+            success: false,
+            status: 'DISABLE_FAILED',
             username: cleanUser,
             queue: targetQueueName,
             queueId: targetId,
-            message:
-                `تم تفعيل السرعة العالية للمستخدم ${cleanUser}`
+            error:
+                'أمر التعطيل أُرسل ولكن MikroTik لم يعطل Queue'
         };
 
     } catch (error) {
 
         console.error(
-            '❌ [MikroTik] خطأ:',
+            "❌ MikroTik ERROR =",
             error.message || error
         );
 
         return {
             success: false,
             status: 'MIKROTIK_ERROR',
-            error:
-                `فشل التنفيذ: ${error.message || error}`
+            error: error.message || String(error)
         };
 
     } finally {
@@ -154,6 +179,7 @@ async function disableUserQueue(username) {
         try {
             await client.close();
         } catch (e) {}
+
     }
 }
 
