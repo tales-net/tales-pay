@@ -6,9 +6,11 @@ require("dotenv").config();
 const { processPayment } = require("./pay");
 const { sendTelegramMessage } = require("./telegram");
 const webhookRouter = require("./webhook");
+// استدعاء ملف المايكروتك الجديد
+const { disableUserQueue } = require("./mikrotik");
 
 const app = express();
-const PORT = process.env.PORT || 3333;
+const PORT = process.env.MIKROTIK_PORT || 3333;
 
 // رابط صفحة تسجيل دخول الهوتسبوت أو صفحة الشبكة الرئيسية
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
@@ -78,7 +80,19 @@ async function handlePaymentRequest(req, res) {
 app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
 
-// 4. صفحة نجاح الدفع المنسقة (تتيح التوجيه لصفحة الهوتسبوت)
+// 4. مسار استقبال طلب السرعة العالية وتعطيل الكيوز من صفحة status.html
+app.post("/api/disable-queue", async (req, res) => {
+  try {
+    const { username } = req.body;
+    const result = await disableUserQueue(username);
+    return res.json(result);
+  } catch (err) {
+    console.error("❌ خطأ في تنفيذ أمر السيرفر الرئيسي:", err.message);
+    return res.status(500).json({ success: false, error: "حدث خطأ في الخادم الداخلي" });
+  }
+});
+
+// 5. صفحة نجاح الدفع المنسقة (تتيح التوجيه لصفحة الهوتسبوت)
 app.get("/success", (req, res) => {
   const transactionId = req.query.id || "غير متوفر";
   res.send(`
@@ -112,7 +126,7 @@ app.get("/success", (req, res) => {
   `);
 });
 
-// 5. صفحة فشل الدفع المنسقة
+// 6. صفحة فشل الدفع المنسقة
 app.get("/fail", (req, res) => {
   const errorMessage = req.query.data_message || "حدثت مشكلة أثناء عملية الدفع، حاول مرة أخرى.";
   res.send(`
@@ -144,10 +158,10 @@ app.get("/fail", (req, res) => {
   `);
 });
 
-// 6. ربط الـ Webhook الخاص بـ Paymob
+// 7. ربط الـ Webhook الخاص بـ Paymob
 app.use("/", webhookRouter);
 
-// 7. تشغيل السيرفر
+// 8. تشغيل السيرفر
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
