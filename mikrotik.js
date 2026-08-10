@@ -10,7 +10,7 @@ async function disableUserQueue(username) {
     const atPos = username.indexOf('@');
     const cleanUser = atPos > 0 ? username.substring(0, atPos) : username;
 
-    console.log(`🔄 [MikroTik] محاولة تشغيل السكربت للمستخدم: ${cleanUser}...`);
+    console.log(`🔄 [MikroTik] معالجة الكارت: ${cleanUser}...`);
 
     const client = new RouterOSClient({
         host: process.env.MIKROTIK_HOST,
@@ -26,30 +26,28 @@ async function disableUserQueue(username) {
 
         const scriptMenu = api.menu('/system/script');
 
-        // اسم سكربت مؤقت لتمرير المتغير وتشغيل السكربت الأصلي
-        const tempScriptName = `run_exec_${Date.now()}`;
-        const sourceCode = `:global targetUser "${cleanUser}"; /system script run disable_user_queue;`;
+        // كود السكربت المحدث بحساب المستخدم الجديد
+        const updatedSource = `:local u "${cleanUser}";\n:local qName ("<hotspot-" . $u . ">");\n:local qId [/queue simple find name=$qName];\n:if ([:len $qId] > 0) do={\n    /queue simple disable $qId;\n    :log info ("Queue disabled successfully for user: " . $u);\n}`;
 
-        // 1. إنشاء أمر التشغيل المؤقت
-        await scriptMenu.add({
-            name: tempScriptName,
-            source: sourceCode
+        // 1. تحديث محتوى السكربت الأصلي disable_user_queue
+        await scriptMenu.where('name', 'disable_user_queue').set({
+            source: updatedSource
         });
 
-        // 2. تنفيذ السكربت
-        await scriptMenu.where('name', tempScriptName).exec('run');
-        console.log(`🚀 [MikroTik] تم تنفيذ السكربت disable_user_queue بنجاح للمستخدم: ${cleanUser}`);
+        console.log(`📌 [MikroTik] تم تحديث السكربت disable_user_queue للمستخدم: ${cleanUser}`);
 
-        // 3. مسح الأمر المؤقت للحفاظ على نظافة السكربتات
-        await scriptMenu.where('name', tempScriptName).remove();
+        // 2. تشغيل السكربت باستخدام صيغة number المتوافقة مع v5.26
+        await scriptMenu.exec('run', { number: 'disable_user_queue' });
+
+        console.log(`🚀 [MikroTik] تم تنفيذ السكربت بنجاح للمستخدم: ${cleanUser}`);
 
         await client.close();
-        return { success: true, message: `تم تعطيل الكيوز للمستخدم ${cleanUser} عبر السكربت` };
+        return { success: true, message: `تم تعطيل الكيوز للمستخدم ${cleanUser} بنجاح` };
 
     } catch (error) {
-        console.error('❌ [MikroTik] خطأ أثناء تنفيذ السكربت:', error.message || error);
+        console.error('❌ [MikroTik] خطأ أثناء التنفيذ:', error.message || error);
         try { await client.close(); } catch (e) {}
-        return { success: false, error: `فشل تنفيذ السكربت: ${error.message}` };
+        return { success: false, error: `فشل التنفيذ: ${error.message}` };
     }
 }
 
