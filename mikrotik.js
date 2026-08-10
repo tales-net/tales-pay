@@ -6,9 +6,14 @@ async function disableUserQueue(username) {
         return { success: false, error: 'اسم المستخدم غير موجود' };
     }
 
+    // قص الاسم الأساسي قبل أي suffix
     const atPos = username.indexOf('@');
     const cleanUser = atPos > 0 ? username.substring(0, atPos) : username;
-    const targetQueueName = `<hotspot-${cleanUser}>`;
+
+    // احتمالات أسماء الكيوز
+    const targetQueueName1 = `<hotspot-${cleanUser}>`;
+    const targetQueueName2 = `hotspot-${cleanUser}`;
+    const targetQueueName3 = cleanUser;
 
     console.log(`🔄 [MikroTik] محاولة الاتصال بالراوتر: ${process.env.MIKROTIK_HOST}:${process.env.MIKROTIK_PORT || 8728}...`);
 
@@ -26,19 +31,25 @@ async function disableUserQueue(username) {
 
         // جلب قائمة الكيوز
         const queues = await api.menu('/queue/simple').get();
-        const matchedQueue = queues.find(q => q.name === targetQueueName || q.name === cleanUser);
+
+        // البحث عن الكيوز بأي شكل
+        const matchedQueue = queues.find(q =>
+            q.name === targetQueueName1 ||
+            q.name === targetQueueName2 ||
+            q.name === targetQueueName3
+        );
 
         if (!matchedQueue) {
-            console.log(`⚠️ [MikroTik] لم يتم العثور على كيوز باسم: ${targetQueueName}`);
+            console.log(`⚠️ [MikroTik] لم يتم العثور على كيوز باسم: ${targetQueueName1} أو ${targetQueueName2} أو ${targetQueueName3}`);
             await client.close();
-            return { success: false, error: `الكيوز غير موجود: ${targetQueueName}` };
+            return { success: false, error: `الكيوز غير موجود: ${cleanUser}` };
         }
 
         console.log(`📌 [MikroTik] وجدنا الكيوز: ${matchedQueue.name} (ID: ${matchedQueue['.id']})`);
 
-        // أمر تعطيل صريح متوافق تماماً مع إصدار 5.26
+        // أمر تعطيل صريح متوافق مع RouterOS 5.26
         await api.write('/queue/simple/disable', ['=.id=' + matchedQueue['.id']]);
-        console.log(`🚀 [MikroTik] تم إرسال أمر التعطيل بنجاح للكيوز: ${matchedQueue.name}`);
+        console.log(`🚀 [MikroTik] تم تعطيل الكيوز بنجاح: ${matchedQueue.name}`);
 
         await client.close();
         return { success: true, message: `تم تعطيل الكيوز ${matchedQueue.name} بنجاح` };
