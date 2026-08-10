@@ -1,6 +1,5 @@
 const express = require("express");
 const cors = require('cors'); // أضف هذا السطر
-const app = express();
 
 const bodyParser = require("body-parser");
 const path = require("path");
