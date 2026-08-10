@@ -1,60 +1,183 @@
 const { RouterOSClient } = require('routeros-client');
 
-async function disableUserQueues(username) {
+async function disableUserQueue(username) {
+
     if (!username) {
-        console.log('❌ [MikroTik] اسم المستخدم غير موجود في الطلب');
-        return { success: false, error: 'اسم المستخدم غير موجود' };
+        console.log('❌ [MikroTik] اسم المستخدم غير موجود');
+
+        return {
+            success: false,
+            status: 'INVALID_USER',
+            error: 'اسم المستخدم غير موجود'
+        };
     }
 
-    // قص الاسم الأساسي قبل أي suffix
+    // تنظيف username
     const atPos = username.indexOf('@');
-    const cleanUser = atPos > 0 ? username.substring(0, atPos) : username;
 
-    console.log(`🔄 [MikroTik] محاولة الاتصال بالراوتر: ${process.env.MIKROTIK_HOST}:${process.env.MIKROTIK_PORT || 8728}...`);
+    const cleanUser =
+        atPos > 0
+            ? username.substring(0, atPos)
+            : username;
+
+    // منع أي قيم غير متوقعة
+    if (!cleanUser || cleanUser.length === 0) {
+        return {
+            success: false,
+            status: 'INVALID_USER',
+            error: 'اسم المستخدم غير صالح'
+        };
+    }
+
+    // الـ Queue المطلوبة فقط
+    const targetQueueName = `<hotspot-${cleanUser}>`;
+
+    console.log('');
+    console.log('========================================');
+    console.log('🚀 [HIGH SPEED REQUEST]');
+    console.log(`👤 USER       : ${cleanUser}`);
+    console.log(`🎯 TARGET     : ${targetQueueName}`);
+    console.log('========================================');
 
     const client = new RouterOSClient({
         host: process.env.MIKROTIK_HOST,
         user: process.env.MIKROTIK_USER,
         password: process.env.MIKROTIK_PASSWORD,
-        port: parseInt(process.env.MIKROTIK_PORT || '9595'),
-        timeout: 10,
-        secure: false // مهم للإصدارات القديمة زي 5.26
+        port: parseInt(process.env.MIKROTIK_PORT || '8728'),
+        timeout: 10
     });
 
     try {
-        const api = await client.connect();
-        console.log('✅ [MikroTik] تم الاتصال بالمايكروتك بنجاح!');
 
-        // جلب قائمة الكيوز
-        const queues = await api.menu('/queue/simple').get();
-        console.log('📋 [MikroTik] جميع الكيوز الموجودة:', queues.map(q => q.name));
+        // الاتصال
+        await client.connect();
 
-        // البحث عن كل الكيوز اللي تبدأ بـ <hotspot-cleanUser
-        const matchedQueues = queues.filter(q =>
-            q.name.startsWith(`<hotspot-${cleanUser}`)
+        console.log('✅ [MikroTik] تم الاتصال بنجاح');
+
+        const queueMenu = client.menu('/queue/simple');
+
+        /*
+         * مهم جدًا:
+         * نبحث عن Queue واحدة فقط بالاسم الكامل.
+         *
+         * لا نبحث باسم المستخدم وحده.
+         * لا نستخدم find عام قد يؤدي إلى Queue أخرى.
+         */
+
+        const queues = await queueMenu.get();
+
+        const matchedQueue = queues.find(q => {
+            return q.name === targetQueueName;
+        });
+
+        /*
+         * لا توجد Queue
+         *
+         * هذا يعني أن السرعة العالية مفعلة بالفعل
+         * لأننا نحذف الـ Queue عند التفعيل.
+         */
+
+        if (!matchedQueue) {
+
+            console.log(
+                `⚡ [HIGH SPEED] لا توجد Queue للمستخدم ${cleanUser}`
+            );
+
+            console.log(
+                `ℹ️ [HIGH SPEED] المستخدم بالفعل على السرعة العالية جداً`
+            );
+
+            return {
+                success: true,
+                status: 'ALREADY_HIGH_SPEED',
+                username: cleanUser,
+                queue: targetQueueName,
+                message: `المستخدم ${cleanUser} بالفعل على السرعة العالية جداً`
+            };
+        }
+
+        /*
+         * وجدنا Queue المطلوبة بالضبط
+         */
+
+        const queueId = matchedQueue['.id'];
+
+        console.log(`🎯 [QUEUE FOUND] ${matchedQueue.name}`);
+        console.log(`🆔 [QUEUE ID] ${queueId}`);
+
+        /*
+         * حماية إضافية:
+         * لا نحذف إلا إذا كان الاسم مطابقًا 100%
+         */
+
+        if (matchedQueue.name !== targetQueueName) {
+
+            console.log(
+                `🛑 [SAFETY] تم إيقاف العملية: Queue غير مطابقة`
+            );
+
+            return {
+                success: false,
+                status: 'QUEUE_MISMATCH',
+                error: 'اسم الـ Queue غير مطابق'
+            };
+        }
+
+        /*
+         * حذف Queue الخاصة بهذا المستخدم فقط
+         */
+
+        await queueMenu.remove(queueId);
+
+        console.log(
+            `🚀 [SUCCESS] تم حذف Queue الخاصة بالمستخدم ${cleanUser}`
         );
 
-        if (matchedQueues.length === 0) {
-            console.log(`⚠️ [MikroTik] لم يتم العثور على أي كيوز يبدأ بـ: <hotspot-${cleanUser}>`);
-            await client.close();
-            return { success: false, error: `لا يوجد كيوز للمستخدم: ${cleanUser}` };
-        }
+        console.log(
+            `⚡ [HIGH SPEED] السرعة العالية جداً مفعلة الآن`
+        );
 
-        // تعطيل كل الكيوز المطابقة
-        for (const q of matchedQueues) {
-            console.log(`📌 [MikroTik] تعطيل الكيوز: ${q.name} (ID: ${q['.id']})`);
-            await api.menu('/queue/simple').where('.id', q['.id']).exec('disable');
-            console.log(`🚀 [MikroTik] تم تعطيل الكيوز بنجاح: ${q.name}`);
-        }
-
-        await client.close();
-        return { success: true, message: `تم تعطيل ${matchedQueues.length} كيوز للمستخدم ${cleanUser}` };
+        return {
+            success: true,
+            status: 'HIGH_SPEED_ENABLED',
+            username: cleanUser,
+            queue: targetQueueName,
+            queueId: queueId,
+            message: `تم تفعيل السرعة العالية جداً للمستخدم ${cleanUser}`
+        };
 
     } catch (error) {
-        console.error('❌ [MikroTik] فشل الاتصال أو التنفيذ:', error.message || error);
-        try { await client.close(); } catch (e) {}
-        return { success: false, error: `تعذر الاتصال بالمايكروتك: ${error.message}` };
+
+        console.error(
+            '❌ [MikroTik] خطأ:',
+            error.message || error
+        );
+
+        return {
+            success: false,
+            status: 'MIKROTIK_ERROR',
+            username: cleanUser,
+            error: `فشل تنفيذ العملية: ${error.message || error}`
+        };
+
+    } finally {
+
+        /*
+         * إغلاق الاتصال دائمًا
+         */
+
+        try {
+            await client.close();
+            console.log('🔌 [MikroTik] تم إغلاق الاتصال');
+        } catch (closeError) {
+            console.log(
+                '⚠️ [MikroTik] تعذر إغلاق الاتصال:',
+                closeError.message || closeError
+            );
+        }
     }
 }
 
-module.exports = { disableUserQueues };
+module.exports = {
+    disableUserQueue
+};
