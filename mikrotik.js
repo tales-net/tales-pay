@@ -1,14 +1,15 @@
 const { RouterOSClient } = require('routeros-client');
 
-async function disableUserQueues(username) {
+async function disableUserQueue(username) {
     if (!username) {
         console.log('❌ [MikroTik] اسم المستخدم غير موجود في الطلب');
         return { success: false, error: 'اسم المستخدم غير موجود' };
     }
 
-    // قص الاسم الأساسي قبل أي suffix
+    // تنظيف اسم المستخدم من أي امتداد (@speed_high إلخ)
     const atPos = username.indexOf('@');
     const cleanUser = atPos > 0 ? username.substring(0, atPos) : username;
+    const targetQueueName = `<hotspot-${cleanUser}>`;
 
     console.log(`🔄 [MikroTik] محاولة الاتصال بالراوتر: ${process.env.MIKROTIK_HOST}:${process.env.MIKROTIK_PORT || 8728}...`);
 
@@ -17,38 +18,34 @@ async function disableUserQueues(username) {
         user: process.env.MIKROTIK_USER,
         password: process.env.MIKROTIK_PASSWORD,
         port: parseInt(process.env.MIKROTIK_PORT || '8728'),
-        timeout: 10,
-        secure: false // مهم للإصدارات القديمة زي 5.26
+        timeout: 10
     });
 
     try {
         const api = await client.connect();
         console.log('✅ [MikroTik] تم الاتصال بالمايكروتك بنجاح!');
 
-        // جلب قائمة الكيوز
-        const queues = await api.menu('/queue/simple').get();
-        console.log('📋 [MikroTik] جميع الكيوز الموجودة:', queues.map(q => q.name));
+        const queueMenu = api.menu('/queue/simple');
+        
+        // جلب جميع الكيوز للبحث
+        const queues = await queueMenu.get();
+        const matchedQueue = queues.find(q => q.name === targetQueueName || q.name === cleanUser);
 
-        // البحث عن كل الكيوز اللي تبدأ بـ <hotspot-cleanUser
-        const matchedQueues = queues.filter(q =>
-            q.name.startsWith(`<hotspot-${cleanUser}`)
-        );
-
-        if (matchedQueues.length === 0) {
-            console.log(`⚠️ [MikroTik] لم يتم العثور على أي كيوز يبدأ بـ: <hotspot-${cleanUser}>`);
+        if (!matchedQueue) {
+            console.log(`⚠️ [MikroTik] لم يتم العثور على كيوز باسم: ${targetQueueName}`);
             await client.close();
-            return { success: false, error: `لا يوجد كيوز للمستخدم: ${cleanUser}` };
+            return { success: false, error: `الكيوز غير موجود: ${targetQueueName}` };
         }
 
-        // تعطيل كل الكيوز المطابقة
-        for (const q of matchedQueues) {
-            console.log(`📌 [MikroTik] تعطيل الكيوز: ${q.name} (ID: ${q['.id']})`);
-            await api.menu('/queue/simple').where('.id', q['.id']).exec('disable');
-            console.log(`🚀 [MikroTik] تم تعطيل الكيوز بنجاح: ${q.name}`);
-        }
+        console.log(`📌 [MikroTik] وجدنا الكيوز: ${matchedQueue.name} (ID: ${matchedQueue['.id']})`);
+
+        // تنفيذ التعطيل الصحيح الخاص بمكتبة routeros-client
+        await queueMenu.where('.id', matchedQueue['.id']).set({ disabled: 'yes' });
+
+        console.log(`🚀 [MikroTik] تم تعطيل الكيوز بنجاح: ${matchedQueue.name}`);
 
         await client.close();
-        return { success: true, message: `تم تعطيل ${matchedQueues.length} كيوز للمستخدم ${cleanUser}` };
+        return { success: true, message: `تم تعطيل الكيوز ${matchedQueue.name} بنجاح` };
 
     } catch (error) {
         console.error('❌ [MikroTik] فشل الاتصال أو التنفيذ:', error.message || error);
@@ -57,4 +54,4 @@ async function disableUserQueues(username) {
     }
 }
 
-module.exports = { disableUserQueues };
+module.exports = { disableUserQueue };
