@@ -2,41 +2,60 @@ const { RouterOSClient } = require('routeros-client');
 
 async function disableUserQueue(username) {
     if (!username) {
+        console.log('❌ خطأ: اسم المستخدم غير مرسل');
         return { success: false, error: 'اسم المستخدم غير موجود' };
     }
 
-    // تنظيف اسم المستخدم من علامة @ والدومين إن وجدت
+    // تنظيف اسم المستخدم من أي امتداد أو دومين (@speed_high إلخ)
     const atPos = username.indexOf('@');
     const cleanUser = atPos > 0 ? username.substring(0, atPos) : username;
-    const queueName = `<hotspot-${cleanUser}>`;
+    
+    // الاسم المستهدف للكيوز
+    const targetQueueName = `<hotspot-${cleanUser}>`;
+
+    console.log(`🔍 جاري البحث عن الكيوز: "${targetQueueName}" للمستخدم: "${cleanUser}"...`);
 
     const client = new RouterOSClient({
         host: process.env.MIKROTIK_HOST,
         user: process.env.MIKROTIK_USER,
         password: process.env.MIKROTIK_PASSWORD,
-        port: parseInt(process.env.MIKROTIK_PORT || '9595'),
+        port: parseInt(process.env.MIKROTIK_PORT || '8728'),
         timeout: 10
     });
 
     try {
         const api = await client.connect();
 
-        // البحث عن الكيوز الخاص بالعميل
-        const queues = await api.menu('/queue/simple').where('name', queueName).get();
+        // جلب قائمة الكيوز لبحث دقيق يتفادى مشاكل الرموز < > في v5.26
+        const allQueues = await api.menu('/queue/simple').get();
+        
+        // البحث عن الكيوز المطابق
+        const matchedQueue = allQueues.find(q => 
+            q.name === targetQueueName || 
+            q.name === `<hotspot-${cleanUser}>` ||
+            q.name === cleanUser
+        );
 
-        if (!queues || queues.length === 0) {
+        if (!matchedQueue) {
+            console.log(`⚠️ لم يتم العثور على الكيوز: ${targetQueueName}`);
             await client.close();
-            return { success: false, error: `الكيوز غير موجود: ${queueName}` };
+            return { success: false, error: `الكيوز غير موجود في المايكروتك: ${targetQueueName}` };
         }
 
-        // تعطيل الكيوز (إغلاق التحديد للسرعة العالية)
-        await api.menu('/queue/simple').where('.id', queues[0]['.id']).set({ disabled: 'yes' });
+        console.log(`✅ تم العثور على الكيوز: ${matchedQueue.name} (ID: ${matchedQueue['.id']})`);
+
+        // تنفيذ أمر التعطيل الصريح المباشر (Disable)
+        await api.menu('/queue/simple').where('.id', matchedQueue['.id']).exec('disable');
+
+        console.log(`🚀 تم تعطيل الكيوز بنجاح: ${matchedQueue.name}`);
 
         await client.close();
-        return { success: true, message: `تم تعطيل الكيوز بنجاح: ${queueName}` };
+        return { success: true, message: `تم تفعيل السرعة العالية وتعطيل الكيوز ${matchedQueue.name}` };
+
     } catch (error) {
-        console.error('MikroTik API Error:', error);
-        return { success: false, error: 'تعذر الاتصال بالراوتر' };
+        console.error('❌ خطأ في الاتصال بالمايكروتك:', error.message || error);
+        try { await client.close(); } catch (e) {}
+        return { success: false, error: `فشل الاتصال بالمايكروتك: ${error.message}` };
     }
 }
 
