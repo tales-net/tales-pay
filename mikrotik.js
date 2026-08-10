@@ -12,7 +12,7 @@ async function disableUserQueue(username) {
         };
     }
 
-    // تنظيف username
+    // تنظيف اسم المستخدم
     const atPos = username.indexOf('@');
 
     const cleanUser =
@@ -20,8 +20,7 @@ async function disableUserQueue(username) {
             ? username.substring(0, atPos)
             : username;
 
-    // منع أي قيم غير متوقعة
-    if (!cleanUser || cleanUser.length === 0) {
+    if (!cleanUser) {
         return {
             success: false,
             status: 'INVALID_USER',
@@ -29,62 +28,54 @@ async function disableUserQueue(username) {
         };
     }
 
-    // الـ Queue المطلوبة فقط
+    // Queue الخاصة بهذا المستخدم فقط
     const targetQueueName = `<hotspot-${cleanUser}>`;
 
     console.log('');
     console.log('========================================');
-    console.log('🚀 [HIGH SPEED REQUEST]');
-    console.log(`👤 USER       : ${cleanUser}`);
-    console.log(`🎯 TARGET     : ${targetQueueName}`);
+    console.log('🚀 HIGH SPEED REQUEST');
+    console.log('USER  = ' + cleanUser);
+    console.log('QUEUE = ' + targetQueueName);
     console.log('========================================');
 
     const client = new RouterOSClient({
         host: process.env.MIKROTIK_HOST,
         user: process.env.MIKROTIK_USER,
         password: process.env.MIKROTIK_PASSWORD,
-        port: parseInt(process.env.MIKROTIK_PORT || '9595'),
+        port: parseInt(process.env.MIKROTIK_PORT || '8728'),
         timeout: 10
     });
 
     try {
 
         // الاتصال
-        await client.connect();
+        const api = await client.connect();
 
-        console.log('✅ [MikroTik] تم الاتصال بنجاح');
+        console.log('✅ [MikroTik] Connected');
 
-        const queueMenu = client.menu('/queue/simple');
+        // الوصول إلى Simple Queue
+        const queueMenu = api.menu('/queue/simple');
 
-        /*
-         * مهم جدًا:
-         * نبحث عن Queue واحدة فقط بالاسم الكامل.
-         *
-         * لا نبحث باسم المستخدم وحده.
-         * لا نستخدم find عام قد يؤدي إلى Queue أخرى.
-         */
-
+        // قراءة الكيوز
         const queues = await queueMenu.get();
 
-        const matchedQueue = queues.find(q => {
-            return q.name === targetQueueName;
-        });
+        // البحث بالاسم الكامل فقط
+        const matchedQueue = queues.find(
+            q => q.name === targetQueueName
+        );
 
-        /*
-         * لا توجد Queue
-         *
-         * هذا يعني أن السرعة العالية مفعلة بالفعل
-         * لأننا نحذف الـ Queue عند التفعيل.
-         */
+        // ----------------------------------
+        // الكيوز غير موجودة
+        // ----------------------------------
 
         if (!matchedQueue) {
 
             console.log(
-                `⚡ [HIGH SPEED] لا توجد Queue للمستخدم ${cleanUser}`
+                `⚡ [HIGH SPEED] Queue غير موجودة: ${targetQueueName}`
             );
 
             console.log(
-                `ℹ️ [HIGH SPEED] المستخدم بالفعل على السرعة العالية جداً`
+                `🚀 المستخدم ${cleanUser} بالفعل على السرعة العالية جداً`
             );
 
             return {
@@ -92,49 +83,47 @@ async function disableUserQueue(username) {
                 status: 'ALREADY_HIGH_SPEED',
                 username: cleanUser,
                 queue: targetQueueName,
-                message: `المستخدم ${cleanUser} بالفعل على السرعة العالية جداً`
+                message:
+                    `المستخدم ${cleanUser} بالفعل على السرعة العالية جداً`
             };
         }
 
-        /*
-         * وجدنا Queue المطلوبة بالضبط
-         */
+        // ----------------------------------
+        // وجدنا الكيوز
+        // ----------------------------------
 
         const queueId = matchedQueue['.id'];
 
-        console.log(`🎯 [QUEUE FOUND] ${matchedQueue.name}`);
-        console.log(`🆔 [QUEUE ID] ${queueId}`);
+        console.log(
+            `🎯 Queue FOUND: ${matchedQueue.name}`
+        );
 
-        /*
-         * حماية إضافية:
-         * لا نحذف إلا إذا كان الاسم مطابقًا 100%
-         */
+        console.log(
+            `🆔 Queue ID: ${queueId}`
+        );
 
+        // حماية إضافية
         if (matchedQueue.name !== targetQueueName) {
-
-            console.log(
-                `🛑 [SAFETY] تم إيقاف العملية: Queue غير مطابقة`
-            );
 
             return {
                 success: false,
                 status: 'QUEUE_MISMATCH',
-                error: 'اسم الـ Queue غير مطابق'
+                error: 'اسم Queue غير مطابق'
             };
         }
 
-        /*
-         * حذف Queue الخاصة بهذا المستخدم فقط
-         */
+        // ----------------------------------
+        // حذف Queue واحدة فقط
+        // ----------------------------------
 
         await queueMenu.remove(queueId);
 
         console.log(
-            `🚀 [SUCCESS] تم حذف Queue الخاصة بالمستخدم ${cleanUser}`
+            `🚀 تم حذف Queue للمستخدم: ${cleanUser}`
         );
 
         console.log(
-            `⚡ [HIGH SPEED] السرعة العالية جداً مفعلة الآن`
+            `⚡ السرعة العالية جداً مفعلة`
         );
 
         return {
@@ -143,13 +132,14 @@ async function disableUserQueue(username) {
             username: cleanUser,
             queue: targetQueueName,
             queueId: queueId,
-            message: `تم تفعيل السرعة العالية جداً للمستخدم ${cleanUser}`
+            message:
+                `تم تفعيل السرعة العالية جداً للمستخدم ${cleanUser}`
         };
 
     } catch (error) {
 
         console.error(
-            '❌ [MikroTik] خطأ:',
+            '❌ [MikroTik] فشل التنفيذ:',
             error.message || error
         );
 
@@ -157,22 +147,19 @@ async function disableUserQueue(username) {
             success: false,
             status: 'MIKROTIK_ERROR',
             username: cleanUser,
-            error: `فشل تنفيذ العملية: ${error.message || error}`
+            error:
+                `فشل تنفيذ العملية: ${error.message || error}`
         };
 
     } finally {
 
-        /*
-         * إغلاق الاتصال دائمًا
-         */
-
         try {
             await client.close();
-            console.log('🔌 [MikroTik] تم إغلاق الاتصال');
-        } catch (closeError) {
+            console.log('🔌 [MikroTik] Connection closed');
+        } catch (e) {
             console.log(
-                '⚠️ [MikroTik] تعذر إغلاق الاتصال:',
-                closeError.message || closeError
+                '⚠️ تعذر إغلاق الاتصال:',
+                e.message || e
             );
         }
     }
