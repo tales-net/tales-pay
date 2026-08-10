@@ -16,7 +16,7 @@ async function disableUserQueue(username) {
         host: process.env.MIKROTIK_HOST,
         user: process.env.MIKROTIK_USER,
         password: process.env.MIKROTIK_PASSWORD,
-        port: parseInt(process.env.MIKROTIK_PORT || '8728'),
+        port: parseInt(process.env.MIKROTIK_PORT || '9595'),
         timeout: 10
     });
 
