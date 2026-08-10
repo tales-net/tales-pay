@@ -1,4 +1,7 @@
 const express = require("express");
+const cors = require('cors'); // أضف هذا السطر
+const app = express();
+
 const bodyParser = require("body-parser");
 const path = require("path");
 require("dotenv").config();
@@ -8,6 +11,8 @@ const { sendTelegramMessage } = require("./telegram");
 const webhookRouter = require("./webhook");
 // استدعاء ملف المايكروتك الجديد
 const { disableUserQueue } = require("./mikrotik");
+app.use(cors()); // أضف هذا السطر للسماح لجميع الاتصالات الخارجية
+app.use(express.json()); // أضف هذا السطر لقراءة بيانات JSON
 
 const app = express();
 const PORT = process.env.PORT || 3333;
