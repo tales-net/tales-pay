@@ -9,6 +9,7 @@ async function disableUserQueue(username) {
         };
     }
 
+    // إزالة @speed_high إن وجدت
     const atPos = username.indexOf('@');
 
     const cleanUser =
@@ -16,184 +17,104 @@ async function disableUserQueue(username) {
             ? username.substring(0, atPos)
             : username;
 
-    const targetQueueName = `<hotspot-${cleanUser}>`;
+    const queueName = `<hotspot-${cleanUser}>`;
 
-    console.log("================================");
-    console.log("USER  =", cleanUser);
-    console.log("QUEUE =", targetQueueName);
-    console.log("================================");
+    console.log('================================');
+    console.log('USER  =', cleanUser);
+    console.log('QUEUE =', queueName);
+    console.log('================================');
 
     const client = new RouterOSClient({
         host: process.env.MIKROTIK_HOST,
         user: process.env.MIKROTIK_USER,
         password: process.env.MIKROTIK_PASSWORD,
         port: parseInt(process.env.MIKROTIK_PORT || '8728'),
-        timeout: 10
+        timeout: 10000
     });
 
     try {
 
         const api = await client.connect();
 
-        console.log("✅ MikroTik connected");
+        console.log('✅ Connected to MikroTik');
 
         const queueMenu = api.menu('/queue/simple');
 
-        // البحث عن Queue المطلوبة فقط
+        // البحث عن Queue بالاسم فقط
         const queues = await queueMenu
-            .where('name', targetQueueName)
+            .where('name', queueName)
             .get();
 
         if (!queues || queues.length === 0) {
 
             console.log(
-                "⚡ Queue غير موجودة - السرعة العالية مفعلة بالفعل"
+                '⚡ Queue غير موجودة:',
+                queueName
             );
+
+            await client.close();
 
             return {
                 success: true,
                 status: 'ALREADY_HIGH_SPEED',
                 username: cleanUser,
-                queue: targetQueueName,
+                queue: queueName,
                 message:
-                    `المستخدم ${cleanUser} بالفعل على السرعة العالية جداً`
+                    'المستخدم بالفعل على السرعة العالية جداً'
             };
         }
 
-        const targetQueue = queues[0];
-        const targetId = targetQueue['.id'];
-
-        console.log("🎯 FOUND =", targetQueue.name);
-        console.log("🆔 ID =", targetId);
-
-        // التأكد من الاسم
-        if (targetQueue.name !== targetQueueName) {
-
-            return {
-                success: false,
-                status: 'QUEUE_MISMATCH',
-                error: 'Queue غير مطابقة'
-            };
-        }
-
-        // إذا كانت Disabled بالفعل
-        if (
-            targetQueue.disabled === 'true' ||
-            targetQueue.disabled === true
-        ) {
-
-            console.log(
-                "⚡ Queue already disabled"
-            );
-
-            return {
-                success: true,
-                status: 'ALREADY_HIGH_SPEED',
-                username: cleanUser,
-                queue: targetQueueName,
-                queueId: targetId,
-                message:
-                    `المستخدم ${cleanUser} بالفعل على السرعة العالية جداً`
-            };
-        }
-
-        // تنفيذ DISABLE
-        console.log("⚡ Sending DISABLE...");
-
-        console.log("⚡ DISABLE QUEUE:", targetQueueName);
-console.log("⚡ QUEUE ID:", targetId);
-
-await queueMenu
-    .where('.id', targetId)
-    .exec('disable');
-
-console.log("✅ DISABLE COMMAND FINISHED");
-
-return {
-    success: true,
-    status: 'HIGH_SPEED_ENABLED',
-    username: cleanUser,
-    queue: targetQueueName,
-    queueId: targetId,
-    message: `تم تفعيل السرعة العالية للمستخدم ${cleanUser}`
-};
-
-        console.log("✅ DISABLE command sent");
-
-        // ---------------------------------
-        // التحقق من MikroTik
-        // ---------------------------------
-
-        const verifyQueues = await queueMenu
-            .where('.id', targetId)
-            .get();
-
-        if (!verifyQueues || verifyQueues.length === 0) {
-
-            return {
-                success: false,
-                status: 'VERIFY_FAILED',
-                error: 'تعذر التحقق من Queue'
-            };
-        }
-
-        const verifyQueue = verifyQueues[0];
+        const queue = queues[0];
 
         console.log(
-            "🔎 VERIFY DISABLED =",
-            verifyQueue.disabled
+            '🎯 FOUND:',
+            queue.name
         );
 
-        if (
-            verifyQueue.disabled === 'true' ||
-            verifyQueue.disabled === true
-        ) {
+        console.log(
+            '🆔 ID:',
+            queue['.id']
+        );
 
-            console.log(
-                "🚀 SUCCESS: Queue DISABLED"
-            );
+        // --------------------------------
+        // تنفيذ DISABLE على هذه Queue فقط
+        // --------------------------------
 
-            return {
-                success: true,
-                status: 'HIGH_SPEED_ENABLED',
-                username: cleanUser,
-                queue: targetQueueName,
-                queueId: targetId,
-                message:
-                    `تم تفعيل السرعة العالية للمستخدم ${cleanUser}`
-            };
+        await queueMenu
+            .where('.id', queue['.id'])
+            .exec('disable');
 
-        }
+        console.log(
+            '🚀 DISABLE COMMAND SENT'
+        );
+
+        await client.close();
 
         return {
-            success: false,
-            status: 'DISABLE_FAILED',
+            success: true,
+            status: 'HIGH_SPEED_ENABLED',
             username: cleanUser,
-            queue: targetQueueName,
-            queueId: targetId,
-            error:
-                'أمر التعطيل أُرسل ولكن MikroTik لم يعطل Queue'
+            queue: queueName,
+            message:
+                `تم تفعيل السرعة العالية للمستخدم ${cleanUser}`
         };
 
     } catch (error) {
 
         console.error(
-            "❌ MikroTik ERROR =",
+            '❌ MikroTik ERROR:',
             error.message || error
         );
-
-        return {
-            success: false,
-            status: 'MIKROTIK_ERROR',
-            error: error.message || String(error)
-        };
-
-    } finally {
 
         try {
             await client.close();
         } catch (e) {}
 
+        return {
+            success: false,
+            error:
+                `فشل التنفيذ: ${error.message || error}`
+        };
     }
 }
 
