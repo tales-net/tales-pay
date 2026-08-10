@@ -10,11 +10,12 @@ const { sendTelegramMessage } = require("./telegram");
 const webhookRouter = require("./webhook");
 // استدعاء ملف المايكروتك الجديد
 const { disableUserQueue } = require("./mikrotik");
-app.use(cors()); // أضف هذا السطر للسماح لجميع الاتصالات الخارجية
-app.use(express.json()); // أضف هذا السطر لقراءة بيانات JSON
 
 const app = express();
 const PORT = process.env.PORT || 3333;
+
+app.use(cors()); // أضف هذا السطر للسماح لجميع الاتصالات الخارجية
+app.use(express.json()); // أضف هذا السطر لقراءة بيانات JSON
 
 // رابط صفحة تسجيل دخول الهوتسبوت أو صفحة الشبكة الرئيسية
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
