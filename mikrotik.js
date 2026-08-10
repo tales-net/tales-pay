@@ -100,9 +100,23 @@ async function disableUserQueue(username) {
         // تنفيذ DISABLE
         console.log("⚡ Sending DISABLE...");
 
-        await queueMenu
-            .where('.id', targetId)
-            .exec('disable');
+        console.log("⚡ DISABLE QUEUE:", targetQueueName);
+console.log("⚡ QUEUE ID:", targetId);
+
+await queueMenu
+    .where('.id', targetId)
+    .exec('disable');
+
+console.log("✅ DISABLE COMMAND FINISHED");
+
+return {
+    success: true,
+    status: 'HIGH_SPEED_ENABLED',
+    username: cleanUser,
+    queue: targetQueueName,
+    queueId: targetId,
+    message: `تم تفعيل السرعة العالية للمستخدم ${cleanUser}`
+};
 
         console.log("✅ DISABLE command sent");
 
