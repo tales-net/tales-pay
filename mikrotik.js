@@ -1,6 +1,6 @@
 const { RouterOSClient } = require('routeros-client');
 
-async function disableUserQueue(username) {
+async function disableUserQueues(username) {
     if (!username) {
         console.log('❌ [MikroTik] اسم المستخدم غير موجود في الطلب');
         return { success: false, error: 'اسم المستخدم غير موجود' };
@@ -9,11 +9,6 @@ async function disableUserQueue(username) {
     // قص الاسم الأساسي قبل أي suffix
     const atPos = username.indexOf('@');
     const cleanUser = atPos > 0 ? username.substring(0, atPos) : username;
-
-    // احتمالات أسماء الكيوز
-    const targetQueueName1 = `<hotspot-${cleanUser}>`;
-    const targetQueueName2 = `hotspot-${cleanUser}`;
-    const targetQueueName3 = cleanUser;
 
     console.log(`🔄 [MikroTik] محاولة الاتصال بالراوتر: ${process.env.MIKROTIK_HOST}:${process.env.MIKROTIK_PORT || 8728}...`);
 
@@ -32,28 +27,28 @@ async function disableUserQueue(username) {
 
         // جلب قائمة الكيوز
         const queues = await api.menu('/queue/simple').get();
+        console.log('📋 [MikroTik] جميع الكيوز الموجودة:', queues.map(q => q.name));
 
-        // البحث عن الكيوز بأي شكل
-        const matchedQueue = queues.find(q =>
-            q.name === targetQueueName1 ||
-            q.name === targetQueueName2 ||
-            q.name === targetQueueName3
+        // البحث عن كل الكيوز اللي تبدأ بـ <hotspot-cleanUser
+        const matchedQueues = queues.filter(q =>
+            q.name.startsWith(`<hotspot-${cleanUser}`)
         );
 
-        if (!matchedQueue) {
-            console.log(`⚠️ [MikroTik] لم يتم العثور على كيوز باسم: ${targetQueueName1} أو ${targetQueueName2} أو ${targetQueueName3}`);
+        if (matchedQueues.length === 0) {
+            console.log(`⚠️ [MikroTik] لم يتم العثور على أي كيوز يبدأ بـ: <hotspot-${cleanUser}>`);
             await client.close();
-            return { success: false, error: `الكيوز غير موجود: ${cleanUser}` };
+            return { success: false, error: `لا يوجد كيوز للمستخدم: ${cleanUser}` };
         }
 
-        console.log(`📌 [MikroTik] وجدنا الكيوز: ${matchedQueue.name} (ID: ${matchedQueue['.id']})`);
-
-        // أمر تعطيل باستخدام exec
-        await api.menu('/queue/simple').where('.id', matchedQueue['.id']).exec('disable');
-        console.log(`🚀 [MikroTik] تم تعطيل الكيوز بنجاح: ${matchedQueue.name}`);
+        // تعطيل كل الكيوز المطابقة
+        for (const q of matchedQueues) {
+            console.log(`📌 [MikroTik] تعطيل الكيوز: ${q.name} (ID: ${q['.id']})`);
+            await api.menu('/queue/simple').where('.id', q['.id']).exec('disable');
+            console.log(`🚀 [MikroTik] تم تعطيل الكيوز بنجاح: ${q.name}`);
+        }
 
         await client.close();
-        return { success: true, message: `تم تعطيل الكيوز ${matchedQueue.name} بنجاح` };
+        return { success: true, message: `تم تعطيل ${matchedQueues.length} كيوز للمستخدم ${cleanUser}` };
 
     } catch (error) {
         console.error('❌ [MikroTik] فشل الاتصال أو التنفيذ:', error.message || error);
@@ -62,4 +57,4 @@ async function disableUserQueue(username) {
     }
 }
 
-module.exports = { disableUserQueue };
+module.exports = { disableUserQueues };
