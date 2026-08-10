@@ -22,7 +22,7 @@ async function disableUserQueue(username) {
 
     try {
         const api = await client.connect();
-        console.log('✅ [MikroTik] تم الاتصال بالمايكروتك بنجاح');
+        console.log('✅ [MikroTik] تم الاتصال بالسيرفر بنجاح');
 
         const scriptMenu = api.menu('/system/script');
 
