@@ -3,8 +3,6 @@ const { RouterOSClient } = require('routeros-client');
 async function disableUserQueue(username) {
 
     if (!username) {
-        console.log('❌ [MikroTik] اسم المستخدم غير موجود');
-
         return {
             success: false,
             status: 'INVALID_USER',
@@ -12,7 +10,7 @@ async function disableUserQueue(username) {
         };
     }
 
-    // تنظيف اسم المستخدم
+    // استخراج اسم المستخدم بدون @speed_high
     const atPos = username.indexOf('@');
 
     const cleanUser =
@@ -20,23 +18,11 @@ async function disableUserQueue(username) {
             ? username.substring(0, atPos)
             : username;
 
-    if (!cleanUser) {
-        return {
-            success: false,
-            status: 'INVALID_USER',
-            error: 'اسم المستخدم غير صالح'
-        };
-    }
-
-    // Queue الخاصة بهذا المستخدم فقط
     const targetQueueName = `<hotspot-${cleanUser}>`;
 
-    console.log('');
-    console.log('========================================');
-    console.log('🚀 HIGH SPEED REQUEST');
-    console.log('USER  = ' + cleanUser);
-    console.log('QUEUE = ' + targetQueueName);
-    console.log('========================================');
+    console.log(
+        `🔄 [MikroTik] البحث عن: ${targetQueueName}`
+    );
 
     const client = new RouterOSClient({
         host: process.env.MIKROTIK_HOST,
@@ -48,34 +34,23 @@ async function disableUserQueue(username) {
 
     try {
 
-        // الاتصال
         const api = await client.connect();
 
-        console.log('✅ [MikroTik] Connected');
-
-        // الوصول إلى Simple Queue
         const queueMenu = api.menu('/queue/simple');
 
-        // قراءة الكيوز
-        const queues = await queueMenu.get();
-
         // البحث بالاسم الكامل فقط
-        const matchedQueue = queues.find(
-            q => q.name === targetQueueName
-        );
+        const queues = await queueMenu
+            .where('name', targetQueueName)
+            .get();
 
-        // ----------------------------------
-        // الكيوز غير موجودة
-        // ----------------------------------
+        // --------------------------------
+        // لا توجد Queue
+        // --------------------------------
 
-        if (!matchedQueue) {
-
-            console.log(
-                `⚡ [HIGH SPEED] Queue غير موجودة: ${targetQueueName}`
-            );
+        if (!queues || queues.length === 0) {
 
             console.log(
-                `🚀 المستخدم ${cleanUser} بالفعل على السرعة العالية جداً`
+                `⚡ [HIGH SPEED] لا توجد Queue: ${targetQueueName}`
             );
 
             return {
@@ -88,42 +63,66 @@ async function disableUserQueue(username) {
             };
         }
 
-        // ----------------------------------
-        // وجدنا الكيوز
-        // ----------------------------------
+        // --------------------------------
+        // تحديد Queue واحدة فقط
+        // --------------------------------
 
-        const queueId = matchedQueue['.id'];
+        const targetQueue = queues[0];
+        const targetId = targetQueue['.id'];
 
         console.log(
-            `🎯 Queue FOUND: ${matchedQueue.name}`
+            `📌 [QUEUE FOUND] ${targetQueue.name}`
         );
 
         console.log(
-            `🆔 Queue ID: ${queueId}`
+            `🆔 [QUEUE ID] ${targetId}`
         );
 
         // حماية إضافية
-        if (matchedQueue.name !== targetQueueName) {
+        if (targetQueue.name !== targetQueueName) {
 
             return {
                 success: false,
                 status: 'QUEUE_MISMATCH',
-                error: 'اسم Queue غير مطابق'
+                error: 'الـ Queue ليست Queue الخاصة بالمستخدم'
             };
         }
 
-        // ----------------------------------
-        // حذف Queue واحدة فقط
-        // ----------------------------------
+        // --------------------------------
+        // إذا كانت Disabled بالفعل
+        // --------------------------------
 
-        await queueMenu.remove(queueId);
+        if (
+            targetQueue.disabled === 'true' ||
+            targetQueue.disabled === true
+        ) {
+
+            console.log(
+                `⚡ Queue بالفعل Disabled`
+            );
+
+            return {
+                success: true,
+                status: 'ALREADY_HIGH_SPEED',
+                username: cleanUser,
+                queue: targetQueueName,
+                queueId: targetId,
+                message:
+                    `المستخدم ${cleanUser} بالفعل على السرعة العالية جداً`
+            };
+        }
+
+        // --------------------------------
+        // تعطيل Queue فقط
+        // لا يتم حذفها
+        // --------------------------------
+
+        await queueMenu
+            .where('.id', targetId)
+            .exec('disable');
 
         console.log(
-            `🚀 تم حذف Queue للمستخدم: ${cleanUser}`
-        );
-
-        console.log(
-            `⚡ السرعة العالية جداً مفعلة`
+            `🚀 [SUCCESS] تم تعطيل Queue: ${targetQueueName}`
         );
 
         return {
@@ -131,37 +130,30 @@ async function disableUserQueue(username) {
             status: 'HIGH_SPEED_ENABLED',
             username: cleanUser,
             queue: targetQueueName,
-            queueId: queueId,
+            queueId: targetId,
             message:
-                `تم تفعيل السرعة العالية جداً للمستخدم ${cleanUser}`
+                `تم تفعيل السرعة العالية للمستخدم ${cleanUser}`
         };
 
     } catch (error) {
 
         console.error(
-            '❌ [MikroTik] فشل التنفيذ:',
+            '❌ [MikroTik] خطأ:',
             error.message || error
         );
 
         return {
             success: false,
             status: 'MIKROTIK_ERROR',
-            username: cleanUser,
             error:
-                `فشل تنفيذ العملية: ${error.message || error}`
+                `فشل التنفيذ: ${error.message || error}`
         };
 
     } finally {
 
         try {
             await client.close();
-            console.log('🔌 [MikroTik] Connection closed');
-        } catch (e) {
-            console.log(
-                '⚠️ تعذر إغلاق الاتصال:',
-                e.message || e
-            );
-        }
+        } catch (e) {}
     }
 }
 
