@@ -12,7 +12,7 @@ const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 
 const app = express();
-const PORT = process.env.PORT || 3333;
+const PORT = process.env.MIKROTIK_PORT || 9595;
 
 app.use(cors()); // أضف هذا السطر للسماح لجميع الاتصالات الخارجية
 app.use(express.json()); // أضف هذا السطر لقراءة بيانات JSON
