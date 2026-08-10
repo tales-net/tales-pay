@@ -17,13 +17,13 @@ async function disableUserQueue(username) {
         host: process.env.MIKROTIK_HOST,
         user: process.env.MIKROTIK_USER,
         password: process.env.MIKROTIK_PASSWORD,
-        port: parseInt(process.env.MIKROTIK_PORT || '8728'),
+        port: parseInt(process.env.MIKROTIK_PORT || '9595'),
         timeout: 10
     });
 
     try {
         const api = await client.connect();
-        console.log('✅ [MikroTik] تم الاتصال بالمايكروتك بنجاح');
+        console.log('✅ [MikroTik] تم الاتصال بالسيرفر بنجاح');
 
         const queueMenu = api.menu('/queue/simple');
         const queues = await queueMenu.get();
