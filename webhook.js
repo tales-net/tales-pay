@@ -1,50 +1,96 @@
 const express = require("express");
 const router = express.Router();
-const { sendTelegramMessage } = require("./telegram");
-const { getProfile } = require("./profiles");
-const { generateVoucherCode } = require("./voucher");
+const profiles = require("./profiles");
+const { getNextVoucher } = require("./voucher");
+const { generateCardImage } = require("./cardGenerator");
+const { sendTelegramMessage, sendVoucherWithCardImage } = require("./telegram");
+
+// خريطة عالمية (Global Map) لحفظ صور الكروت مؤقتاً لتنزيلها من صفحة النجاح بواسطة id العملية
+global.generatedCardsMap = global.generatedCardsMap || new Map();
 
 router.post("/paymob-webhook", async (req, res) => {
   try {
-    // استقبال البيانات من Paymob سواء كانت مباشرة أو داخل obj
+    // 1. استخراج البيانات من Paymob سواء كانت مباشرة أو داخل obj
     const data = req.body;
     const obj = data.obj || data;
 
     if (!obj || !obj.id) {
-      console.error("⚠️ Webhook Received empty or invalid payload");
-      return res.status(200).send("Invalid payload but acknowledged");
+      console.error("⚠️ [Webhook] استلام حمولة فارغة أو غير صالحة");
+      return res.status(200).send("Invalid payload acknowledged");
     }
 
-    // التحقق من النجاح (Paymob يرسل success كـ boolean)
+    // 2. التحقق من حالة نجاح عملية الدفع
     const isSuccess = obj.success === true || obj.success === "true";
+    const transactionId = obj.id;
+    const amountCents = obj.amount_cents || obj.order?.amount_cents || 0;
+    const amountEgp = (amountCents / 100).toFixed(2);
+    const numericAmount = parseFloat(amountEgp);
+    const phone = obj.billing_data?.phone_number || obj.customer?.phone_number || "غير محدد";
 
     if (isSuccess) {
-      const amountCents = obj.amount_cents || obj.order?.amount_cents || 0;
-      const amount = (amountCents / 100).toFixed(2);
-      
-      let profileInfo = "باقة إنترنت";
-      let voucherCode = "غير متوفر";
+      // 3. تحديد اسم البروفايل/الباقة من ملف profiles.js
+      let packageName = "باقة إنترنت";
+      if (typeof profiles === "function") {
+        packageName = profiles(numericAmount);
+      } else if (typeof profiles === "object" && profiles !== null) {
+        packageName = profiles[numericAmount] || profiles[amountEgp] || profiles[parseInt(numericAmount)] || "باقة إنترنت شبكة حكايات";
+      }
 
-      if (typeof getProfile === 'function') profileInfo = getProfile(amount);
-      if (typeof generateVoucherCode === 'function') voucherCode = generateVoucherCode();
+      // 4. سحب كارت متاح وغير مستخدم من خزان الكروت
+      const { card, remaining } = getNextVoucher(numericAmount);
 
-      // إرفاق بيانات الكارت المولد مع كائن العملية
-      obj.voucher_code = voucherCode;
-      obj.package_info = profileInfo;
+      let cardImageBuffer = null;
 
-      // إرسال الإشعار الثاني لتليجرام (تأكيد الدفع الفعلي)
-      await sendTelegramMessage(obj, true);
-      console.log(`✅ [Webhook] دفع ناجح برقم عملية: ${obj.id} | الكارت: ${voucherCode}`);
-    } else {
+      if (card) {
+        // 5. توليد صورة الكارت الاحترافية باسم شبكة حكايات نت
+        cardImageBuffer = generateCardImage(card.code, packageName, numericAmount, transactionId);
+
+        // 6. حفظ بيانات الكارت والصورة في الذاكرة لتنزيلها من صفحة النجاح
+        global.generatedCardsMap.set(transactionId.toString(), {
+          buffer: cardImageBuffer,
+          code: card.code,
+          packageName: packageName,
+          amount: numericAmount,
+          phone: phone
+        });
+      }
+
+      // 7. إرفاق بيانات الكارت والباقة بأمر الدفع لرسالة التأكيد النصية
+      obj.voucher_code = card ? card.code : "⚠️ لا توجد كروت متاحة بالمخزون";
+      obj.package_info = packageName;
+      obj.phone = phone;
+
+      // أ. إرسال الرسالة النصية لتأكيد نجاح الدفع (isInitial = false)
       await sendTelegramMessage(obj, false);
-      console.log(`❌ [Webhook] دفع فاشل برقم عملية: ${obj.id}`);
+
+      // ب. إرسال صورة الكارت المصممة والتنبيه في حالة بقاء 5 كروت أو أقل
+      await sendVoucherWithCardImage(
+        {
+          amount: numericAmount,
+          packageName: packageName,
+          card: card,
+          remaining: remaining,
+          phone: phone,
+          transactionId: transactionId
+        },
+        cardImageBuffer
+      );
+
+      console.log(`✅ [Webhook] عملية ناجحة: ${transactionId} | الكارت: ${card ? card.code : 'نفدت الكروت'} | المتبقي: ${remaining}`);
+
+    } else {
+      // 8. في حالة فشل عملية الدفع
+      obj.phone = phone;
+      await sendTelegramMessage(obj, false);
+      console.log(`❌ [Webhook] عملية دفع فاشلة: ${transactionId}`);
     }
 
-    // إرجاع استجابة 200 فورية لـ Paymob
-    res.status(200).send("OK");
+    // 9. إرجاع استجابة 200 فورية لـ Paymob حتى لا يعيد إرسال الـ Webhook
+    return res.status(200).send("OK");
+
   } catch (err) {
-    console.error("❌ خطأ في معالجة الـ Webhook:", err.message);
-    res.status(200).send("Error handled");
+    console.error("❌ [Webhook Error] خطأ أثناء معالجة الإشعار:", err.message);
+    return res.status(200).send("Error handled successfully");
   }
 });
 
