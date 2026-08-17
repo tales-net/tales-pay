@@ -14,15 +14,27 @@ const initialVouchers = {
     { code: "1002345683", used: false }
   ],
   "15": [
+    { code: "1052345678", used: false },
+    { code: "1052345679", used: false },
+    { code: "1052345680", used: false },
     { code: "2002345678", used: false }
   ],
   "30": [
+    { code: "1092345678", used: false },
+    { code: "1092345679", used: false },
+    { code: "1092345680", used: false },
     { code: "3002345678", used: false }
   ],
   "50": [
+    { code: "1012345678", used: false },
+    { code: "1012345679", used: false },
+    { code: "1012345680", used: false },
     { code: "5002345678", used: false }
   ],
   "100": [
+    { code: "1022345678", used: false },
+    { code: "1022345679", used: false },
+    { code: "1022345680", used: false },
     { code: "1002345678", used: false }
   ]
 };
