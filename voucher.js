@@ -3,44 +3,44 @@ const path = require('path');
 
 const VOUCHERS_FILE = path.join(__dirname, 'vouchers_data.json');
 
-// قاعدة بيانات الكروت المبدئية مع إضافة حالة الاستخدام الافتراضية
+// قاعدة بيانات الكروت المبدئية
 const initialVouchers = {
   "5": [
-    { code: "1002345678", used: false },
-    { code: "1002345679", used: false },
-    { code: "1002345680", used: false },
-    { code: "1002345681", used: false },
-    { code: "1002345682", used: false },
-    { code: "1002345683", used: false }
+    { code: "1002345678" },
+    { code: "1002345679" },
+    { code: "1002345680" },
+    { code: "1002345681" },
+    { code: "1002345682" },
+    { code: "1002345683" }
   ],
   "15": [
-    { code: "1052345678", used: false },
-    { code: "1052345679", used: false },
-    { code: "1052345680", used: false },
-    { code: "2002345678", used: false }
+    { code: "1052345678" },
+    { code: "1052345679" },
+    { code: "1052345680" },
+    { code: "2002345678" }
   ],
   "30": [
-    { code: "1092345678", used: false },
-    { code: "1092345679", used: false },
-    { code: "1092345680", used: false },
-    { code: "3002345678", used: false }
+    { code: "1092345678" },
+    { code: "1092345679" },
+    { code: "1092345680" },
+    { code: "3002345678" }
   ],
   "50": [
-    { code: "1012345678", used: false },
-    { code: "1012345679", used: false },
-    { code: "1012345680", used: false },
-    { code: "5002345678", used: false }
+    { code: "1012345678" },
+    { code: "1012345679" },
+    { code: "1012345680" },
+    { code: "5002345678" }
   ],
   "100": [
-    { code: "1022345678", used: false },
-    { code: "1022345679", used: false },
-    { code: "1022345680", used: false },
-    { code: "1002345678", used: false }
+    { code: "1022345678" },
+    { code: "1022345679" },
+    { code: "1022345680" },
+    { code: "1002345678" }
   ]
 };
 
 /**
- * قراءة وقيم الكروت من الملف أو إنشائه بالبيانات المبدئية
+ * قراءة الكروت المتاحة من الملف
  */
 function loadVouchers() {
   if (!fs.existsSync(VOUCHERS_FILE)) {
@@ -57,7 +57,7 @@ function loadVouchers() {
 }
 
 /**
- * حفظ البيانات في ملف vouchers_data.json
+ * حفظ التحديثات في ملف JSON
  */
 function saveVouchers(data) {
   try {
@@ -68,7 +68,7 @@ function saveVouchers(data) {
 }
 
 /**
- * سحب أول كارت غير مستخدم للباقة، تعليمه كـ "مستعمل" وتعديل الملف
+ * سحب أول كارت متاح للباقة، وحذفه نهائياً من القائمة وتحديث الملف
  * @param {number|string} amount - سعر الباقة (5, 15, 30, 50, 100)
  */
 function getNextVoucher(amount) {
@@ -76,28 +76,24 @@ function getNextVoucher(amount) {
   const key = amount.toString();
   const pool = vouchersData[key] || [];
 
-  // 1. البحث عن أول كارت غير مستخدم (used: false أو غير معرف)
-  const voucherIndex = pool.findIndex(v => !v.used);
-
-  // في حالة عدم وجود كروت غير مستخدمة متبقية
-  if (voucherIndex === -1) {
+  // التأكد من وجود كروت في هذه الفئة
+  if (!pool || pool.length === 0) {
     return { card: null, remaining: 0 };
   }
 
-  // 2. تحديث الكارت بوضع علامة "تم الاستخدام" وإضافة تاريخ الاستخدام
-  const card = pool[voucherIndex];
-  card.used = true;
-  card.usedAt = new Date().toISOString();
+  // 1. قطع وحذف الكارت الأول نهائياً من القائمة
+  const [issuedCard] = pool.splice(0, 1);
 
-  // 3. حفظ البيانات المحدثة في الملف
+  // 2. تحديث الفئة بالقائمة الجديدة (بدون الكارت المقطوع)
+  vouchersData[key] = pool;
+
+  // 3. حفظ البيانات الجديدة فوراً في الملف
   saveVouchers(vouchersData);
 
-  // 4. حساب عدد الكروت المتبقية الجاهزة للاستخدام (غير مستخدمة)
-  const remaining = pool.filter(v => !v.used).length;
-
+  // 4. إرجاع الكارت والعدد المتبقي الحقيقي
   return {
-    card: card,
-    remaining: remaining
+    card: issuedCard,
+    remaining: pool.length
   };
 }
 
