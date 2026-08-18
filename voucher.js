@@ -3,39 +3,39 @@ const path = require('path');
 
 const VOUCHERS_FILE = path.join(__dirname, 'vouchers_data.json');
 
-// قاعدة بيانات الكروت المبدئية (يتم استخدامها في حال عدم وجود الملف)
+// قاعدة بيانات الكروت المبدئية مع إضافة حالة الاستخدام الافتراضية
 const initialVouchers = {
   "5": [
-    { code: "1002345678" },
-    { code: "1002345679" },
-    { code: "1002345680" },
-    { code: "1002345681" },
-    { code: "1002345682" },
-    { code: "1002345683" }
+    { code: "1002345678", used: false },
+    { code: "1002345679", used: false },
+    { code: "1002345680", used: false },
+    { code: "1002345681", used: false },
+    { code: "1002345682", used: false },
+    { code: "1002345683", used: false }
   ],
   "15": [
-    { code: "1052345678" },
-    { code: "1052345679" },
-    { code: "1052345680" },
-    { code: "2002345678" }
+    { code: "1052345678", used: false },
+    { code: "1052345679", used: false },
+    { code: "1052345680", used: false },
+    { code: "2002345678", used: false }
   ],
   "30": [
-    { code: "1092345678" },
-    { code: "1092345679" },
-    { code: "1092345680" },
-    { code: "3002345678" }
+    { code: "1092345678", used: false },
+    { code: "1092345679", used: false },
+    { code: "1092345680", used: false },
+    { code: "3002345678", used: false }
   ],
   "50": [
-    { code: "1012345678" },
-    { code: "1012345679" },
-    { code: "1012345680" },
-    { code: "5002345678" }
+    { code: "1012345678", used: false },
+    { code: "1012345679", used: false },
+    { code: "1012345680", used: false },
+    { code: "5002345678", used: false }
   ],
   "100": [
-    { code: "1022345678" },
-    { code: "1022345679" },
-    { code: "1022345680" },
-    { code: "1002345678" }
+    { code: "1022345678", used: false },
+    { code: "1022345679", used: false },
+    { code: "1022345680", used: false },
+    { code: "1002345678", used: false }
   ]
 };
 
@@ -68,7 +68,7 @@ function saveVouchers(data) {
 }
 
 /**
- * سحب أول كارت متاح للباقة وحذفه تماماً من القائمة وتحديث الملف
+ * سحب أول كارت غير مستخدم للباقة، تعليمه كـ "مستعمل" وتعديل الملف
  * @param {number|string} amount - سعر الباقة (5, 15, 30, 50, 100)
  */
 function getNextVoucher(amount) {
@@ -76,24 +76,28 @@ function getNextVoucher(amount) {
   const key = amount.toString();
   const pool = vouchersData[key] || [];
 
-  // التحقق من وجود كروت متاحة لهذه الفئة
-  if (!pool || pool.length === 0) {
+  // 1. البحث عن أول كارت غير مستخدم (used: false أو غير معرف)
+  const voucherIndex = pool.findIndex(v => !v.used);
+
+  // في حالة عدم وجود كروت غير مستخدمة متبقية
+  if (voucherIndex === -1) {
     return { card: null, remaining: 0 };
   }
 
-  // 1. استخراج وحذف الكارت الأول من القائمة نهائياً
-  const card = pool.shift();
+  // 2. تحديث الكارت بوضع علامة "تم الاستخدام" وإضافة تاريخ الاستخدام
+  const card = pool[voucherIndex];
+  card.used = true;
+  card.usedAt = new Date().toISOString();
 
-  // 2. تحديث قائمة الكروت بالفئة المحددة
-  vouchersData[key] = pool;
-
-  // 3. حفظ البيانات التحديثية بداخل ملف vouchers_data.json
+  // 3. حفظ البيانات المحدثة في الملف
   saveVouchers(vouchersData);
 
-  // 4. إرجاع الكارت مع عدد الكروت المتبقية
+  // 4. حساب عدد الكروت المتبقية الجاهزة للاستخدام (غير مستخدمة)
+  const remaining = pool.filter(v => !v.used).length;
+
   return {
     card: card,
-    remaining: pool.length
+    remaining: remaining
   };
 }
 
