@@ -11,6 +11,9 @@ function getPaymentMethodName(data) {
   let method = data.payment_method || data.source_type || data.method || "محفظة إلكترونية";
   if (method === "card") method = "بطاقة بنكية (Visa / Mastercard)";
   else if (method === "wallet") method = "محفظة إلكترونية (Mobile Wallet)";
+  else if (method === "valu") method = "برنامج تقسيط (Valu)";
+  else if (method === "seven") method = "برنامج تقسيط (SEVEN)";
+  else if (method === "aman") method = "أمان / مصاري (Aman)";
   return method;
 }
 
