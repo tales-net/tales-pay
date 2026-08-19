@@ -4,7 +4,7 @@
  * @param {string} iframeId - رقم الـ Iframe الخاص بالبطاقات
  * @returns {string} - كود الصفحة HTML الكامل
  */
-export function getCheckoutPage(paymentToken, iframeId) {
+function getCheckoutPage(paymentToken, iframeId) {
   const iframeUrl = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymentToken}`;
 
   return `
@@ -61,4 +61,5 @@ export function getCheckoutPage(paymentToken, iframeId) {
   `;
 }
 
-export default getCheckoutPage;
+module.exports = { getCheckoutPage };
+module.exports.default = getCheckoutPage;
