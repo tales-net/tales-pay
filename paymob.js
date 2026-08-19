@@ -10,7 +10,7 @@ async function getAuthToken() {
     });
     return response.data.token;
   } catch (err) {
-    console.error("❌ Paymob Auth Error:", err.response?.data || err.message);
+    console.error("❌ Paymob Auth Error Details:", JSON.stringify(err.response?.data || err.message, null, 2));
     throw new Error("فشل الحصول على توكن المصادقة من Paymob");
   }
 }
@@ -23,14 +23,14 @@ async function createOrder(authToken, amountCents) {
     const response = await axios.post("https://accept.paymob.com/api/ecommerce/orders", {
       auth_token: authToken,
       delivery_needed: "false",
-      amount_cents: amountCents,
+      amount_cents: Math.round(Number(amountCents)),
       currency: "EGP",
       merchant_order_id: `TALES-${Date.now()}`,
       items: []
     });
     return response.data.id;
   } catch (err) {
-    console.error("❌ Paymob Create Order Error:", err.response?.data || err.message);
+    console.error("❌ Paymob Create Order Error Details:", JSON.stringify(err.response?.data || err.message, null, 2));
     throw new Error("فشل إنشاء الطلب في Paymob");
   }
 }
@@ -40,11 +40,17 @@ async function createOrder(authToken, amountCents) {
  */
 async function getPaymentKey(authToken, orderId, amountCents, integrationId, phone = "01000000000") {
   try {
-    const response = await axios.post("https://accept.paymob.com/api/acceptance/payment_keys", {
+    // تنظيف رقم الهاتف وإسناد قيمة افتراضية في حال وجود نقص
+    let sanitizedPhone = String(phone).replace(/\D/g, "");
+    if (!sanitizedPhone || sanitizedPhone.length < 11) {
+      sanitizedPhone = "01000000000";
+    }
+
+    const payload = {
       auth_token: authToken,
-      amount_cents: amountCents,
+      amount_cents: Math.round(Number(amountCents)),
       expiration: 3600,
-      order_id: orderId,
+      order_id: Number(orderId),
       billing_data: {
         apartment: "NA",
         email: "customer@tales-net.com",
@@ -52,7 +58,7 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
         first_name: "Tales",
         street: "NA",
         building: "NA",
-        phone_number: phone,
+        phone_number: sanitizedPhone,
         shipping_method: "PKG",
         postal_code: "NA",
         city: "Cairo",
@@ -61,12 +67,15 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
         state: "NA"
       },
       currency: "EGP",
-      integration_id: integrationId,
+      integration_id: Number(integrationId), // تحويل لـ Number لمنع رفض Paymob
       lock_order_when_paid: "true"
-    });
+    };
+
+    const response = await axios.post("https://accept.paymob.com/api/acceptance/payment_keys", payload);
     return response.data.token;
   } catch (err) {
-    console.error("❌ Paymob Payment Key Error:", err.response?.data || err.message);
+    // طباعة الاستجابة الكاملة لمعرفة السبب الحقيقي فوراً من سجلات Render
+    console.error("❌ Paymob Payment Key Error Details:", JSON.stringify(err.response?.data || err.message, null, 2));
     throw new Error("فشل توليد مفتاح الدفع من Paymob");
   }
 }
