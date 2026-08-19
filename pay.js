@@ -3,7 +3,7 @@ const { getCheckoutPage } = require('./checkout');
 const { getAuthToken, createOrder, getPaymentKey } = require('./paymob');
 
 /**
- * إنشاء المعاملة وتجهيز رابط الدفع الخاص بـ Paymob بناءً على نوع الوسيلة
+ * إنشاء المعاملة وتجهيز رابط الدفع الخاص بـ Paymob بناءً على نوع الوسيلة (المحفظة أو البطاقة البنكية فقط)
  * @param {string} phone - رقم الهاتف أو المحفظة
  * @param {string|number} amount - المبلغ بالجنيه
  * @param {string} method - وسيلة الدفع (wallet, card)
@@ -15,7 +15,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet') {
     const amountCents = Math.round(parseFloat(amount) * 100).toString();
     const cleanMethod = (method || 'wallet').toLowerCase();
 
-    // 2. تحديد Integration ID المناسب من متغيرات البيئة (محافظ وبطاقات فقط)
+    // 2. تحديد Integration ID المناسب من متغيرات البيئة (بطاقات أو محافيظ فقط)
     let integrationId;
     switch (cleanMethod) {
       case 'card':
@@ -55,13 +55,10 @@ async function createPaymobPayment(phone, amount, method = 'wallet') {
     
     // 5. معالجة البطاقات البنكية (Card)
     else {
-      // السماح بتخصيص Iframe ID خاص بالبطاقة أو استخدام الـ ID العام كبديل
-      const iframeId = cleanMethod === 'card' 
-        ? (process.env.CARD_IFRAME_ID || process.env.PAYMOB_IFRAME_ID) 
-        : process.env.PAYMOB_IFRAME_ID;
+      const iframeId = process.env.CARD_IFRAME_ID || process.env.PAYMOB_IFRAME_ID;
 
       if (!iframeId) {
-        throw new Error("Missing PAYMOB_IFRAME_ID in environment variables");
+        throw new Error("Missing CARD_IFRAME_ID or PAYMOB_IFRAME_ID in environment variables");
       }
 
       if (typeof getCheckoutPage === 'function') {
