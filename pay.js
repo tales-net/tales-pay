@@ -21,7 +21,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet') {
       case 'card':
         integrationId = process.env.CARD_INTEGRATION_ID;
         break;
-            case 'wallet':
+      case 'wallet':
       default:
         integrationId = process.env.WALLET_INTEGRATION_ID;
         break;
