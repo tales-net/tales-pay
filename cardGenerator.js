@@ -1,82 +1,71 @@
-const { createCanvas } = require('canvas');
+const sharp = require('sharp');
 
 /**
- * دالة إنشاء صورة الكارت احترافية بدون مشاكل الشاشة السوداء
+ * توليد صورة الكارت بأعلى جودة وبدون شاشة سوداء نهائياً
  * @param {string} code - كود الكارت/الفوتشر
- * @param {string} packageName - اسم الباقة (مثال: برونزية، بلاتينيوم)
- * @param {number} price - سعر الباقة المستحقة (مثال: 50)
+ * @param {string} packageName - اسم الباقة (مثال: برونزية، 50)
+ * @param {number|string} price - سعر الباقة
  * @param {string|number} transactionId - رقم العملية
- * @returns {Buffer} - صورة JPEG عالية الجودة على شكل Buffer
+ * @returns {Promise<Buffer>} - Buffer يحتوي على صورة JPEG مصمتة
  */
-function generateCardImage(code, packageName, price, transactionId) {
-  const width = 800;
-  const height = 450;
-  const canvas = createCanvas(width, height);
-  const ctx = canvas.getContext('2d');
+async function generateCardImage(code, packageName, price, transactionId) {
+  // 1. تنظيف وتجهيز البيانات لمنع أي أخطاء في الـ SVG
+  const safeCode = String(code || 'XXXX-XXXX-XXXX');
+  const safePackageName = String(packageName || 'إنترنت');
+  const safePrice = String(price || '0');
+  const safeTransactionId = String(transactionId || '0000');
 
-  // 1. فرض خلفية بيضاء صريحة أولاً لمنع الشفافية واللون الأسود نهائياً
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillRect(0, 0, width, height);
+  // 2. تصميم صورة الكارت بصيغة SVG متكاملة وعالية الدقة
+  const svgImage = `
+    <svg width="800" height="450" xmlns="http://www.w3.org/2000/svg">
+      <style>
+        .title { font-family: Arial, sans-serif; font-size: 34px; font-weight: bold; fill: #f1c40f; text-anchor: middle; }
+        .sub-title { font-family: Arial, sans-serif; font-size: 24px; font-weight: bold; fill: #ffffff; text-anchor: middle; }
+        .code-text { font-family: 'Courier New', monospace; font-size: 42px; font-weight: bold; fill: #1e3c72; text-anchor: middle; letter-spacing: 2px; }
+        .tx-id { font-family: Arial, sans-serif; font-size: 18px; fill: #9fb3c8; text-anchor: middle; }
+        .footer { font-family: Arial, sans-serif; font-size: 22px; font-weight: bold; fill: #2ecc71; text-anchor: middle; }
+      </style>
 
-  // 2. رسم الخلفية المتدرجة الجذابة
-  const gradient = ctx.createLinearGradient(0, 0, width, height);
-  gradient.addColorStop(0, '#0f2027');
-  gradient.addColorStop(0.5, '#203a43');
-  gradient.addColorStop(1, '#2c5364');
+      <!-- 1. خلفية زرقاء داكنة مصمتة مئة بالمئة -->
+      <rect width="800" height="450" fill="#0f2027" />
 
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, height);
+      <!-- 2. إطار داخلي جمالي مع حواف دائرية -->
+      <rect x="20" y="20" width="760" height="410" rx="15" ry="15" fill="none" stroke="#f1c40f" stroke-width="3" opacity="0.8" />
 
-  // 3. إضافة إطار دائر أبيض خفيف
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-  ctx.lineWidth = 6;
-  ctx.strokeRect(15, 15, width - 30, height - 30);
+      <!-- 3. اسم الشبكة / العنوان -->
+      <text x="400" y="75" class="title">شبكة حكايات نت - HIKAYAT NET</text>
+      
+      <!-- خط فاصل تحت العنوان -->
+      <line x1="150" y1="95" x2="650" y2="95" stroke="#f1c40f" stroke-width="2" opacity="0.5" />
 
-  // 4. عنوان الكارت / اسم الشبكة
-  ctx.fillStyle = '#f1c40f'; // لون ذهبي
-  ctx.font = 'bold 36px Arial, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('شبكة حكايات نت - HIKAYAT NET', width / 2, 75);
+      <!-- 4. تفاصيل الباقة والسعر -->
+      <text x="400" y="140" class="sub-title">باقة: ${safePackageName} (${safePrice} جنيه)</text>
 
-  // خط فاصل تزيني
-  ctx.strokeStyle = '#f1c40f';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(150, 95);
-  ctx.lineTo(650, 95);
-  ctx.stroke();
+      <!-- 5. مربع أبيض مصمت خلف كود الكارت -->
+      <rect x="80" y="175" width="640" height="100" rx="12" ry="12" fill="#ffffff" />
 
-  // 5. عرض اسم الباقة وسعرها
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 26px Arial, sans-serif';
-  ctx.fillText(`باقة: ${packageName || 'إنترنت'} (${price} جنيه)`, width / 2, 150);
+      <!-- 6. كتابة كود الكارت داخل المربع -->
+      <text x="400" y="240" class="code-text">${safeCode}</text>
 
-  // 6. رسم صندوق الكود الابيض بشكل مضمون
-  ctx.fillStyle = '#FFFFFF';
-  if (typeof ctx.roundRect === 'function') {
-    ctx.beginPath();
-    ctx.roundRect(100, 185, 600, 95, 12);
-    ctx.fill();
-  } else {
-    ctx.fillRect(100, 185, 600, 95);
+      <!-- 7. رقم العملية واسفل الكارت -->
+      <text x="400" y="335" class="tx-id">رقم العملية: #${safeTransactionId}</text>
+      <text x="400" y="385" class="footer">شكراً لاستخدامكم شبكة حكايات نت</text>
+    </svg>
+  `;
+
+  try {
+    // 3. تحويل الـ SVG إلى صورة JPEG مصمتة بعيداً عن الشفافية والمشاكل
+    const imageBuffer = await sharp(Buffer.from(svgImage))
+      .jpeg({ quality: 95 })
+      .toBuffer();
+
+    return imageBuffer;
+  } catch (error) {
+    console.error('❌ [CardGenerator] خطأ أثناء إنشاء صورة الكارت:', error);
+    throw error;
   }
-
-  // نص كود الكارت داخل المربع
-  ctx.fillStyle = '#1e3c72';
-  ctx.font = 'bold 40px "Courier New", monospace';
-  ctx.fillText(code || 'XXXX-XXXX-XXXX', width / 2, 248);
-
-  // 7. معلومات العملية ورسالة الشكر
-  ctx.fillStyle = '#bdc3c7';
-  ctx.font = '20px Arial, sans-serif';
-  ctx.fillText(`رقم العملية: #${transactionId}`, width / 2, 335);
-
-  ctx.fillStyle = '#2ecc71';
-  ctx.font = 'bold 22px Arial, sans-serif';
-  ctx.fillText('شكراً لاستخدامكم شبكة حكايات نت', width / 2, 385);
-
-  // 8. إرجاع الصورة بصيغة JPEG بوضوح عالي (جودة 95%) لضمان التحميل السليم
-  return canvas.toBuffer('image/jpeg', { quality: 0.95 });
 }
 
-module.exports = { generateCardImage };
+module.exports = {
+  generateCardImage
+};
