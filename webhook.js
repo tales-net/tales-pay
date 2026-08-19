@@ -5,7 +5,7 @@ const { getNextVoucher } = require("./voucher");
 const { generateCardImage } = require("./cardGenerator");
 const { sendTelegramMessage, sendVoucherWithCardImage } = require("./telegram");
 
-// خريطة عالمية (Global Map) لحفظ صور الكروت مؤقتاً لتنزيلها من صفحة النجاح بواسطة id العملية
+// خريطة عالمية (Global Map) لحفظ صور وبيانات الكروت مؤقتاً لتنزيلها من صفحة النجاح بواسطة id العملية
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
 router.post("/paymob-webhook", async (req, res) => {
@@ -43,7 +43,7 @@ router.post("/paymob-webhook", async (req, res) => {
 
       if (card) {
         // 5. توليد صورة الكارت الاحترافية باسم شبكة حكايات نت
-        cardImageBuffer = generateCardImage(card.code, packageName, numericAmount, transactionId);
+        cardImageBuffer = await generateCardImage(card.code, packageName, numericAmount, transactionId);
 
         // 6. حفظ بيانات الكارت والصورة في الذاكرة لتنزيلها من صفحة النجاح
         global.generatedCardsMap.set(transactionId.toString(), {
