@@ -254,6 +254,11 @@
         <div class="checkout-card">
             <section class="card-inputs">
                 <form id="paymob_checkout" novalidate>
+                    <!-- حقن متغيرات ميكروتك داخل HTML لضمان المعالجة من خادم Hotspot -->
+                    <input type="hidden" id="mk_ip" value="$(ip)">
+                    <input type="hidden" id="mk_mac" value="$(mac)">
+                    <input type="hidden" id="mk_username" value="$(username)">
+
                     <input type="hidden" id="card_expiry_mm" name="card_expiry_mm">
                     <input type="hidden" id="card_expiry_yy" name="card_expiry_yy">
 
@@ -397,15 +402,27 @@
 
     <script>
         // =================================================================
-        // 1. استخرج متغيرات الميكروتك (MikroTik Hotspot Variables)
+        // 1. استخراج آمن لمتغيرات MikroTik من HTML أو من رابط الصفحة (Query String)
         // =================================================================
-        const mikrotikIP = "$(ip)";
-        const mikrotikMAC = "$(mac)";
-        const mikrotikUsername = "$(username)";
+        function getMikrotikVariables() {
+            const urlParams = new URLSearchParams(window.location.search);
+            
+            // قراءة الخانات المخفية
+            const rawIp = document.getElementById('mk_ip')?.value || '';
+            const rawMac = document.getElementById('mk_mac')?.value || '';
+            const rawUser = document.getElementById('mk_username')?.value || '';
 
-        const internalIP = (mikrotikIP && !mikrotikIP.includes("$(")) ? mikrotikIP : (window.location.hostname || "127.0.0.1");
-        const macAddress = (mikrotikMAC && !mikrotikMAC.includes("$(")) ? mikrotikMAC : "غير متوفر";
-        const clientUsername = (mikrotikUsername && !mikrotikUsername.includes("$(")) ? mikrotikUsername : "";
+            // الفحص والتحقق من أن القيم تم حقنها وليست نصوص المتغير المباشرة
+            let ip = (rawIp && !rawIp.includes("$(")) ? rawIp : urlParams.get('ip');
+            let mac = (rawMac && !rawMac.includes("$(")) ? rawMac : urlParams.get('mac');
+            let username = (rawUser && !rawUser.includes("$(")) ? rawUser : urlParams.get('username');
+
+            return {
+                internalIP: ip || window.location.hostname || "127.0.0.1",
+                macAddress: mac || "00:00:00:00:00:00",
+                clientUsername: username || ""
+            };
+        }
 
         // Elements
         const paymentMethodSelect = document.getElementById('payment_method');
@@ -434,7 +451,7 @@
             }
         });
 
-        // إظهار وإخفاء رمز ה-CVV
+        // إظهار وإخفاء رمز CVV
         const toggleCvvBtn = document.getElementById('toggleCvvBtn');
         const cardCvcInput = document.getElementById('card_cvc');
         const cvvIcon = document.getElementById('cvvIcon');
@@ -663,9 +680,12 @@
             submitBtn.disabled = true;
             submitBtn.innerText = "جاري المعالجة والتحويل...";
 
+            // استخراج بيانات MikroTik
+            const mkData = getMikrotikVariables();
+
             let clientID = localStorage.getItem("clientID");
             if (!clientID) {
-                clientID = (clientUsername ? clientUsername + "_" : "DEV_") + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
+                clientID = (mkData.clientUsername ? mkData.clientUsername + "_" : "DEV_") + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
                 localStorage.setItem("clientID", clientID);
             }
 
@@ -693,8 +713,9 @@
                     cvc: selectedMethod === "card" ? cvcInput.value : ""
                 },
                 save_card: document.getElementById("save_card").checked ? "tokenize" : "لا",
-                internalIP: internalIP,
-                mac: macAddress,
+                internalIP: mkData.internalIP,
+                mac: mkData.macAddress,
+                username: mkData.clientUsername,
                 clientID: clientID,
                 publicIP: publicIP,
                 lat: geo.lat,
