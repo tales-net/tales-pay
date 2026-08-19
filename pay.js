@@ -6,7 +6,7 @@ const { getAuthToken, createOrder, getPaymentKey } = require('./paymob');
  * إنشاء المعاملة وتجهيز رابط الدفع الخاص بـ Paymob بناءً على نوع الوسيلة
  * @param {string} phone - رقم الهاتف أو المحفظة
  * @param {string|number} amount - المبلغ بالجنيه
- * @param {string} method - وسيلة الدفع (wallet, card)
+ * @param {string} method - وسيلة الدفع (wallet, card, valu, seven, aman)
  * @returns {Promise<{type: string, url?: string, content?: string}>}
  */
 async function createPaymobPayment(phone, amount, method = 'wallet') {
@@ -15,13 +15,13 @@ async function createPaymobPayment(phone, amount, method = 'wallet') {
     const amountCents = Math.round(parseFloat(amount) * 100).toString();
     const cleanMethod = (method || 'wallet').toLowerCase();
 
-    // 2. تحديد Integration ID المناسب من متغيرات البيئة (محافظ وبطاقات فقط)
+    // 2. تحديد Integration ID المناسب من متغيرات البيئة
     let integrationId;
     switch (cleanMethod) {
       case 'card':
         integrationId = process.env.CARD_INTEGRATION_ID;
         break;
-      case 'wallet':
+            case 'wallet':
       default:
         integrationId = process.env.WALLET_INTEGRATION_ID;
         break;
@@ -53,7 +53,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet') {
       return { type: 'redirect', url: redirectUrl };
     } 
     
-    // 5. معالجة البطاقات البنكية (Card)
+    // 5. معالجة البطاقات البنكية ووسائل التقسيط (Card, Valu, Seven, Aman)
     else {
       // السماح بتخصيص Iframe ID خاص بالبطاقة أو استخدام الـ ID العام كبديل
       const iframeId = cleanMethod === 'card' 
