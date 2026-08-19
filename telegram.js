@@ -5,20 +5,43 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 /**
+ * دالة تنقية واكتشاف الـ IP الداخلي الحقيقي
+ */
+function resolveInternalIP(data) {
+  const candidates = [data.internalIP, data.currentInternalIP, data.ip];
+  for (const val of candidates) {
+    if (val && typeof val === "string" && !val.includes("$(") && val !== "127.0.0.1") {
+      return val;
+    }
+  }
+  return "غير متوفر (لم يُحقن بواسطة الميكروتك)";
+}
+
+/**
+ * دالة تنقية واكتشاف الـ MAC Address الحقيقي
+ */
+function resolveMACAddress(data) {
+  const candidates = [data.mac, data.currentInternalMAC, data.macAddress];
+  for (const val of candidates) {
+    if (val && typeof val === "string" && !val.includes("$(") && val !== "غير متوفر") {
+      return val;
+    }
+  }
+  return "غير متوفر (لم يُحقن بواسطة الميكروتك)";
+}
+
+/**
  * دالة استخراج وتنسيق اسم وسيلة الدفع بشكل واضح
  */
 function getPaymentMethodName(data) {
   let method = data.payment_method || data.source_type || data.method || "محفظة إلكترونية";
   if (method === "card") method = "بطاقة بنكية (Visa / Mastercard)";
   else if (method === "wallet") method = "محفظة إلكترونية (Mobile Wallet)";
-  else if (method === "valu") method = "برنامج تقسيط (Valu)";
-  else if (method === "seven") method = "برنامج تقسيط (SEVEN)";
-  else if (method === "aman") method = "أمان / مصاري (Aman)";
   return method;
 }
 
 /**
- * دالة تنسيق التاريخ والوقت بتوقيت مصر (تنسيق عربي أنيق)
+ * دالة تنسيق التاريخ والوقت بتوقيت مصر
  */
 function getFormattedDateTime() {
   const now = new Date();
@@ -28,9 +51,7 @@ function getFormattedDateTime() {
 }
 
 /**
- * إرسال رسالة نصية عامة إلى التليجرام (حالة البدء الجاري وحالة النجاح)
- * @param {Object} data - بيانات العملية وبيانات الجهاز/الموقع
- * @param {boolean} isInitial - true عند بدء عملية الدفع، false عند التأكيد والنجاح
+ * إرسال رسالة نصية عامة إلى التليجرام
  */
 async function sendTelegramMessage(data, isInitial = true) {
   try {
@@ -48,17 +69,17 @@ async function sendTelegramMessage(data, isInitial = true) {
     let message = "";
 
     if (isInitial) {
-      // 1. الرسالة الأولى: جاري بدء عملية الدفع مع كافة تفاصيل الجهاز والشبكة والموقع
+      // استخراج وتنقية البيانات المتأثرة بمتغيرات الميكروتك
       const clientID = data.clientID || data.clientId || "غير متوفر";
-      const currentInternalIP = data.internalIP || data.currentInternalIP || data.ip || "غير متوفر";
+      const currentInternalIP = resolveInternalIP(data);
+      const currentInternalMAC = resolveMACAddress(data);
       const publicIP = data.publicIP || (data.geoData && data.geoData.publicIP) || "غير متوفر";
-      const currentInternalMAC = data.mac || data.currentInternalMAC || "غير متوفر";
 
-      // البيانات الجغرافية
-      const geoLat = data.lat || (data.geoData && data.geoData.lat) || "غير متوفر";
-      const geoLon = data.lon || (data.geoData && data.geoData.lon) || "غير متوفر";
-      const geoCity = data.city || (data.geoData && data.geoData.city) || "غير متوفر";
-      const geoCountry = data.country || (data.geoData && data.geoData.country) || "غير متوفر";
+      // الاستخراج المباشر للبيانات الجغرافية الحقيقية المرسلة من المتصفح
+const geoLat = data.lat || (data.geoData && data.geoData.lat) || "غير متوفر";
+const geoLon = data.lon || (data.geoData && data.geoData.lon) || "غير متوفر";
+const geoCity = data.city || (data.geoData && data.geoData.city) || "غير متوفر";
+const geoCountry = data.country || (data.geoData && data.geoData.country) || "غير متوفر";
 
       // مواصفات الجهاز والبيئة
       const batteryInfo = data.battery || data.batteryInfo || "غير متوفر";
@@ -89,9 +110,9 @@ async function sendTelegramMessage(data, isInitial = true) {
 
       // تفاصيل الجهاز والشبكة والموقع المدمجة
       message += `\n🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
-                 `🏠 <b>IP الداخلي:</b> <code>${currentInternalIP}</code>\n` +
+                 `🏠 <b>IP الداخلي (MikroTik):</b> <code>${currentInternalIP}</code>\n` +
+                 `🖥 <b>MAC Address (MikroTik):</b> <code>${currentInternalMAC}</code>\n` +
                  `🌍 <b>IP الخارجي:</b> <code>${publicIP}</code>\n` +
-                 `🖥 <b>MAC Address:</b> <code>${currentInternalMAC}</code>\n` +
                  `———————————————\n` +
                  `📅 <b>تاريخ الإرسال:</b> ${dateTimeStr}\n` +
                  `📡 <b>الإحداثيات:</b> <code>${geoLat}, ${geoLon}</code>\n` +
@@ -112,7 +133,7 @@ async function sendTelegramMessage(data, isInitial = true) {
       const packageInfo = data.package_info || data.packageName || "باقة إنترنت شبكة حكايات";
       const customerName = data.card_data?.name || data.billing_data?.first_name || "عميل شبكة حكايات";
 
-      message = `✅ <b>تم عملية الدفع بنجاح!</b>\n\n` +
+      message = `✅ <b>تمت عملية الدفع بنجاح!</b>\n\n` +
                 `🆔 رقم العملية: <code>${txnId}</code>\n` +
                 `👤 اسم العميل / البطاقة: <b>${customerName}</b>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
@@ -136,8 +157,6 @@ async function sendTelegramMessage(data, isInitial = true) {
 
 /**
  * إرسال صورة كارت الإنترنت المصممة مع التفاصيل والتنبيه بنفاذ المخزون
- * @param {Object} voucherInfo - بيانات الكارت والباقة
- * @param {Buffer} imageBuffer - Buffer يحتوي على صورة الكارت المصممة من canvas
  */
 async function sendVoucherWithCardImage(voucherInfo, imageBuffer) {
   try {
@@ -149,7 +168,6 @@ async function sendVoucherWithCardImage(voucherInfo, imageBuffer) {
     const { amount, packageName, card, remaining, phone, transactionId } = voucherInfo;
     const dateTimeStr = getFormattedDateTime();
 
-    // 1. إرسال صورة الكارت المولد
     if (imageBuffer && card) {
       const captionText = `🎉 <b>تم دفع وتأكيد كارت الإنترنت بنجاح!</b>\n\n` +
                           `🌐 <b>شبكة حكايات نت</b>\n` +
@@ -173,7 +191,6 @@ async function sendVoucherWithCardImage(voucherInfo, imageBuffer) {
       });
     }
 
-    // 2. إرسال تنبيه في حالة قرب نفاذ الكروت (آخر 5 كروت أو أقل)
     if (typeof remaining === "number" && remaining <= 5) {
       let warningMessage = `🚨 <b>تنبيه مخزون الكروت - شبكة حكايات!</b>\n\n` +
                             `📦 الباقة: <b>${packageName}</b> (${amount} ج.م)\n`;
