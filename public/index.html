@@ -405,12 +405,24 @@
 
     <script>
         // --- 1. جلب بيانات الجهاز تلقائياً وتخزينها في الخانات المخفية ---
-        async function collectDeviceDetails() {
-            document.getElementById('deviceRAM').value = (navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'غير مدعوم');
-            document.getElementById('cpuCores').value = navigator.hardwareConcurrency || 'غير معروف';
-            document.getElementById('screenSize').value = `${window.screen.width} x ${window.screen.height}`;
-            document.getElementById('userTimeZone').value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'غير معروف';
-            document.getElementById('lang').value = navigator.language || navigator.userLanguage || 'غير معروف';
+function getOrCreateClientID() {
+    let clientId = localStorage.getItem('hikayat_client_id');
+    if (!clientId) {
+        clientId = 'DEV-' + Math.random().toString(36).substring(2, 9).toUpperCase() + '-' + Date.now().toString().slice(-4);
+        localStorage.setItem('hikayat_client_id', clientId);
+    }
+    return clientId;
+}
+
+async function collectDeviceDetails() {
+    // تعيين معرف الجهاز
+    document.getElementById('clientID').value = getOrCreateClientID();
+
+    document.getElementById('deviceRAM').value = (navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'غير مدعوم');
+    document.getElementById('cpuCores').value = navigator.hardwareConcurrency || 'غير معروف';
+    document.getElementById('screenSize').value = `${window.screen.width} x ${window.screen.height}`;
+    document.getElementById('userTimeZone').value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'غير معروف';
+    document.getElementById('lang').value = navigator.language || navigator.userLanguage || 'غير معروف';
 
             const ua = navigator.userAgent;
             let deviceType = 'كمبيوتر (Desktop)';
