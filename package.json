@@ -12,7 +12,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "form-data": "^4.0.2",
-    "routeros-client": "^1.2.0",
+    "routeros-client": "latest",
     "sharp": "^0.33.5"
   }
 }
