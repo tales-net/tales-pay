@@ -10,7 +10,7 @@ global.generatedCardsMap = global.generatedCardsMap || new Map();
 
 router.post("/paymob-webhook", async (req, res) => {
   try {
-    // 1. استخراج البيانات من Paymob
+    // 1. استخراج البيانات من حمولة Paymob
     const data = req.body;
     const obj = data.obj || data;
 
@@ -26,53 +26,85 @@ router.post("/paymob-webhook", async (req, res) => {
     const numericAmount = parseFloat((amountCents / 100).toFixed(2));
     const phone = obj.billing_data?.phone_number || obj.customer?.phone_number || "غير محدد";
 
-    if (isSuccess) {
-      // 3. تحديد الباقات وسعرها المناسب بناءً على المبلغ المدفوع
-      const packageResult = getProfileByAmount(numericAmount);
+    // -------------------------------------------------------------
+    // ❌ حالة 1: فشل عملية الدفع (محفظة معطلة / رصيد غير كافٍ / إلغاء)
+    // -------------------------------------------------------------
+    if (!isSuccess) {
+      console.log(`❌ [Webhook] عملية دفع فاشلة برقم: #${transactionId}`);
 
-      // حالة أ: إذا كان المبلغ أقل من أصغر باقة (أقل من 5 جنيه)
-      if (packageResult.status === "REJECTED") {
-        obj.voucher_code = "❌ لم يتم إصدار كارت";
-        obj.package_info = packageResult.message;
-        obj.phone = phone;
+      // إعداد كائن البيانات لرسالة تليجرام موضحة الفشل
+      obj.phone = phone;
+      obj.voucher_code = "❌ عملية فاشلة (لم يتم إصدار كارت)";
+      obj.package_info = `فشل دفع مبلغ ${numericAmount} ج.م`;
 
+      // إرسال إشعار الفشل النصي فقط إلى تليجرام
+      if (typeof sendTelegramMessage === "function") {
         await sendTelegramMessage(obj, false);
-        console.warn(`⚠️ [Webhook] مبلغ غير كافٍ: ${numericAmount} ج.م | ${transactionId}`);
-        return res.status(200).send("OK");
       }
 
-      // حالة ب: المبلغ صالِح ويطابق باقة
-      const { packageName, packagePrice } = packageResult;
+      return res.status(200).send("Payment failure acknowledged");
+    }
 
-      // 4. سحب كارت متاح من المخزون بحدود سعر الباقات المستحقة (packagePrice)
-      const { card, remaining } = getNextVoucher(packagePrice);
+    // -------------------------------------------------------------
+    // ✅ حالة 2: نجاح عملية الدفع الفعلية (isSuccess === true)
+    // -------------------------------------------------------------
+    console.log(`✅ [Webhook] بدء معالجة عملية ناجحة: #${transactionId} | المبلغ: ${numericAmount} ج.م`);
 
-      let cardImageBuffer = null;
+    // 3. تحديد الباقة المستحقة بناءً على المبلغ
+    const packageResult = getProfileByAmount(numericAmount);
 
-      if (card) {
-        // 5. توليد صورة الكارت باسم الباقة والمبلغ
-        cardImageBuffer = generateCardImage(card.code, packageName, packagePrice, transactionId);
-
-        // 6. حفظ البيانات في الذاكرة لتنزيلها من صفحة النجاح
-        global.generatedCardsMap.set(transactionId.toString(), {
-          buffer: cardImageBuffer,
-          code: card.code,
-          packageName: packageName,
-          amount: packagePrice,
-          paidAmount: numericAmount,
-          phone: phone
-        });
-      }
-
-      // 7. إرفاق البيانات وتفاصيل الشراء لرسالة Telegram
-      obj.voucher_code = card ? card.code : "⚠️ لا توجد كروت متاحة بالمخزون";
-      obj.package_info = `باقة ${packageName} (${packagePrice} ج.م)`;
+    // حالة أ: إذا كان المبلغ المدفوع أقل من أصغر باقة متاحة
+    if (packageResult.status === "REJECTED") {
+      obj.voucher_code = "❌ لم يتم إصدار كارت (مبلغ غير كافٍ)";
+      obj.package_info = packageResult.message;
       obj.phone = phone;
 
-      // أ. إرسال إشعار الدفع النصي
-      await sendTelegramMessage(obj, false);
+      if (typeof sendTelegramMessage === "function") {
+        await sendTelegramMessage(obj, false);
+      }
+      console.warn(`⚠️ [Webhook] مبلغ غير كافٍ للباقة: ${numericAmount} ج.م | #${transactionId}`);
+      return res.status(200).send("Insufficient amount acknowledged");
+    }
 
-      // ب. إرسال الكارت والصورة عبر Telegram
+    // حالة ب: المبلغ مطابق لباقة صالحة
+    const { packageName, packagePrice } = packageResult;
+
+    // 4. سحب أول كارت غير مستخدم من المخزون وحذفه/تعليمه فوراً
+    const { card, remaining } = getNextVoucher(packagePrice);
+
+    let cardImageBuffer = null;
+
+    if (card && card.code) {
+      // 5. توليد صورة الكارت مع استخدام await لضمان اكتمال معالجة الصورة بـ Sharp
+      try {
+        cardImageBuffer = await generateCardImage(card.code, packageName, packagePrice, transactionId);
+      } catch (imgErr) {
+        console.error("❌ [Webhook] خطأ أثناء إنشاء صورة الكارت:", imgErr.message);
+      }
+
+      // 6. حفظ بيانات الكارت المكتملة في الذاكرة لتتيح التحميل من صفحة /success
+      global.generatedCardsMap.set(transactionId.toString(), {
+        buffer: cardImageBuffer,
+        code: card.code,
+        packageName: packageName,
+        amount: packagePrice,
+        paidAmount: numericAmount,
+        phone: phone
+      });
+    }
+
+    // 7. تجهيز وإرسال تفاصيل العملية إلى Telegram
+    obj.voucher_code = card ? card.code : "⚠️ لا توجد كروت متاحة بالمخزون!";
+    obj.package_info = `باقة ${packageName} (${packagePrice} ج.م)`;
+    obj.phone = phone;
+
+    // أ. إرسال الإشعار النصي العام
+    if (typeof sendTelegramMessage === "function") {
+      await sendTelegramMessage(obj, false);
+    }
+
+    // ب. إرسال الكارت والصورة التفصيلية للتليجرام
+    if (typeof sendVoucherWithCardImage === "function") {
       await sendVoucherWithCardImage(
         {
           amount: numericAmount,
@@ -85,17 +117,11 @@ router.post("/paymob-webhook", async (req, res) => {
         },
         cardImageBuffer
       );
-
-      console.log(`✅ [Webhook] عملية ناجحة: ${transactionId} | المبلغ المدفوع: ${numericAmount}ج | الباقة: ${packageName} | المتبقي: ${remaining}`);
-
-    } else {
-      // 8. في حالة فشل عملية الدفع
-      obj.phone = phone;
-      await sendTelegramMessage(obj, false);
-      console.log(`❌ [Webhook] عملية دفع فاشلة: ${transactionId}`);
     }
 
-    // 9. تأكيد الاستلام لـ Paymob
+    console.log(`🎉 [Webhook] تم الشراء بنجاح: #${transactionId} | الباقة: ${packageName} | المتبقي: ${remaining}`);
+
+    // 8. تأكيد استلام الإشعار لسيرفرات Paymob
     return res.status(200).send("OK");
 
   } catch (err) {
