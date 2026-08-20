@@ -3,44 +3,36 @@ const path = require('path');
 
 const VOUCHERS_FILE = path.join(__dirname, 'vouchers_data.json');
 
-// قاعدة بيانات الكروت المبدئية مفهرسة حسب المبلغ بالجنيه
+// قاعدة بيانات الكروت المبدئية
 const initialVouchers = {
   "5": [
-    { code: "1002345678", used: false, createdAt: new Date().toISOString() },
-    { code: "1002345679", used: false, createdAt: new Date().toISOString() },
-    { code: "1002345680", used: false, createdAt: new Date().toISOString() },
-    { code: "1002345681", used: false, createdAt: new Date().toISOString() },
-    { code: "1002345682", used: false, createdAt: new Date().toISOString() },
-    { code: "1002345683", used: false, createdAt: new Date().toISOString() }
+    { code: "1002345678", used: false },
+    { code: "1002345679", used: false },
+    { code: "1002345680", used: false },
+    { code: "1002345681", used: false },
+    { code: "1002345682", used: false }
   ],
   "15": [
-    { code: "1052345678", used: false, createdAt: new Date().toISOString() },
-    { code: "1052345679", used: false, createdAt: new Date().toISOString() },
-    { code: "1052345680", used: false, createdAt: new Date().toISOString() },
-    { code: "2002345678", used: false, createdAt: new Date().toISOString() }
+    { code: "1052345678", used: false },
+    { code: "1052345679", used: false },
+    { code: "1052345680", used: false }
   ],
   "30": [
-    { code: "1092345678", used: false, createdAt: new Date().toISOString() },
-    { code: "1092345679", used: false, createdAt: new Date().toISOString() },
-    { code: "1092345680", used: false, createdAt: new Date().toISOString() },
-    { code: "3002345678", used: false, createdAt: new Date().toISOString() }
+    { code: "1092345678", used: false },
+    { code: "1092345679", used: false }
   ],
   "50": [
-    { code: "1012345678", used: false, createdAt: new Date().toISOString() },
-    { code: "1012345679", used: false, createdAt: new Date().toISOString() },
-    { code: "1012345680", used: false, createdAt: new Date().toISOString() },
-    { code: "5002345678", used: false, createdAt: new Date().toISOString() }
+    { code: "1012345678", used: false },
+    { code: "1012345679", used: false }
   ],
   "100": [
-    { code: "1022345678", used: false, createdAt: new Date().toISOString() },
-    { code: "1022345679", used: false, createdAt: new Date().toISOString() },
-    { code: "1022345680", used: false, createdAt: new Date().toISOString() },
-    { code: "1002345678", used: false, createdAt: new Date().toISOString() }
+    { code: "1022345678", used: false },
+    { code: "1022345679", used: false }
   ]
 };
 
 /**
- * تحميل الكروت من ملف JSON أو إنشائه إن لم يكن موجوداً
+ * تحميل البيانات من ملف JSON
  */
 function loadVouchers() {
   if (!fs.existsSync(VOUCHERS_FILE)) {
@@ -51,101 +43,86 @@ function loadVouchers() {
     const data = fs.readFileSync(VOUCHERS_FILE, 'utf8');
     return JSON.parse(data);
   } catch (err) {
-    console.error('❌ خطأ في قراءة ملف الكروت، تم استرجاع البيانات المبدئية:', err.message);
+    console.error('❌ خطأ في قراءة ملف الكروت:', err.message);
     return initialVouchers;
   }
 }
 
 /**
- * حفظ التحديثات على ملف الكروت
+ * حفظ البيانات في ملف JSON
  */
 function saveVouchers(data) {
   try {
     fs.writeFileSync(VOUCHERS_FILE, JSON.stringify(data, null, 2), 'utf8');
   } catch (err) {
-    console.error('❌ خطأ في حفظ ملف الكروت:', err.message);
+    console.error('❌ خطأ في حفظ الكروت:', err.message);
   }
 }
 
 /**
- * دالة سحب الكارت التالي المتاح حسب المبلغ المدفوع
- * @param {number|string} amount - المبلغ بالجنيه (مثال: 5، 15، 30 أو من amount_cents / 100)
- * @param {string} [transactionId] - رقم العملية المرجعي لتسجيله مع الكارت
- * @returns {{card: Object|null, remaining: number, packageName: string}}
+ * دالة سحب كارت جديد وحذف/تعليم الكارت المباع
  */
 function getNextVoucher(amount, transactionId = null) {
   if (!amount) {
-    console.warn('⚠️ لم يتم تحديد المبلغ لسحب الكارت!');
-    return { card: null, remaining: 0, packageName: 'غير محدد' };
+    return { card: null, remaining: 0 };
   }
 
-  // تحويل المبلغ إلى عدد صحيح كـ Key في الملف (مثال: 5.00 يتحول إلى "5")
-  const numericAmount = Math.round(Number(amount));
-  const key = String(numericAmount);
-  
   const vouchersData = loadVouchers();
-  const pool = vouchersData[key] || [];
+  
+  // تحويل المبلغ لكود نصي صحيح (مثلاً: 5 أو 15 أو 30)
+  const key = String(Math.round(Number(amount)));
+  
+  if (!vouchersData[key]) {
+    vouchersData[key] = [];
+  }
 
-  // البحث عن أول كارت غير مستخدم
-  const availableIndex = pool.findIndex(v => !v.used);
+  const pool = vouchersData[key];
+
+  // البحث عن أول كارت غير مستخدم حقيقةً
+  const availableIndex = pool.findIndex(v => v.used === false || v.used === "false");
 
   if (availableIndex === -1) {
-    console.warn(`🚨 تنبيه: لا توجد كروت متاحة لفئة ${key} جنيه!`);
-    return { 
-      card: null, 
-      remaining: 0, 
-      packageName: `باقة ${key} جنيه` 
-    };
+    console.warn(`🚨 تنبيه: لا توجد كروت غير مستخدمة متاحة لفئة ${key} جنيه!`);
+    return { card: null, remaining: 0 };
   }
 
-  // تحديث حالة الكارت إلى مستخدم وتسجيل بيانات العملية
+  // 1. استخراج الكارت المختار
   const selectedCard = pool[availableIndex];
+
+  // 2. تحديث بيانات الكارت المباع
   selectedCard.used = true;
   selectedCard.usedAt = new Date().toISOString();
   if (transactionId) {
     selectedCard.transactionId = transactionId;
   }
 
+  // 3. حفظ التحديثات فوراً في الملف
   saveVouchers(vouchersData);
 
-  // حساب عدد الكروت المتبقية من نفس الفئة
-  const remainingCount = pool.filter(v => !v.used).length;
+  // 4. حساب الكروت المتبقية غير المستخدمة فقط
+  const remainingUnused = pool.filter(v => !v.used).length;
 
   return {
     card: selectedCard,
-    remaining: remainingCount,
-    packageName: `باقة ${key} جنيه`
+    remaining: remainingUnused
   };
 }
 
 /**
- * دالة إضافة كروت جديدة لفئة معينة بسهولة
- * @param {string|number} amount - الفئة (مثل 5، 15)
- * @param {Array<string>} newCodes - قائمة الأرقام الجديدة
+ * (اختياري) دالة لحذف الكروت المستهلكة نهائياً من الملف لتصغير حجمه
  */
-function addVouchers(amount, newCodes = []) {
+function purgeUsedVouchers() {
   const vouchersData = loadVouchers();
-  const key = String(Math.round(Number(amount)));
-
-  if (!vouchersData[key]) {
-    vouchersData[key] = [];
+  for (const key in vouchersData) {
+    vouchersData[key] = vouchersData[key].filter(v => !v.used);
   }
-
-  const addedItems = newCodes.map(code => ({
-    code: String(code).trim(),
-    used: false,
-    createdAt: new Date().toISOString()
-  }));
-
-  vouchersData[key].push(...addedItems);
   saveVouchers(vouchersData);
-
-  return vouchersData[key].length;
+  console.log("🧹 تم تنظيف وحذف الكروت المستخدمة بنجاح.");
 }
 
 module.exports = { 
   getNextVoucher, 
   loadVouchers, 
-  saveVouchers, 
-  addVouchers 
+  saveVouchers,
+  purgeUsedVouchers 
 };
