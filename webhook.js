@@ -25,7 +25,13 @@ router.post("/paymob-webhook", async (req, res) => {
     const amountCents = obj.amount_cents || obj.order?.amount_cents || 0;
     const amountEgp = (amountCents / 100).toFixed(2);
     const numericAmount = parseFloat(amountEgp);
-    const phone = obj.billing_data?.phone_number || obj.customer?.phone_number || "غير محدد";
+
+    // استخراج رقم الهاتف بجميع الاحتمالات الممكنة لضمان وصوله
+    const phone = obj.phone || 
+                  obj.billing_data?.phone_number || 
+                  obj.customer?.phone_number || 
+                  obj.order?.shipping_data?.phone_number || 
+                  "غير محدد";
 
     if (isSuccess) {
       // 3. تحديد اسم البروفايل/الباقة من ملف profiles.js
@@ -36,8 +42,10 @@ router.post("/paymob-webhook", async (req, res) => {
         packageName = profiles[numericAmount] || profiles[amountEgp] || profiles[parseInt(numericAmount)] || "باقة إنترنت شبكة حكايات";
       }
 
-      // 4. سحب كارت متاح وغير مستخدم مع ربط رقم المعاملة
-      const { card, remaining } = getNextVoucher(numericAmount, transactionId);
+      // 4. سحب كارت متاح مع ربط المعاملة
+      // ملاحظة: المعاملة الثالثة false تعني تعليم الكارت كـ used: true مع الاحتفاظ به للسجلات.
+      // إذا أردت حذفه نهائياً من ملف JSON، غيرها إلى true.
+      const { card, remaining } = getNextVoucher(numericAmount, transactionId, false);
 
       let cardImageBuffer = null;
 
@@ -55,7 +63,7 @@ router.post("/paymob-webhook", async (req, res) => {
         });
       }
 
-      // 7. إرفاق بيانات الكارت والباقة بأمر الدفع لرسالة التأكيد النصية
+      // 7. إرفاق بيانات الكارت والباقة والهاتف بأمر الدفع لرسالة التأكيد النصية
       obj.voucher_code = card ? card.code : "⚠️ لا توجد كروت متاحة بالمخزون";
       obj.package_info = packageName;
       obj.phone = phone;
@@ -76,7 +84,7 @@ router.post("/paymob-webhook", async (req, res) => {
         cardImageBuffer
       );
 
-      console.log(`✅ [Webhook] عملية ناجحة: ${transactionId} | الكارت: ${card ? card.code : 'نفدت الكروت'} | المتبقي: ${remaining}`);
+      console.log(`✅ [Webhook] عملية ناجحة: ${transactionId} | الهاتف: ${phone} | الكارت: ${card ? card.code : 'نفدت الكروت'} | المتبقي: ${remaining}`);
 
     } else {
       // 8. في حالة فشل عملية الدفع
