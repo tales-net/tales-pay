@@ -61,12 +61,16 @@ function saveVouchers(data) {
 
 /**
  * دالة سحب كارت جديد وحذف/تعليم الكارت المباع
+ * @param {number|string} amount - الفئة المدفوعة
+ * @param {string} transactionId - رقم العملية المرجعي من Paymob
+ * @param {boolean} autoDelete - ضع true إذا أردت حذف الكارت فوراً من الملف بمجرد بيعه بدلاً من تعليمه كـ used
  */
-function getNextVoucher(amount, transactionId = null) {
+function getNextVoucher(amount, transactionId = null, autoDelete = false) {
   if (!amount) {
     return { card: null, remaining: 0 };
   }
 
+  // قراءة البيانات من الملف مباشرة لتفادي أي كاش قديم
   const vouchersData = loadVouchers();
   
   // تحويل المبلغ لكود نصي صحيح (مثلاً: 5 أو 15 أو 30)
@@ -89,18 +93,25 @@ function getNextVoucher(amount, transactionId = null) {
   // 1. استخراج الكارت المختار
   const selectedCard = pool[availableIndex];
 
-  // 2. تحديث بيانات الكارت المباع
-  selectedCard.used = true;
-  selectedCard.usedAt = new Date().toISOString();
-  if (transactionId) {
-    selectedCard.transactionId = transactionId;
+  if (autoDelete) {
+    // خيار 1: حذف الكارت من المصفوفة كلياً بمجرد سحبه
+    pool.splice(availableIndex, 1);
+  } else {
+    // خيار 2: تعليم الكارت كـ مستخدم وتوثيق عملية الدفع
+    selectedCard.used = true;
+    selectedCard.usedAt = new Date().toISOString();
+    if (transactionId) {
+      selectedCard.transactionId = transactionId;
+    }
   }
 
-  // 3. حفظ التحديثات فوراً في الملف
+  // 2. حفظ التحديثات فوراً وبشكل متزامن في الملف
   saveVouchers(vouchersData);
 
-  // 4. حساب الكروت المتبقية غير المستخدمة فقط
-  const remainingUnused = pool.filter(v => !v.used).length;
+  // 3. حساب الكروت المتبقية غير المستخدمة فقط
+  const remainingUnused = pool.filter(v => v.used === false || v.used === "false").length;
+
+  console.log(`🎟️ [Voucher] تم سحب الكارت (${selectedCard.code}) | المتبقي لفئة ${key} ج.م: ${remainingUnused}`);
 
   return {
     card: selectedCard,
@@ -109,12 +120,12 @@ function getNextVoucher(amount, transactionId = null) {
 }
 
 /**
- * (اختياري) دالة لحذف الكروت المستهلكة نهائياً من الملف لتصغير حجمه
+ * دالة لحذف الكروت المستهلكة نهائياً من الملف لتصغير حجمه
  */
 function purgeUsedVouchers() {
   const vouchersData = loadVouchers();
   for (const key in vouchersData) {
-    vouchersData[key] = vouchersData[key].filter(v => !v.used);
+    vouchersData[key] = vouchersData[key].filter(v => v.used === false || v.used === "false");
   }
   saveVouchers(vouchersData);
   console.log("🧹 تم تنظيف وحذف الكروت المستخدمة بنجاح.");
