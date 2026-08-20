@@ -29,15 +29,15 @@ router.post("/paymob-webhook", async (req, res) => {
 
     if (isSuccess) {
       // 3. تحديد اسم البروفايل/الباقة من ملف profiles.js
-      let packageName = "باقة إنترنت";
+      let packageName = "باقة إنترنت شبكة حكايات";
       if (typeof profiles === "function") {
         packageName = profiles(numericAmount);
       } else if (typeof profiles === "object" && profiles !== null) {
         packageName = profiles[numericAmount] || profiles[amountEgp] || profiles[parseInt(numericAmount)] || "باقة إنترنت شبكة حكايات";
       }
 
-      // 4. سحب كارت متاح وغير مستخدم من خزان الكروت
-      const { card, remaining } = getNextVoucher(numericAmount);
+      // 4. سحب كارت متاح وغير مستخدم مع ربط رقم المعاملة
+      const { card, remaining } = getNextVoucher(numericAmount, transactionId);
 
       let cardImageBuffer = null;
 
@@ -85,7 +85,7 @@ router.post("/paymob-webhook", async (req, res) => {
       console.log(`❌ [Webhook] عملية دفع فاشلة: ${transactionId}`);
     }
 
-    // 9. إرجاع استجابة 200 فورية لـ Paymob حتى لا يعيد إرسال الـ Webhook
+    // 9. إرجاع استجابة 200 فورية لـ Paymob
     return res.status(200).send("OK");
 
   } catch (err) {
