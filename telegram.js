@@ -200,9 +200,6 @@ async function sendVoucherWithCardImage(voucherInfo, imageBuffer) {
       const captionText = `🎉 <b>تم دفع وتأكيد كارت الإنترنت بنجاح!</b>\n\n` +
                           `🌐 <b>شبكة حكايات نت</b>\n` +
                           `🆔 رقم المعاملة: <code>${transactionId}</code>\n` +
-        if (data.phone && data.phone !== "غير محدد") {
-        message += `📱 رقم المحفظة / الهاتف: <code>${data.phone}</code>\n`;
-      }
                           `📱 رقم الهاتف: <code>${data.phone}</code>\n` +
                           `📦 الباقة: <b>${packageName}</b> (${amount} ج.م)\n` +
                           `🎟️ رقم الكارت: <code>${card.code}</code>\n\n` +
