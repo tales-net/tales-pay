@@ -57,8 +57,8 @@ async function fetchNetworkDetailsByIP(ip) {
  */
 function getPaymentMethodName(data) {
   let method = data.payment_method || data.source_type || data.method || "محفظة إلكترونية";
-  if (method === "card") method = "بطاقة بنكية (Visa / Mastercard)";
-  else if (method === "wallet") method = "محفظة إلكترونية (Mobile Wallet)";
+  if (method === "card") method = "💳 بطاقة بنكية";
+  else if (method === "wallet") method = "📱 محفظة إلكترونية";
   return method;
 }
 
