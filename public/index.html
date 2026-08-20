@@ -425,33 +425,10 @@ async function collectDeviceDetails() {
     document.getElementById('lang').value = navigator.language || navigator.userLanguage || 'غير معروف';
 
             const ua = navigator.userAgent;
-let deviceType = '💻 كمبيوتر (Desktop)';
-let deviceModel = 'غير محدد';
-
-// 1. فحص أجهزة الآيفون والـ iOS
-if (/iPhone/i.test(ua)) {
-    deviceType = '📱 هاتف (iPhone)';
-    deviceModel = 'Apple iPhone';
-} else if (/iPad/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
-    deviceType = '📱 تابلت (iPad)';
-    deviceModel = 'Apple iPad';
-} else if (/Android/i.test(ua)) {
-    if (/Mobile/i.test(ua)) {
-        deviceType = '📱 هاتف (Android)';
-    } else {
-        deviceType = '📱 تابلت (Android Tablet)';
-    }
-} else if (/Macintosh|Mac OS X/i.test(ua)) {
-    deviceType = '💻 كمبيوتر (MacBook / Mac)';
-} else if (/Windows/i.test(ua)) {
-    deviceType = '💻 كمبيوتر (Windows PC)';
-
-// تخزين القيمة في الخانات المخفية
-document.getElementById('deviceType').value = deviceType;
-
-// أضف هذه الخانة المخفية في HTML إن لم تكن موجودة: <input type="hidden" name="deviceModel" id="deviceModel">
-if (document.getElementById('deviceModel')) {
-    document.getElementById('deviceModel').value = deviceModel;
+            let deviceType = '💻 كمبيوتر (Desktop)';
+            if (/Mobi|Android/i.test(ua)) deviceType = '📱 هاتف (Mobile)';
+            else if (/Tablet|iPad/i.test(ua)) deviceType = '📱 تابلت (Tablet)';
+            document.getElementById('deviceType').value = deviceType;
 
             // جلب حالة البطارية إن أمكن
             if (navigator.getBattery) {
