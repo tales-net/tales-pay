@@ -3,137 +3,123 @@ const path = require('path');
 
 const VOUCHERS_FILE = path.join(__dirname, 'vouchers_data.json');
 
-// قاعدة بيانات الكروت المبدئية
-const initialVouchers = {
-  "5": [
-    { code: "1002345678", used: false },
-    { code: "1002345679", used: false },
-    { code: "1002345680", used: false },
-    { code: "1002345681", used: false },
-    { code: "1002345682", used: false }
-  ],
-  "15": [
-    { code: "1052345678", used: false },
-    { code: "1052345679", used: false },
-    { code: "1052345680", used: false }
-  ],
-  "30": [
-    { code: "1092345678", used: false },
-    { code: "1092345679", used: false }
-  ],
-  "50": [
-    { code: "1012345678", used: false },
-    { code: "1012345679", used: false }
-  ],
-  "100": [
-    { code: "1022345678", used: false },
-    { code: "1022345679", used: false }
-  ]
-};
+// قفل لمنع التداخل والـ Race Conditions في نفس الوقت
+let isProcessing = false;
 
 /**
  * تحميل البيانات من ملف JSON
  */
-function loadVouchers() {
+function loadVouchersData() {
   if (!fs.existsSync(VOUCHERS_FILE)) {
-    saveVouchers(initialVouchers);
-    return initialVouchers;
+    const emptyStructure = { available: {}, used_archive: [] };
+    saveVouchersData(emptyStructure);
+    return emptyStructure;
   }
   try {
-    const data = fs.readFileSync(VOUCHERS_FILE, 'utf8');
-    return JSON.parse(data);
+    const rawData = fs.readFileSync(VOUCHERS_FILE, 'utf8');
+    const parsed = JSON.parse(rawData);
+
+    // توافق مع أسلوب الهيكلية السابقة أو الجديدة
+    if (!parsed.available) {
+      return { available: parsed, used_archive: [] };
+    }
+    return parsed;
   } catch (err) {
-    console.error('❌ خطأ في قراءة ملف الكروت:', err.message);
-    return initialVouchers;
+    console.error('❌ [Voucher] خطأ في قراءة ملف الكروت:', err.message);
+    return { available: {}, used_archive: [] };
   }
 }
 
 /**
  * حفظ البيانات في ملف JSON
  */
-function saveVouchers(data) {
+function saveVouchersData(data) {
   try {
     fs.writeFileSync(VOUCHERS_FILE, JSON.stringify(data, null, 2), 'utf8');
   } catch (err) {
-    console.error('❌ خطأ في حفظ الكروت:', err.message);
+    console.error('❌ [Voucher] خطأ في حفظ ملف الكروت:', err.message);
   }
 }
 
 /**
- * دالة سحب كارت جديد وحذف/تعليم الكارت المباع
+ * دالة سحب الكارت وحذفه فوراً مع التنبيه التدريجي لنفاذ المخزون
  * @param {number|string} amount - الفئة المدفوعة
- * @param {string} transactionId - رقم العملية المرجعي من Paymob
- * @param {boolean} autoDelete - ضع true إذا أردت حذف الكارت فوراً من الملف بمجرد بيعه بدلاً من تعليمه كـ used
+ * @param {string} transactionId - رقم المعاملة
  */
-function getNextVoucher(amount, transactionId = null, autoDelete = false) {
+function getNextVoucher(amount, transactionId = null) {
   if (!amount) {
     return { card: null, remaining: 0 };
   }
 
-  // قراءة البيانات من الملف مباشرة لتفادي أي كاش قديم
-  const vouchersData = loadVouchers();
-  
-  // تحويل المبلغ لكود نصي صحيح (مثلاً: 5 أو 15 أو 30)
-  const key = String(Math.round(Number(amount)));
-  
-  if (!vouchersData[key]) {
-    vouchersData[key] = [];
-  }
+  // انتظر في حالة وجود طلب آخر في نفس الملي ثانية
+  while (isProcessing) {}
+  isProcessing = true;
 
-  const pool = vouchersData[key];
+  try {
+    const vouchersData = loadVouchersData();
+    const key = String(Math.round(Number(amount)));
 
-  // البحث عن أول كارت غير مستخدم حقيقةً
-  const availableIndex = pool.findIndex(v => v.used === false || v.used === "false");
+    if (!vouchersData.available[key]) {
+      vouchersData.available[key] = [];
+    }
 
-  if (availableIndex === -1) {
-    console.warn(`🚨 تنبيه: لا توجد كروت غير مستخدمة متاحة لفئة ${key} جنيه!`);
-    return { card: null, remaining: 0 };
-  }
+    const pool = vouchersData.available[key];
 
-  // 1. استخراج الكارت المختار
-  const selectedCard = pool[availableIndex];
+    // 1. التحقق في حالة النفاذ الكلي للمخزون
+    if (pool.length === 0) {
+      console.error(`🚨 [🚨 تنبيه حرج] نفدت الكروت تماماً لفئة ${key} جنيه! يجب إعادة الشحن فوراً.`);
+      isProcessing = false;
+      return { card: null, remaining: 0 };
+    }
 
-  if (autoDelete) {
-    // خيار 1: حذف الكارت من المصفوفة كلياً بمجرد سحبه
-    pool.splice(availableIndex, 1);
-  } else {
-    // خيار 2: تعليم الكارت كـ مستخدم وتوثيق عملية الدفع
+    // 2. سحب الكارت الأول وحذفه فوراً من المتاح لتخفيف الملف والذاكرة
+    const [selectedCard] = pool.splice(0, 1);
+
+    // 3. تحديث بيانات الكارت وترخيصه كـ مستخدم
     selectedCard.used = true;
     selectedCard.usedAt = new Date().toISOString();
+    selectedCard.amount = key;
     if (transactionId) {
-      selectedCard.transactionId = transactionId;
+      selectedCard.transactionId = String(transactionId);
     }
+
+    // 4. أرشفة الكارت المباع في قسم الأرشيف لتوثيق المبيعات
+    if (!vouchersData.used_archive) {
+      vouchersData.used_archive = [];
+    }
+    vouchersData.used_archive.push(selectedCard);
+
+    // 5. حفظ التعديل على القرص الصلب فوراً
+    saveVouchersData(vouchersData);
+
+    const remainingCount = pool.length;
+
+    // 6. === التنبيه التدريجي عند انخفاض ونفاذ الكروت ===
+    if (remainingCount === 0) {
+      console.error(`🔴 [تنبيه تحذيري] تم سحب آخر كارت! المتبقي حالياً: 0 كارت لفئة ${key} جنيه!`);
+    } else if (remainingCount <= 5) {
+      console.warn(`⚠️ [تنبيه انخفاض المخزون] انتبه! المتبقي فقط (${remainingCount}) كروت لفئة ${key} جنيه!`);
+    } else {
+      console.log(`🎟️ [Voucher] تم سحب الكارت بنجاح (${selectedCard.code}) | المتبقي لفئة ${key}ج: ${remainingCount}`);
+    }
+
+    isProcessing = false;
+
+    // إرجاع الكارت مع عدد الكروت المتبقية ليتم إرسال التنبيه عبر تلجرام في telegram.js
+    return {
+      card: selectedCard,
+      remaining: remainingCount
+    };
+
+  } catch (err) {
+    isProcessing = false;
+    console.error('❌ [Voucher Error] خطأ أثناء عملية سحب الكارت:', err.message);
+    return { card: null, remaining: 0 };
   }
-
-  // 2. حفظ التحديثات فوراً وبشكل متزامن في الملف
-  saveVouchers(vouchersData);
-
-  // 3. حساب الكروت المتبقية غير المستخدمة فقط
-  const remainingUnused = pool.filter(v => v.used === false || v.used === "false").length;
-
-  console.log(`🎟️ [Voucher] تم سحب الكارت (${selectedCard.code}) | المتبقي لفئة ${key} ج.م: ${remainingUnused}`);
-
-  return {
-    card: selectedCard,
-    remaining: remainingUnused
-  };
 }
 
-/**
- * دالة لحذف الكروت المستهلكة نهائياً من الملف لتصغير حجمه
- */
-function purgeUsedVouchers() {
-  const vouchersData = loadVouchers();
-  for (const key in vouchersData) {
-    vouchersData[key] = vouchersData[key].filter(v => v.used === false || v.used === "false");
-  }
-  saveVouchers(vouchersData);
-  console.log("🧹 تم تنظيف وحذف الكروت المستخدمة بنجاح.");
-}
-
-module.exports = { 
-  getNextVoucher, 
-  loadVouchers, 
-  saveVouchers,
-  purgeUsedVouchers 
+module.exports = {
+  getNextVoucher,
+  loadVouchersData,
+  saveVouchersData
 };
