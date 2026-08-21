@@ -1,0 +1,230 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f4f7f6;
+    margin: 0;
+    padding: 0;
+    direction: rtl;
+}
+
+.payment-header {
+    text-align: center;
+    margin-top: 2rem;
+    margin-bottom: 1.5rem;
+}
+
+.payment-header h1 {
+    font-size: 24px;
+    font-weight: 600;
+    color: #01338D;
+}
+
+.checkout-card {
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+    padding: 25px;
+    max-width: 480px;
+    margin: 0 auto 30px auto;
+}
+
+.input-group-custom {
+    margin-bottom: 15px;
+    position: relative;
+}
+
+.input-group-custom label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: bold;
+    font-size: 14px;
+    color: #333;
+}
+
+.input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input-wrapper input, 
+.input-group-custom select {
+    width: 100%;
+    padding: 12px 15px;
+    border: 1px solid #ced4da;
+    border-radius: 6px;
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    text-align: left;
+    direction: ltr;
+    box-sizing: border-box;
+}
+
+.input-group-custom select {
+    text-align: right;
+    direction: rtl;
+    background: #fff;
+}
+
+.input-wrapper input:focus, 
+.input-group-custom select:focus {
+    border-color: #01338D;
+}
+
+.input-wrapper input.is-invalid {
+    border-color: #dc3545 !important;
+}
+
+.input-icon-right {
+    position: absolute;
+    right: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    pointer-events: none;
+    background: #fff;
+    padding-left: 5px;
+}
+
+.input-icon-right .meeza-badge {
+    background: #004a99;
+    color: white;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+}
+
+.input-icon-right .cash-icon {
+    color: #28a745;
+    font-size: 18px;
+}
+
+.toggle-password {
+    position: absolute;
+    left: 12px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #6c757d;
+    font-size: 16px;
+    outline: none;
+}
+
+.error-message {
+    color: #dc3545;
+    font-size: 12px;
+    margin-top: 4px;
+    display: none;
+    text-align: right;
+    direction: rtl;
+}
+
+.input-containers {
+    display: flex;
+    gap: 10px;
+}
+
+.input-containers .input-group-custom {
+    flex: 1;
+}
+
+#card_section {
+    display: none;
+}
+
+.card-footer-box {
+    text-align: center;
+    margin-top: 20px;
+}
+
+.saveCardText {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    font-size: 14px;
+    color: #555;
+    margin-bottom: 15px;
+}
+
+.submit-btn {
+    background-color: #01338D;
+    color: #ffffff;
+    border: none;
+    width: 100%;
+    padding: 14px;
+    font-size: 16px;
+    font-weight: bold;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.submit-btn:hover {
+    background-color: #002266;
+}
+
+.submit-btn:disabled {
+    background-color: #6c757d;
+    cursor: not-allowed;
+}
+
+.secured-tag {
+    display: block;
+    margin-top: 12px;
+    font-size: 12px;
+    color: #777;
+}
+
+footer {
+    padding: 25px 0 35px 0;
+    background: #ffffff;
+    border-top: 1px solid #e9ecef;
+    margin-top: 25px;
+}
+
+.bank-logos-container {
+    text-align: center;
+}
+
+.bank-logos-title {
+    font-size: 13px;
+    color: #6c757d;
+    margin-bottom: 16px;
+    font-weight: 600;
+}
+
+.bank-logos-grid {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.bank-logo-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 6px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+    transition: transform 0.2s, box-shadow 0.2s;
+    height: 48px;
+}
+
+.bank-logo-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+}
+
+.bank-logo-card img {
+    max-height: 32px;
+    max-width: 90px;
+    width: auto;
+    object-fit: contain;
+}
