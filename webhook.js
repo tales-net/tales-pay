@@ -42,10 +42,8 @@ router.post("/paymob-webhook", async (req, res) => {
         packageName = profiles[numericAmount] || profiles[amountEgp] || profiles[parseInt(numericAmount)] || "باقة إنترنت شبكة حكايات";
       }
 
-      // 4. سحب كارت متاح مع ربط المعاملة
-      // ملاحظة: المعاملة الثالثة false تعني تعليم الكارت كـ used: true مع الاحتفاظ به للسجلات.
-      // إذا أردت حذفه نهائياً من ملف JSON، غيرها إلى true.
-      const { card, remaining } = getNextVoucher(numericAmount, transactionId, false);
+      // 4. سحب كارت متاح مع ربط المعاملة (إضافة await لضمان الانتظار وقراءة البيانات)
+      const { card, remaining } = await getNextVoucher(numericAmount, transactionId);
 
       let cardImageBuffer = null;
 
