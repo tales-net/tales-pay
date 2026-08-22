@@ -1,4 +1,28 @@
-{
+function drawCard(cardsData, packageKey) {
+  // 1. التحقق من وجود الباقة وتوفر كروت بها
+  if (!cardsData.available[packageKey] || cardsData.available[packageKey].length === 0) {
+    throw new Error(`لا توجد كروت متاحة في الباقة ${packageKey}`);
+  }
+
+  // 2. سحب أول كرت من الباقة (يتم إزالته من المصفوفة المتاحة)
+  const drawnCard = cardsData.available[packageKey].shift(); // shift تُزيل أول عنصر وتعدل المصفوفة الأصلية
+
+  // 3. تحديث حالة الكرت إلى مستخدم
+  drawnCard.used = true;
+  drawnCard.usedAt = new Date().toISOString(); // اختيارى: إضافة تاريخ الاستخدام
+
+  // 4. إضافة الكرت إلى الأرشيف
+  cardsData.used_archive.push({
+    ...drawnCard,
+    package: packageKey
+  });
+
+  return drawnCard;
+}
+
+// --- مثال على الاستخدام والتأثير ---
+
+let cards = {
   "available": {
     "5": [
       { "code": "1002345678", "used": false },
@@ -26,4 +50,10 @@
     ]
   },
   "used_archive": []
-}
+};
+
+// سحب كرتين من الباقة 5
+drawCard(cards, "5");
+drawCard(cards, "5");
+
+console.log(JSON.stringify(cards, null, 2));
