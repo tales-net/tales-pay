@@ -1,59 +1,76 @@
-function drawCard(cardsData, packageKey) {
-  // 1. التحقق من وجود الباقة وتوفر كروت بها
-  if (!cardsData.available[packageKey] || cardsData.available[packageKey].length === 0) {
-    throw new Error(`لا توجد كروت متاحة في الباقة ${packageKey}`);
-  }
-
-  // 2. سحب أول كرت من الباقة (يتم إزالته من المصفوفة المتاحة)
-  const drawnCard = cardsData.available[packageKey].shift(); // shift تُزيل أول عنصر وتعدل المصفوفة الأصلية
-
-  // 3. تحديث حالة الكرت إلى مستخدم
-  drawnCard.used = true;
-  drawnCard.usedAt = new Date().toISOString(); // اختيارى: إضافة تاريخ الاستخدام
-
-  // 4. إضافة الكرت إلى الأرشيف
-  cardsData.used_archive.push({
-    ...drawnCard,
-    package: packageKey
-  });
-
-  return drawnCard;
-}
-
-// --- مثال على الاستخدام والتأثير ---
-
-let cards = {
+{
   "available": {
     "5": [
-      { "code": "1002345678", "used": false },
-      { "code": "1002345679", "used": false },
-      { "code": "1002345680", "used": false },
-      { "code": "1002345681", "used": false },
-      { "code": "1002345682", "used": false }
+      {
+        "code": "1002345680",
+        "used": false
+      },
+      {
+        "code": "1002345681",
+        "used": false
+      },
+      {
+        "code": "1002345682",
+        "used": false
+      }
     ],
     "15": [
-      { "code": "1052345678", "used": false },
-      { "code": "1052345679", "used": false },
-      { "code": "1052345680", "used": false }
+      {
+        "code": "1052345678",
+        "used": false
+      },
+      {
+        "code": "1052345679",
+        "used": false
+      },
+      {
+        "code": "1052345680",
+        "used": false
+      }
     ],
     "30": [
-      { "code": "1092345678", "used": false },
-      { "code": "1092345679", "used": false }
+      {
+        "code": "1092345678",
+        "used": false
+      },
+      {
+        "code": "1092345679",
+        "used": false
+      }
     ],
     "50": [
-      { "code": "1012345678", "used": false },
-      { "code": "1012345679", "used": false }
+      {
+        "code": "1012345678",
+        "used": false
+      },
+      {
+        "code": "1012345679",
+        "used": false
+      }
     ],
     "100": [
-      { "code": "1022345678", "used": false },
-      { "code": "1022345679", "used": false }
+      {
+        "code": "1022345678",
+        "used": false
+      },
+      {
+        "code": "1022345679",
+        "used": false
+      }
     ]
   },
-  "used_archive": []
-};
-
-// سحب كرتين من الباقة 5
-drawCard(cards, "5");
-drawCard(cards, "5");
-
-console.log(JSON.stringify(cards, null, 2));
+  "used_archive": [
+    {
+      "code": "1002345678",
+      "used": true,
+      "usedAt": "2026-08-22T03:25:00.000Z",
+      "amount": "5"
+    },
+    {
+      "code": "1002345679",
+      "used": true,
+      "usedAt": "2026-08-22T03:25:05.000Z",
+      "amount": "5"
+    }
+  ]
+}
