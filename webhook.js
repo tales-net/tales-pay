@@ -34,6 +34,9 @@ router.post("/paymob-webhook", async (req, res) => {
                   "غير محدد";
 
     if (isSuccess) {
+      // طباعة بيانات الدفع في السيرفر للتحقق والتتبع
+      console.log(`💳 [Webhook Debug] معاملة رقم: ${transactionId} | المبلغ بالقروش: ${amountCents} | المبلغ بالجنيه: ${numericAmount}ج`);
+
       // 3. تحديد اسم البروفايل/الباقة من ملف profiles.js
       let packageName = "باقة إنترنت شبكة حكايات";
       if (typeof profiles === "function") {
@@ -42,7 +45,7 @@ router.post("/paymob-webhook", async (req, res) => {
         packageName = profiles[numericAmount] || profiles[amountEgp] || profiles[parseInt(numericAmount)] || "باقة إنترنت شبكة حكايات";
       }
 
-      // 4. سحب كارت متاح مع ربط المعاملة (إضافة await لضمان الانتظار وقراءة البيانات)
+      // 4. سحب كارت متاح مع ربط المعاملة وقراءة النتيجة بشكل تزامني آمن
       const { card, remaining } = await getNextVoucher(numericAmount, transactionId);
 
       let cardImageBuffer = null;
@@ -59,6 +62,8 @@ router.post("/paymob-webhook", async (req, res) => {
           amount: numericAmount,
           phone: phone
         });
+      } else {
+        console.warn(`⚠️ [Webhook Warning] لم يتم العثور على كارت متاح للفئة: ${numericAmount}ج`);
       }
 
       // 7. إرفاق بيانات الكارت والباقة والهاتف بأمر الدفع لرسالة التأكيد النصية
@@ -82,13 +87,13 @@ router.post("/paymob-webhook", async (req, res) => {
         cardImageBuffer
       );
 
-      console.log(`✅ [Webhook] عملية ناجحة: ${transactionId} | الهاتف: ${phone} | الكارت: ${card ? card.code : 'نفدت الكروت'} | المتبقي: ${remaining}`);
+      console.log(`✅ [Webhook SUCCESS] عملية ناجحة: ${transactionId} | الهاتف: ${phone} | الكارت: ${card ? card.code : 'نفدت الكروت'} | المتبقي: ${remaining}`);
 
     } else {
       // 8. في حالة فشل عملية الدفع
       obj.phone = phone;
       await sendTelegramMessage(obj, false);
-      console.log(`❌ [Webhook] عملية دفع فاشلة: ${transactionId}`);
+      console.log(`❌ [Webhook FAILED] عملية دفع فاشلة: ${transactionId}`);
     }
 
     // 9. إرجاع استجابة 200 فورية لـ Paymob
