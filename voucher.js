@@ -1,3 +1,49 @@
+const fs = require('fs');
+const path = require('path');
+
+const VOUCHERS_FILE = path.join(__dirname, 'vouchers_data.json');
+
+// قفل آمن قائم على Promise لمنع التداخل والـ Race Conditions
+let lockQueue = Promise.resolve();
+
+/**
+ * تحميل البيانات من ملف JSON
+ */
+function loadVouchersData() {
+  if (!fs.existsSync(VOUCHERS_FILE)) {
+    const emptyStructure = { available: {}, used_archive: [] };
+    saveVouchersData(emptyStructure);
+    return emptyStructure;
+  }
+  try {
+    const rawData = fs.readFileSync(VOUCHERS_FILE, 'utf8');
+    const parsed = JSON.parse(rawData);
+
+    if (!parsed.available) {
+      return { available: parsed, used_archive: [] };
+    }
+    if (!parsed.used_archive) {
+      parsed.used_archive = [];
+    }
+    return parsed;
+  } catch (err) {
+    console.error('❌ [Voucher] خطأ في قراءة ملف الكروت:', err.message);
+    return { available: {}, used_archive: [] };
+  }
+}
+
+/**
+ * حفظ البيانات في ملف JSON بشكل متزامن وآمن
+ */
+function saveVouchersData(data) {
+  try {
+    fs.writeFileSync(VOUCHERS_FILE, JSON.stringify(data, null, 2), 'utf8');
+    console.log('✅ [Voucher] تم تحديث وحفظ ملف vouchers_data.json بنجاح');
+  } catch (err) {
+    console.error('❌ [Voucher] خطأ في حفظ ملف الكروت:', err.message);
+  }
+}
+
 /**
  * دالة سحب الكارت وحذفه فوراً مع الأرشفة والحفظ
  * @param {number|string} amount - الفئة المدفوعة (بالجنيه أو القروش)
@@ -14,8 +60,10 @@ async function getNextVoucher(amount, transactionId = null) {
         const vouchersData = loadVouchersData();
         
         let numVal = Number(amount);
-        // إذا كان الرقم كبيراً (مثلاً 500)، يتم تحويله من قروش إلى جنيهات (500 / 100 = 5)
-        if (numVal >= 500) {
+
+        // التحقق مما إذا كانت الفئة القادمة محددة كمفتاح مباشر في الملف (مثل فئة "500" إن وجدت)
+        // أو إذا كانت قادمة كـ "قروش" من Paymob ويجب تحويلها لجنيهات
+        if (numVal >= 500 && !vouchersData.available[String(Math.round(numVal))]) {
           numVal = numVal / 100;
         }
 
@@ -49,10 +97,19 @@ async function getNextVoucher(amount, transactionId = null) {
         }
         vouchersData.used_archive.push(selectedCard);
 
-        // حفظ الملف
+        // حفظ التعديلات على القرص الصلب فوراً
         saveVouchersData(vouchersData);
 
         const remainingCount = pool.length;
+
+        // التنبيهات
+        if (remainingCount === 0) {
+          console.error(`🔴 [تنبيه تحذيري] تم سحب آخر كارت! المتبقي حالياً: 0 كارت لفئة ${key} جنيه!`);
+        } else if (remainingCount <= 5) {
+          console.warn(`⚠️ [تنبيه انخفاض المخزون] انتبه! المتبقي فقط (${remainingCount}) كروت لفئة ${key} جنيه!`);
+        } else {
+          console.log(`🎟️ [Voucher] تم سحب الكارت بنجاح (${selectedCard.code}) | المتبقي لفئة ${key}ج: ${remainingCount}`);
+        }
 
         resolve({
           card: selectedCard,
@@ -66,3 +123,9 @@ async function getNextVoucher(amount, transactionId = null) {
     });
   });
 }
+
+module.exports = {
+  getNextVoucher,
+  loadVouchersData,
+  saveVouchersData
+};
