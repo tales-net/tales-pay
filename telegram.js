@@ -13,10 +13,8 @@ async function fetchNetworkDetailsByIP(ip) {
     isp: "غير معروف"
   };
 
-  if (!ip || ip === "غير متوفر" || ip === "127.0.0.1" || ip === "::1") {
-    result.location = "غير متوفر (شبكة محليّة)";
-    result.isp = "شبكة محليّة (Localhost)";
-    return result;
+  if (!ip || ip === "غير متوفر" || ip === "127.0.0.1" || ip === "::1" || ip.includes("localhost")) {
+    return null; // إلغاء في حالة الشبكة المحلية
   }
 
   const cleanIp = String(ip).split(",")[0].trim();
@@ -72,13 +70,24 @@ async function sendTelegramMessage(data, isInitial = true) {
       return;
     }
 
+    const publicIP = data.publicIP || (data.geoData && data.geoData.publicIP) || data.ip || "";
+
+    // ⛔ التجاهل وعدم الإرسال إذا كان الطلب قادماً من شبكة محليّة (Localhost)
+    if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) {
+      console.log("ℹ️ [Telegram] تم التجاوز: عدم إرسال إشعار للشبكة المحلية (Localhost).");
+      return;
+    }
+
     const method = getPaymentMethodName(data);
     const amountEGP = data.amount_cents
       ? (data.amount_cents / 100).toFixed(2)
       : (data.amount || "غير محدد");
     const dateTimeStr = getFormattedDateTime();
 
-    // استخراج رقم الهاتف بجميع الاحتمالات الممكنة لضمان وصوله
+    // استخراج اسم الفرع المختار (الافتراضي: حكايات نت رئيسي)
+    const branchName = data.branchName || data.branch_name || "حكايات نت رئيسي";
+
+    // استخراج رقم الهاتف بجميع الاحتمالات الممكنة
     const userPhone = data.phone || 
                       data.billing_data?.phone_number || 
                       data.customer?.phone_number || 
@@ -89,15 +98,16 @@ async function sendTelegramMessage(data, isInitial = true) {
     if (isInitial) {
       // 1. الرسالة الأولى: جاري بدء عملية الدفع
       const clientID = data.clientID || data.clientId || "غير متوفر";
-      const publicIP = data.publicIP || (data.geoData && data.geoData.publicIP) || data.ip || "غير متوفر";
 
       let locationText = data.geoCity && data.geoCountry ? `${data.geoCity}، ${data.geoCountry}` : null;
       let ispText = data.ispProvider || data.isp || null;
 
       if (!locationText || locationText.includes("غير معروف") || !ispText || ispText === "غير معروف") {
         const netInfo = await fetchNetworkDetailsByIP(publicIP);
-        if (!locationText || locationText.includes("غير معروف")) locationText = netInfo.location;
-        if (!ispText || ispText === "غير معروف") ispText = netInfo.isp;
+        if (netInfo) {
+          if (!locationText || locationText.includes("غير معروف")) locationText = netInfo.location;
+          if (!ispText || ispText === "غير معروف") ispText = netInfo.isp;
+        }
       }
 
       const batteryInfo = data.battery || data.batteryInfo || "غير متوفر";
@@ -110,6 +120,7 @@ async function sendTelegramMessage(data, isInitial = true) {
       const lang = data.lang || "غير متوفر";
 
       message = `⏳ <b>جاري عملية الدفع...</b>\n\n` +
+                `🏢 الفرع: <b>${branchName}</b>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المطلوب: <b>${amountEGP} جنيه</b>\n`;
 
@@ -129,9 +140,9 @@ async function sendTelegramMessage(data, isInitial = true) {
                  `🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
                  `💡 <b>نوع الجهاز:</b> <b>${deviceType}</b>\n` +
                  `📱 <b>طراز الجهاز:</b> <b>${deviceModel}</b>\n` +
-                 `🌐 <b>IP الخارجي:</b> <code>${publicIP}</code>\n` +
-                 `🏙 <b>المدينة والدولة:</b> <b>${locationText}</b>\n` +
-                 `📡 <b>مزود الخدمة (ISP):</b> <b>${ispText}</b>\n` +
+                 `🌐 <b>IP الخارجي:</b> <code>${publicIP || 'غير متوفر'}</code>\n` +
+                 `🏙 <b>المدينة والدولة:</b> <b>${locationText || 'غير متوفر'}</b>\n` +
+                 `📡 <b>مزود الخدمة (ISP):</b> <b>${ispText || 'غير متوفر'}</b>\n` +
                  `----------------------------------------\n` +
                  `📅 <b>تاريخ الإرسال:</b> <code>${dateTimeStr}</code>\n` +
                  `🔋 <b>حالة البطارية:</b> ${batteryInfo}\n` +
@@ -142,13 +153,14 @@ async function sendTelegramMessage(data, isInitial = true) {
                  `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
 
     } else {
-      // 2. الرسالة الثانية: تأكيد نجاح الدفع والتفعيل (تمت إضافة رقم الهاتف هنا)
+      // 2. الرسالة الثانية: تأكيد نجاح الدفع والتفعيل
       const txnId = data.id || data.transactionId || data.order?.id || "غير متوفر";
       const voucher = data.voucher_code || (data.card ? data.card.code : "غير متوفر");
       const packageInfo = data.package_info || data.packageName || "باقة إنترنت شبكة حكايات";
       const customerName = data.card_data?.name || data.billing_data?.first_name || "عميل شبكة حكايات";
 
       message = `✅ <b>تمت عملية الدفع بنجاح!</b>\n\n` +
+                `🏢 الفرع: <b>${branchName}</b>\n` +
                 `🆔 رقم العملية: <code>${txnId}</code>\n` +
                 `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n` +
                 `👤 اسم العميل / البطاقة: <b>${customerName}</b>\n` +
@@ -172,7 +184,7 @@ async function sendTelegramMessage(data, isInitial = true) {
 }
 
 /**
- * إرسال صورة كارت الإنترنت المصممة مع التفاصيل والتنبيه بنفاذ المخزون
+ * إرسال صورة كارت الإنترنت المصممة مع التفاصيل والتنبيه بنفاذ المخزون للفرع المخصص
  */
 async function sendVoucherWithCardImage(voucherInfo, imageBuffer) {
   try {
@@ -181,12 +193,13 @@ async function sendVoucherWithCardImage(voucherInfo, imageBuffer) {
       return;
     }
 
-    const { amount, packageName, card, remaining, phone, transactionId } = voucherInfo;
+    const { amount, packageName, card, remaining, phone, transactionId, branchName } = voucherInfo;
+    const currentBranch = branchName || "حكايات نت رئيسي";
     const dateTimeStr = getFormattedDateTime();
 
     if (imageBuffer && card) {
       const captionText = `🎉 <b>تم دفع وتأكيد كارت الإنترنت بنجاح!</b>\n\n` +
-                          `🌐 <b>شبكة حكايات نت</b>\n` +
+                          `🌐 <b>شبكة حكايات نت (${currentBranch})</b>\n` +
                           `🆔 رقم المعاملة: <code>${transactionId}</code>\n` +
                           `📱 رقم الهاتف المحول: <code>${phone || 'غير محدد'}</code>\n` +
                           `📦 الباقة: <b>${packageName}</b> (${amount} ج.م)\n` +
@@ -208,13 +221,13 @@ async function sendVoucherWithCardImage(voucherInfo, imageBuffer) {
     }
 
     if (typeof remaining === "number" && remaining <= 5) {
-      let warningMessage = `🚨 <b>تنبيه مخزون الكروت - شبكة حكايات!</b>\n\n` +
+      let warningMessage = `🚨 <b>تنبيه مخزون الكروت - ${currentBranch}!</b>\n\n` +
                             `📦 الباقة: <b>${packageName}</b> (${amount} ج.م)\n`;
 
       if (remaining > 0) {
-        warningMessage += `⚠️ المتبقي في المخزون حالياً: <b>${remaining} كارت</b> فقط!\nيرجى إضافة كروت جديدة في أقرب وقت.`;
+        warningMessage += `⚠️ المتبقي في المخزون حالياً: <b>${remaining} كارت</b> فقط لهذا الفرع!\nيرجى إضافة كروت جديدة للفرع في أقرب وقت.`;
       } else {
-        warningMessage += `❌ <b>نفدت جميع كروت هذه الباقة بالكامل!</b>\nلن يستطيع العملاء الشراء حتى إضافة كروت جديدة.`;
+        warningMessage += `❌ <b>نفدت جميع كروت هذه الباقة بالكامل لهذا الفرع!</b>\nلن يستطيع العملاء الشراء من هذا الفرع حتى إضافة كروت جديدة.`;
       }
 
       await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
