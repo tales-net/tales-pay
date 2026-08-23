@@ -1,115 +1,37 @@
 {
-  "available": {
-    "5": [
-      {
-        "code": "1002345680",
-        "used": false
+  "branches": {
+    "main": {
+      "name": "حكايات نت رئيسي",
+      "available": {
+        "5": [{"code": "1002345680", "used": false}, {"code": "1002345681", "used": false}],
+        "15": [{"code": "1052345678", "used": false}, {"code": "1052345679", "used": false}],
+        "30": [{"code": "1092345678", "used": false}],
+        "50": [{"code": "1012345678", "used": false}],
+        "100": [{"code": "1022345678", "used": false}]
       },
-      {
-        "code": "1002345681",
-        "used": false
+      "used_archive": []
+    },
+    "branch2": {
+      "name": "حكايات نت فرع ثاني",
+      "available": {
+        "5": [{"code": "2002345680", "used": false}],
+        "15": [{"code": "2052345678", "used": false}],
+        "30": [{"code": "2092345678", "used": false}],
+        "50": [{"code": "2012345678", "used": false}],
+        "100": [{"code": "2022345678", "used": false}]
       },
-      {
-        "code": "1002345682",
-        "used": false
+      "used_archive": []
+    },
+    "branch3": {
+      "name": "حكايات نت فرع ثالث",
+      "available": {
+        "5": [{"code": "3002345680", "used": false}],
+        "15": [{"code": "3052345678", "used": false}],
+        "30": [{"code": "3092345678", "used": false}],
+        "50": [{"code": "3012345678", "used": false}],
+        "100": [{"code": "3022345678", "used": false}]
       },
-      {
-        "code": "1002345683",
-        "used": false
-      },
-      {
-        "code": "1002345684",
-        "used": false
-      }
-    ],
-    "15": [
-      {
-        "code": "1052345678",
-        "used": false
-      },
-      {
-        "code": "1052345679",
-        "used": false
-      },
-      {
-        "code": "1052345680",
-        "used": false
-      },
-      {
-        "code": "1052345681",
-        "used": false
-      },
-      {
-        "code": "1052345682",
-        "used": false
-      }
-    ],
-    "30": [
-      {
-        "code": "1092345678",
-        "used": false
-      },
-      {
-        "code": "1092345679",
-        "used": false
-      },
-      {
-        "code": "1092345680",
-        "used": false
-      },
-      {
-        "code": "1092345681",
-        "used": false
-      },
-      {
-        "code": "1092345682",
-        "used": false
-      }
-    ],
-    "50": [
-      {
-        "code": "1012345678",
-        "used": false
-      },
-      {
-        "code": "1012345679",
-        "used": false
-      },
-      {
-        "code": "1012345680",
-        "used": false
-      },
-      {
-        "code": "1012345681",
-        "used": false
-      },
-      {
-        "code": "1012345682",
-        "used": false
-      }
-    ],
-    "100": [
-      {
-        "code": "1022345678",
-        "used": false
-      },
-      {
-        "code": "1022345679",
-        "used": false
-      },
-      {
-        "code": "1022345680",
-        "used": false
-      },
-      {
-        "code": "1022345681",
-        "used": false
-      },
-      {
-        "code": "1022345682",
-        "used": false
-      }
-    ]
-  },
-  "used_archive": []
+      "used_archive": []
+    }
+  }
 }
