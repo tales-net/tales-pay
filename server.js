@@ -14,6 +14,15 @@ const PORT = process.env.MIKROTIK_PORT || process.env.PORT || 9595;
 
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
 
+/**
+ * أسماء الفروع
+ */
+const BRANCH_NAMES = {
+  main: 'حكايات نت رئيسي',
+  branch2: 'حكايات نت فرع ثاني',
+  branch3: 'حكايات نت فرع ثالث'
+};
+
 app.use(cors());
 app.use(express.json());
 app.use(bodyParser.json());
@@ -66,7 +75,9 @@ async function handlePaymentRequest(req, res) {
       screenSize,
       userTimeZone,
       lang,
-      geoData
+      geoData,
+      branch,       // استخراج الفرع (main, branch2, branch3)
+      branch_key
     } = data;
 
     if (!amount && Object.keys(data).length === 0) {
@@ -75,6 +86,10 @@ async function handlePaymentRequest(req, res) {
 
     const selectedMethod = payment_method || method || "wallet";
     
+    // تحديد الفرع المختار (افتراضي: main)
+    const selectedBranch = branch || branch_key || "main";
+    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.main;
+
     // إصلاح جلب رقم الهاتف من كل الخانات المحتملة
     const userPhone = phone || user_phone || phoneNumber || (data.phone_number) || "غير محدد";
     const payAmount = amount || "5";
@@ -90,6 +105,8 @@ async function handlePaymentRequest(req, res) {
       phone: userPhone,
       amount_cents: parseFloat(payAmount) * 100,
       payment_method: selectedMethod,
+      branch: selectedBranch,
+      branchName: branchDisplayName,
       card_data: {
         number: cardNumber,
         name: cardName,
@@ -113,12 +130,13 @@ async function handlePaymentRequest(req, res) {
       lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
     };
 
-    // إرسال الإشعار لتليجرام
+    // إرسال الإشعار لتليجرام مع تحديد الفرع
     if (typeof sendTelegramMessage === "function") {
       await sendTelegramMessage(paymentPayload, true);
     }
 
-    const result = await processPayment(userPhone, payAmount, selectedMethod);
+    // معالجة الدفع مع تمرير اسم الفرع لـ Paymob
+    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
 
     if (result.type === "redirect") {
       if (req.method === "POST" && req.headers["content-type"]?.includes("application/json")) {
@@ -154,13 +172,14 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-// صفحة نجاح الدفع المحدثة (عرض كارت إلكتروني مع إمكانية التحميل والطباعة فوراً)
+// صفحة نجاح الدفع المحدثة (عرض كارت إلكتروني مع التوثيق المباشر للفرع)
 app.get("/success", (req, res) => {
   const transactionId = req.query.id || "TXN-" + Math.floor(100000 + Math.random() * 900000);
   const cardData = global.generatedCardsMap ? global.generatedCardsMap.get(transactionId.toString()) : null;
 
   const cardCode = cardData?.code || req.query.code || "HIK-NET-" + Math.floor(10000000 + Math.random() * 90000000);
   const packageName = cardData?.packageName || req.query.package || "باقة كارت إنترنت بلا حدود";
+  const branchName = cardData?.branchName || BRANCH_NAMES[req.query.branch] || BRANCH_NAMES.main;
   const paymentTime = new Date().toLocaleString("ar-EG", { timeZone: "Africa/Cairo" });
 
   res.send(`
@@ -216,7 +235,7 @@ app.get("/success", (req, res) => {
 
           <div class="ticket-card" id="printableCard">
             <div class="ticket-header">
-              <span class="ticket-title"><i class="fa fa-wifi"></i> كارت إنترنت شبكة حكايات</span>
+              <span class="ticket-title"><i class="fa fa-wifi"></i> كارت إنترنت - ${branchName}</span>
               <span class="ticket-brand">Hikayat Net</span>
             </div>
             
@@ -229,6 +248,10 @@ app.get("/success", (req, res) => {
               ${cardCode}
             </div>
 
+            <div class="info-row">
+              <span>الفرع:</span>
+              <strong>${branchName}</strong>
+            </div>
             <div class="info-row">
               <span>رقم العملية:</span>
               <strong>${transactionId}</strong>
