@@ -37,9 +37,11 @@ router.post("/paymob-webhook", async (req, res) => {
       // طباعة بيانات الدفع في السيرفر للتحقق والتتبع
       console.log(`💳 [Webhook Debug] معاملة رقم: ${transactionId} | المبلغ بالقروش: ${amountCents} | المبلغ بالجنيه: ${numericAmount}ج`);
 
-      // 3. تحديد اسم البروفايل/الباقة من ملف profiles.js
+      // 3. تحديد اسم البروفايل/الباقة من ملف profiles.js بشكل آمن ودقيق
       let packageName = "باقة إنترنت شبكة حكايات";
-      if (typeof profiles === "function") {
+      if (typeof profiles.getPackageName === "function") {
+        packageName = profiles.getPackageName(numericAmount);
+      } else if (typeof profiles === "function") {
         packageName = profiles(numericAmount);
       } else if (typeof profiles === "object" && profiles !== null) {
         packageName = profiles[numericAmount] || profiles[amountEgp] || profiles[parseInt(numericAmount)] || "باقة إنترنت شبكة حكايات";
