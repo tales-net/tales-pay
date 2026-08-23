@@ -8,6 +8,15 @@ const { sendTelegramMessage, sendVoucherWithCardImage } = require("./telegram");
 // خريطة عالمية (Global Map) لحفظ صور وبيانات الكروت مؤقتاً لتنزيلها من صفحة النجاح بواسطة id العملية
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
+/**
+ * أسماء الفروع
+ */
+const BRANCH_NAMES = {
+  main: "حكايات نت رئيسي",
+  branch2: "حكايات نت فرع ثاني",
+  branch3: "حكايات نت فرع ثالث"
+};
+
 router.post("/paymob-webhook", async (req, res) => {
   try {
     // 1. استخراج البيانات من Paymob سواء كانت مباشرة أو داخل obj
@@ -26,6 +35,16 @@ router.post("/paymob-webhook", async (req, res) => {
     const amountEgp = (amountCents / 100).toFixed(2);
     const numericAmount = parseFloat(amountEgp);
 
+    // استخراج الفرع المختار بأي طريقة متاحة في بيانات Paymob
+    const branchKey = 
+      obj.extra_data?.branch || 
+      obj.order?.extra_data?.branch || 
+      obj.merchant_extra?.branch || 
+      obj.branch || 
+      "main";
+
+    const branchDisplayName = BRANCH_NAMES[branchKey] || BRANCH_NAMES.main;
+
     // استخراج رقم الهاتف بجميع الاحتمالات الممكنة لضمان وصوله
     const phone = obj.phone || 
                   obj.billing_data?.phone_number || 
@@ -35,7 +54,7 @@ router.post("/paymob-webhook", async (req, res) => {
 
     if (isSuccess) {
       // طباعة بيانات الدفع في السيرفر للتحقق والتتبع
-      console.log(`💳 [Webhook Debug] معاملة رقم: ${transactionId} | المبلغ بالقروش: ${amountCents} | المبلغ بالجنيه: ${numericAmount}ج`);
+      console.log(`💳 [Webhook Debug] معاملة رقم: ${transactionId} | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ بالقروش: ${amountCents} | المبلغ بالجنيه: ${numericAmount}ج`);
 
       // 3. تحديد اسم البروفايل/الباقة من ملف profiles.js بشكل آمن ودقيق
       let packageName = "باقة إنترنت شبكة حكايات";
@@ -47,36 +66,40 @@ router.post("/paymob-webhook", async (req, res) => {
         packageName = profiles[numericAmount] || profiles[amountEgp] || profiles[parseInt(numericAmount)] || "باقة إنترنت شبكة حكايات";
       }
 
-      // 4. سحب كارت متاح مع ربط المعاملة وقراءة النتيجة بشكل تزامني آمن
-      const { card, remaining } = await getNextVoucher(numericAmount, transactionId);
+      // 4. سحب كارت متاح من الفرع المحدد مع ربط المعاملة وقراءة النتيجة بشكل تزامني آمن
+      const { card, remaining } = await getNextVoucher(numericAmount, transactionId, branchKey);
 
       let cardImageBuffer = null;
 
       if (card) {
-        // 5. توليد صورة الكارت الاحترافية باسم شبكة حكايات نت
-        cardImageBuffer = await generateCardImage(card.code, packageName, numericAmount, transactionId);
+        // 5. توليد صورة الكارت الاحترافية باسم شبكة حكايات نت مع تبيين الفرع
+        cardImageBuffer = await generateCardImage(card.code, packageName, numericAmount, transactionId, branchDisplayName);
 
-        // 6. حفظ بيانات الكارت والصورة في الذاكرة لتنزيلها من صفحة النجاح
+        // 6. حفظ بيانات الكارت والصورة والفرع في الذاكرة لتنزيلها من صفحة النجاح
         global.generatedCardsMap.set(transactionId.toString(), {
           buffer: cardImageBuffer,
           code: card.code,
           packageName: packageName,
           amount: numericAmount,
-          phone: phone
+          phone: phone,
+          branchKey: branchKey,
+          branchName: branchDisplayName
         });
       } else {
-        console.warn(`⚠️ [Webhook Warning] لم يتم العثور على كارت متاح للفئة: ${numericAmount}ج`);
+        console.warn(`⚠️ [Webhook Warning] لم يتم العثور على كارت متاح للفئة: ${numericAmount}ج في الفرع: ${branchDisplayName}`);
       }
 
-      // 7. إرفاق بيانات الكارت والباقة والهاتف بأمر الدفع لرسالة التأكيد النصية
+      // 7. إرفاق بيانات الكارت والباقة والفرع والهاتف بأمر الدفع لرسالة التأكيد النصية
       obj.voucher_code = card ? card.code : "⚠️ لا توجد كروت متاحة بالمخزون";
       obj.package_info = packageName;
       obj.phone = phone;
+      obj.branch = branchKey;
+      obj.branchName = branchDisplayName;
 
       // أ. إرسال الرسالة النصية لتأكيد نجاح الدفع (isInitial = false)
       await sendTelegramMessage(obj, false);
 
-      // ب. إرسال صورة الكارت المصممة والتنبيه في حالة بقاء 5 كروت أو أقل
+      // ب. إرسال صورة الكارت المصممة والتنبيه في حالة بقاء 5 كروت أو أقل مع توضيح الفرع
       await sendVoucherWithCardImage(
         {
           amount: numericAmount,
@@ -84,18 +107,22 @@ router.post("/paymob-webhook", async (req, res) => {
           card: card,
           remaining: remaining,
           phone: phone,
-          transactionId: transactionId
+          transactionId: transactionId,
+          branch: branchKey,
+          branchName: branchDisplayName
         },
         cardImageBuffer
       );
 
-      console.log(`✅ [Webhook SUCCESS] عملية ناجحة: ${transactionId} | الهاتف: ${phone} | الكارت: ${card ? card.code : 'نفدت الكروت'} | المتبقي: ${remaining}`);
+      console.log(`✅ [Webhook SUCCESS] عملية ناجحة: ${transactionId} | الفرع: ${branchDisplayName} | الهاتف: ${phone} | الكارت: ${card ? card.code : 'نفدت الكروت'} | المتبقي: ${remaining}`);
 
     } else {
       // 8. في حالة فشل عملية الدفع
       obj.phone = phone;
+      obj.branch = branchKey;
+      obj.branchName = branchDisplayName;
       await sendTelegramMessage(obj, false);
-      console.log(`❌ [Webhook FAILED] عملية دفع فاشلة: ${transactionId}`);
+      console.log(`❌ [Webhook FAILED] عملية دفع فاشلة: ${transactionId} | الفرع: ${branchDisplayName}`);
     }
 
     // 9. إرجاع استجابة 200 فورية لـ Paymob
