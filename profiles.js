@@ -1,3 +1,6 @@
+/**
+ * قائمة الباقات والملفات الشخصية المتاحة لشبكة حكايات
+ */
 const profilesList = [
   { name: "ماسية", price: 100, profileName: "100EGP_Profile" },
   { name: "بلاتينيوم", price: 50, profileName: "50EGP_Profile" },
@@ -7,11 +10,21 @@ const profilesList = [
 ];
 
 /**
- * دالة لتحديد اسم الباقة بناءً على المبلغ المدفوع (لتوافق الـ Webhook وصورة الكارت)
- * @param {number|string} amount - المبلغ المدفوع بالجنيه
- * @returns {string} - اسم الباقة
+ * أسماء الفروع المعرفّة في النظام
  */
-function getPackageName(amount) {
+const BRANCH_NAMES = {
+  main: 'حكايات نت رئيسي',
+  branch2: 'حكايات نت فرع ثاني',
+  branch3: 'حكايات نت فرع ثالث'
+};
+
+/**
+ * دالة لتحديد اسم الباقة بناءً على المبلغ المدفوع والفرع
+ * @param {number|string} amount - المبلغ المدفوع بالجنيه
+ * @param {string} branchKey - كود الفرع (اختياري)
+ * @returns {string} - اسم الباقة مع توثيق الفرع إن وجد
+ */
+function getPackageName(amount, branchKey = null) {
   const numericAmount = Math.round(parseFloat(amount) || 0);
 
   // البحث عن باقة متطابقة بالسعر بالضبط
@@ -26,16 +39,21 @@ function getPackageName(amount) {
 }
 
 /**
- * دالة تفصيلية لتحديد بيانات الباقة بناءً على المبلغ المدفوع
+ * دالة تفصيلية لتحديد بيانات الباقة بناءً على المبلغ المدفوع والفرع
  * @param {number|string} paidAmount - المبلغ المدفوع بالجنيه
+ * @param {string} branchKey - مفتاح الفرع (main, branch2, branch3)
  */
-function getProfileByAmount(paidAmount) {
+function getProfileByAmount(paidAmount, branchKey = 'main') {
   const numericAmount = Math.round(parseFloat(paidAmount) || 0);
+  const selectedBranch = (branchKey && BRANCH_NAMES[branchKey]) ? branchKey : 'main';
+  const branchName = BRANCH_NAMES[selectedBranch];
 
   if (numericAmount < 5) {
     return {
       status: "REJECTED",
       paidAmount: numericAmount,
+      branch: selectedBranch,
+      branchName: branchName,
       message: `المبلغ المدفوع (${numericAmount} ج.م) أقل من الحد الأدنى للباقات المتاحة.`
     };
   }
@@ -53,12 +71,15 @@ function getProfileByAmount(paidAmount) {
     paidAmount: numericAmount,
     packageName: matched.name,
     packagePrice: matched.price,
-    profileName: matched.profileName
+    profileName: matched.profileName,
+    branch: selectedBranch,
+    branchName: branchName
   };
 }
 
-// تصدير الملف كـ Function رئيسية ودعم الاستدعاءات الفرعية
+// تصدير الملف وتوفير مرونة الاستدعاء للمشروع
 module.exports = getPackageName;
 module.exports.profiles = profilesList;
 module.exports.getProfileByAmount = getProfileByAmount;
 module.exports.getPackageName = getPackageName;
+module.exports.BRANCH_NAMES = BRANCH_NAMES;
