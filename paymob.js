@@ -16,18 +16,31 @@ async function getAuthToken() {
 }
 
 /**
- * 2. إنشاء طلب دفع (Order Registration)
+ * 2. إنشاء طلب دفع (Order Registration) مع ربط بيانات الفرع
+ * @param {string} authToken - توكن المصادقة
+ * @param {number|string} amountCents - المبلغ بالقروش
+ * @param {object} branchData - بيانات الفرع { branch, branch_name }
  */
-async function createOrder(authToken, amountCents) {
+async function createOrder(authToken, amountCents, branchData = {}) {
   try {
-    const response = await axios.post("https://accept.paymob.com/api/ecommerce/orders", {
+    const branchKey = branchData.branch || 'main';
+    const branchName = branchData.branch_name || 'حكايات نت رئيسي';
+
+    const payload = {
       auth_token: authToken,
       delivery_needed: "false",
       amount_cents: Math.round(Number(amountCents)),
       currency: "EGP",
-      merchant_order_id: `TALES-${Date.now()}`,
-      items: []
-    });
+      merchant_order_id: `TALES-${branchKey.toUpperCase()}-${Date.now()}`,
+      items: [],
+      // حفظ بيانات الفرع داخل merchant_extra لتعود في الـ Webhook
+      merchant_extra: {
+        branch: branchKey,
+        branch_name: branchName
+      }
+    };
+
+    const response = await axios.post("https://accept.paymob.com/api/ecommerce/orders", payload);
     return response.data.id;
   } catch (err) {
     console.error("❌ Paymob Create Order Error Details:", JSON.stringify(err.response?.data || err.message, null, 2));
@@ -36,15 +49,24 @@ async function createOrder(authToken, amountCents) {
 }
 
 /**
- * 3. توليد مفتاح الدفع (Payment Key Request)
+ * 3. توليد مفتاح الدفع (Payment Key Request) مع تضمين الفرع
+ * @param {string} authToken - توكن المصادقة
+ * @param {number|string} orderId - رقم الطلب من Paymob
+ * @param {number|string} amountCents - المبلغ بالقروش
+ * @param {number|string} integrationId - معرّف الربط
+ * @param {string} phone - رقم الهاتف/المحفظة
+ * @param {object} branchData - بيانات الفرع { branch, branchName }
  */
-async function getPaymentKey(authToken, orderId, amountCents, integrationId, phone = "01000000000") {
+async function getPaymentKey(authToken, orderId, amountCents, integrationId, phone = "01000000000", branchData = {}) {
   try {
     // تنظيف رقم الهاتف وإسناد قيمة افتراضية في حال وجود نقص
     let sanitizedPhone = String(phone).replace(/\D/g, "");
     if (!sanitizedPhone || sanitizedPhone.length < 11) {
       sanitizedPhone = "01000000000";
     }
+
+    const branchKey = branchData.branch || 'main';
+    const branchName = branchData.branchName || 'حكايات نت رئيسي';
 
     const payload = {
       auth_token: authToken,
@@ -56,10 +78,10 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
         email: "customer@tales-net.com",
         floor: "NA",
         first_name: "Tales",
-        street: "NA",
+        street: branchName, // تضمين مسمى الفرع ببيانات العنوان
         building: "NA",
         phone_number: sanitizedPhone,
-        shipping_method: "PKG",
+        shipping_method: branchKey, // تضمين كود الفرع هنا
         postal_code: "NA",
         city: "Cairo",
         country: "EG",
@@ -68,13 +90,16 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
       },
       currency: "EGP",
       integration_id: Number(integrationId), // تحويل لـ Number لمنع رفض Paymob
-      lock_order_when_paid: "true"
+      lock_order_when_paid: "true",
+      extra: {
+        branch: branchKey,
+        branch_name: branchName
+      }
     };
 
     const response = await axios.post("https://accept.paymob.com/api/acceptance/payment_keys", payload);
     return response.data.token;
   } catch (err) {
-    // طباعة الاستجابة الكاملة لمعرفة السبب الحقيقي فوراً من سجلات Render
     console.error("❌ Paymob Payment Key Error Details:", JSON.stringify(err.response?.data || err.message, null, 2));
     throw new Error("فشل توليد مفتاح الدفع من Paymob");
   }
