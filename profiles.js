@@ -7,22 +7,31 @@ const profilesList = [
 ];
 
 /**
- * دالة لتحديد اسم الباقة بناءً على المبلغ المدفوع (لتوافق الـ Webhook)
+ * دالة لتحديد اسم الباقة بناءً على المبلغ المدفوع (لتوافق الـ Webhook وصورة الكارت)
  * @param {number|string} amount - المبلغ المدفوع بالجنيه
  * @returns {string} - اسم الباقة
  */
 function getPackageName(amount) {
-  const numericAmount = parseFloat(amount) || 0;
+  const numericAmount = Math.round(parseFloat(amount) || 0);
+
+  // البحث عن باقة متطابقة بالسعر بالضبط
+  const exactMatch = profilesList.find(pkg => pkg.price === numericAmount);
+  if (exactMatch) {
+    return `باقة ${exactMatch.name}`;
+  }
+
+  // في حال تم دفع مبلغ مختلف، يتم اختيار أكبر باقة يغطيها المبلغ
   const matched = profilesList.find(pkg => numericAmount >= pkg.price);
   return matched ? `باقة ${matched.name}` : "باقة إنترنت شبكة حكايات";
 }
 
 /**
- * دالة تفصيلية لتحديد الباقة بناءً على المبلغ المدفوع
- * @param {number} paidAmount - المبلغ المدفوع بالجنيه
+ * دالة تفصيلية لتحديد بيانات الباقة بناءً على المبلغ المدفوع
+ * @param {number|string} paidAmount - المبلغ المدفوع بالجنيه
  */
 function getProfileByAmount(paidAmount) {
-  const numericAmount = parseFloat(paidAmount) || 0;
+  const numericAmount = Math.round(parseFloat(paidAmount) || 0);
+
   if (numericAmount < 5) {
     return {
       status: "REJECTED",
@@ -31,8 +40,13 @@ function getProfileByAmount(paidAmount) {
     };
   }
 
-  // البحث عن أقصى باقة تناسب المبلغ
-  const matched = profilesList.find(pkg => numericAmount >= pkg.price);
+  // 1. البحث أولاً عن التطابق المباشر
+  let matched = profilesList.find(pkg => pkg.price === numericAmount);
+
+  // 2. إذا لم يجد تطابقاً مباشراً، يأخذ أقرب باقة أقل منها
+  if (!matched) {
+    matched = profilesList.find(pkg => numericAmount >= pkg.price);
+  }
 
   return {
     status: "SUCCESS",
@@ -43,7 +57,7 @@ function getProfileByAmount(paidAmount) {
   };
 }
 
-// تصدير الملف كـ Function رئيسية يدعم استخدام module.exports(amount) مباشرة أو الكائنات المرفقة
+// تصدير الملف كـ Function رئيسية ودعم الاستدعاءات الفرعية
 module.exports = getPackageName;
 module.exports.profiles = profilesList;
 module.exports.getProfileByAmount = getProfileByAmount;
