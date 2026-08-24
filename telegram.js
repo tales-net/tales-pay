@@ -13,8 +13,8 @@ async function fetchNetworkDetailsByIP(ip) {
     isp: "غير معروف"
   };
 
-  if (!ip || ip === "غير متوفر" || ip === "127.0.0.1" || ip === "::1" || ip.includes("localhost")) {
-    return null; // إلغاء في حالة الشبكة المحلية
+  if (!ip || ip === "غير متوفر") {
+    return null;
   }
 
   const cleanIp = String(ip).split(",")[0].trim();
@@ -72,32 +72,26 @@ async function sendTelegramMessage(data, isInitial = true) {
 
     const publicIP = data.publicIP || (data.geoData && data.geoData.publicIP) || data.ip || "";
 
-    // ⛔ التجاهل وعدم الإرسال إذا كان الطلب قادماً من شبكة محليّة (Localhost)
-    if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) {
-      console.log("ℹ️ [Telegram] تم التجاوز: عدم إرسال إشعار للشبكة المحلية (Localhost).");
-      return;
-    }
-
     const method = getPaymentMethodName(data);
     const amountEGP = data.amount_cents
       ? (data.amount_cents / 100).toFixed(2)
       : (data.amount || "غير محدد");
     const dateTimeStr = getFormattedDateTime();
 
-    // استخراج اسم الفرع المختار (الافتراضي: حكايات نت رئيسي)
     const branchName = data.branchName || data.branch_name || "حكايات نت رئيسي";
 
-    // استخراج رقم الهاتف بجميع الاحتمالات الممكنة
     const userPhone = data.phone || 
                       data.billing_data?.phone_number || 
                       data.customer?.phone_number || 
                       "غير محدد";
 
-    // 🔍 استخراج طراز الجهاز بجميع الاحتمالات الممكنة لتجنب ظهور "غير متوفر"
+    // 🔍 فحص دقيق وشامل لطراز الجهاز بجميع الاحتمالات المباشرة والفرعية
     const deviceModel = data.deviceModel || 
                         data.device_model || 
                         data.extra_data?.device_model || 
+                        data.extra_data?.deviceModel || 
                         data.order?.extra_data?.device_model || 
+                        data.order?.extra_data?.deviceModel || 
                         data.merchant_extra?.device_model || 
                         data.source_data?.sub_type || 
                         "غير متوفر";
