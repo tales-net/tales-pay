@@ -31,34 +31,21 @@ async function collectDeviceDetails() {
 
   const ua = navigator.userAgent;
   let deviceType = '💻 كمبيوتر (Desktop)';
-  let deviceModel = 'غير محدد';
 
-  // 🔍 تحديد نوع وطراز الجهاز بدقة أكبر
+  // 🔍 تحديد نوع الجهاز فقط
   if (/iPhone/i.test(ua)) {
     deviceType = '📱 هاتف (iPhone)';
-    deviceModel = 'Apple iPhone';
   } else if (/iPad/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
     deviceType = '📱 تابلت (iPad)';
-    deviceModel = 'Apple iPad';
   } else if (/Android/i.test(ua)) {
     deviceType = /Mobile/i.test(ua) ? '📱 هاتف (Android)' : '📱 تابلت (Android Tablet)';
-    // محاولة استخراج موديل جهاز الأندرويد من الـ User Agent (إن وجد)
-    const match = ua.match(/Android[^;]+;(?:\s*Build\/[^;]+;)?\s*([^;)]+)/i);
-    if (match && match[1]) {
-      deviceModel = match[1].trim();
-    } else {
-      deviceModel = 'Android Device';
-    }
   } else if (/Macintosh|Mac OS X/i.test(ua)) {
     deviceType = '💻 كمبيوتر (MacBook / Mac)';
-    deviceModel = 'Apple Mac';
   } else if (/Windows/i.test(ua)) {
     deviceType = '💻 كمبيوتر (Windows PC)';
-    deviceModel = 'Windows PC';
   }
 
   setElementValue('deviceType', deviceType);
-  setElementValue('deviceModel', deviceModel);
 
   // جلب معلومات البطارية
   if (navigator.getBattery) {
