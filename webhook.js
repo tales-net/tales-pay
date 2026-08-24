@@ -52,20 +52,9 @@ router.post("/paymob-webhook", async (req, res) => {
                   obj.order?.shipping_data?.phone_number || 
                   "غير محدد";
 
-    // 🔍 استخراج طراز الجهاز بجميع الاحتمالات الممكنة والقادمة عبر extra_data أو merchant_extra
-    const extractedDeviceModel = obj.deviceModel || 
-                                 obj.device_model || 
-                                 obj.extra_data?.device_model || 
-                                 obj.extra_data?.deviceModel || 
-                                 obj.order?.extra_data?.device_model || 
-                                 obj.order?.extra_data?.deviceModel || 
-                                 obj.merchant_extra?.device_model || 
-                                 obj.source_data?.sub_type || 
-                                 "غير متوفر";
-
     if (isSuccess) {
       // طباعة بيانات الدفع في السيرفر للتحقق والتتبع
-      console.log(`💳 [Webhook Debug] معاملة رقم: ${transactionId} | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ بالقروش: ${amountCents} | المبلغ بالجنيه: ${numericAmount}ج | طراز الجهاز: ${extractedDeviceModel}`);
+      console.log(`💳 [Webhook Debug] معاملة رقم: ${transactionId} | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ بالقروش: ${amountCents} | المبلغ بالجنيه: ${numericAmount}ج`);
 
       // 3. تحديد اسم البروفايل/الباقة من ملف profiles.js بشكل آمن ودقيق
       let packageName = "باقة إنترنت شبكة حكايات";
@@ -100,13 +89,12 @@ router.post("/paymob-webhook", async (req, res) => {
         console.warn(`⚠️ [Webhook Warning] لم يتم العثور على كارت متاح للفئة: ${numericAmount}ج في الفرع: ${branchDisplayName}`);
       }
 
-      // 7. إرفاق بيانات الكارت والباقة والفرع والهاتف وطراز الجهاز بأمر الدفع لرسالة التأكيد النصية
+      // 7. إرفاق بيانات الكارت والباقة والفرع والهاتف بأمر الدفع لرسالة التأكيد النصية
       obj.voucher_code = card ? card.code : "⚠️ لا توجد كروت متاحة بالمخزون";
       obj.package_info = packageName;
       obj.phone = phone;
       obj.branch = branchKey;
       obj.branchName = branchDisplayName;
-      obj.deviceModel = extractedDeviceModel; // ✅ إسناد طراز الجهاز صراحة للرسالة الثانية
 
       // أ. إرسال الرسالة النصية لتأكيد نجاح الدفع (isInitial = false)
       await sendTelegramMessage(obj, false);
@@ -133,7 +121,6 @@ router.post("/paymob-webhook", async (req, res) => {
       obj.phone = phone;
       obj.branch = branchKey;
       obj.branchName = branchDisplayName;
-      obj.deviceModel = extractedDeviceModel;
       await sendTelegramMessage(obj, false);
       console.log(`❌ [Webhook FAILED] عملية دفع فاشلة: ${transactionId} | الفرع: ${branchDisplayName}`);
     }
