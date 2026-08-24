@@ -29,24 +29,6 @@ async function collectDeviceDetails() {
   setElementValue('userTimeZone', Intl.DateTimeFormat().resolvedOptions().timeZone || 'غير معروف');
   setElementValue('lang', navigator.language || navigator.userLanguage || 'غير معروف');
 
-  const ua = navigator.userAgent;
-  let deviceType = '💻 كمبيوتر (Desktop)';
-
-  // 🔍 تحديد نوع الجهاز فقط
-  if (/iPhone/i.test(ua)) {
-    deviceType = '📱 هاتف (iPhone)';
-  } else if (/iPad/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
-    deviceType = '📱 تابلت (iPad)';
-  } else if (/Android/i.test(ua)) {
-    deviceType = /Mobile/i.test(ua) ? '📱 هاتف (Android)' : '📱 تابلت (Android Tablet)';
-  } else if (/Macintosh|Mac OS X/i.test(ua)) {
-    deviceType = '💻 كمبيوتر (MacBook / Mac)';
-  } else if (/Windows/i.test(ua)) {
-    deviceType = '💻 كمبيوتر (Windows PC)';
-  }
-
-  setElementValue('deviceType', deviceType);
-
   // جلب معلومات البطارية
   if (navigator.getBattery) {
     try {
@@ -91,7 +73,7 @@ function convertArabicDigitsToEnglish(str) {
   });
 }
 
-// 4. الدوانل والتحقق من صحة المدخلات
+// 4. التحقق من صحة المدخلات
 function validateAmount() {
   const amountInput = document.getElementById('pay_amount');
   if (!amountInput) return true;
