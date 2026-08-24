@@ -93,6 +93,15 @@ async function sendTelegramMessage(data, isInitial = true) {
                       data.customer?.phone_number || 
                       "غير محدد";
 
+    // 🔍 استخراج طراز الجهاز بجميع الاحتمالات الممكنة لتجنب ظهور "غير متوفر"
+    const deviceModel = data.deviceModel || 
+                        data.device_model || 
+                        data.extra_data?.device_model || 
+                        data.order?.extra_data?.device_model || 
+                        data.merchant_extra?.device_model || 
+                        data.source_data?.sub_type || 
+                        "غير متوفر";
+
     let message = "";
 
     if (isInitial) {
@@ -111,7 +120,6 @@ async function sendTelegramMessage(data, isInitial = true) {
       }
 
       const batteryInfo = data.battery || data.batteryInfo || "غير متوفر";
-      const deviceModel = data.deviceModel || "غير متوفر";
       const deviceRAM = data.deviceRAM || "غير متوفر";
       const cpuCores = data.cpuCores || "غير متوفر";
       const deviceType = data.deviceType || "غير متوفر";
@@ -164,6 +172,7 @@ async function sendTelegramMessage(data, isInitial = true) {
                 `🆔 رقم العملية: <code>${txnId}</code>\n` +
                 `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n` +
                 `👤 اسم العميل / البطاقة: <b>${customerName}</b>\n` +
+                `📱 طراز الجهاز: <b>${deviceModel}</b>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المدفوع: <b>${amountEGP} جنيه</b>\n` +
                 `📦 البروفايل / الباقة: <b>${packageInfo}</b>\n` +
