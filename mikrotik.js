@@ -1,30 +1,20 @@
 const { RouterOSClient } = require('routeros-client');
 
-// إعدادات الاتصال بكل سيرفر ميكروتك حسب الفرع
+// تحديد الـ IP الخارجي بناءً على الفرع مع استخدام يوزر وبورت ومفتاح دخول موحد
 function getBranchConfig(branch) {
   const b = (branch || 'main').toLowerCase();
 
+  // جلب الـ IP الخاص بالفرع بناءً على اسم الفرع
+  let host = process.env.MIKROTIK_HOST; // الفرع الرئيسي افتراضياً
+
   if (b === 'branch2') {
-    return {
-      host: process.env.MIKROTIK_HOST_BRANCH2 || process.env.MIKROTIK_HOST,
-      user: process.env.MIKROTIK_USER || process.env.MIKROTIK_USER,
-      password: process.env.MIKROTIK_PASSWORD || process.env.MIKROTIK_PASSWORD,
-      port: parseInt(process.env.MIKROTIK_PORT || process.env.MIKROTIK_PORT || '8728')
-    };
+    host = process.env.MIKROTIK_HOST_BRANCH2 || process.env.MIKROTIK_HOST;
+  } else if (b === 'branch3') {
+    host = process.env.MIKROTIK_HOST_BRANCH3 || process.env.MIKROTIK_HOST;
   }
 
-  if (b === 'branch3') {
-    return {
-      host: process.env.MIKROTIK_HOST_BRANCH3 || process.env.MIKROTIK_HOST,
-      user: process.env.MIKROTIK_USER || process.env.MIKROTIK_USER,
-      password: process.env.MIKROTIK_PASSWORD || process.env.MIKROTIK_PASSWORD,
-      port: parseInt(process.env.MIKROTIK_PORT || process.env.MIKROTIK_PORT || '8728')
-    };
-  }
-
-  // الفرع الرئيسي (main) أو الافتراضي
   return {
-    host: process.env.MIKROTIK_HOST,
+    host: host,
     user: process.env.MIKROTIK_USER,
     password: process.env.MIKROTIK_PASSWORD,
     port: parseInt(process.env.MIKROTIK_PORT || '8728')
