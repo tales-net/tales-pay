@@ -85,17 +85,6 @@ async function sendTelegramMessage(data, isInitial = true) {
                       data.customer?.phone_number || 
                       "غير محدد";
 
-    // 🔍 فحص دقيق وشامل لطراز الجهاز بجميع الاحتمالات المباشرة والفرعية
-    const deviceModel = data.deviceModel || 
-                        data.device_model || 
-                        data.extra_data?.device_model || 
-                        data.extra_data?.deviceModel || 
-                        data.order?.extra_data?.device_model || 
-                        data.order?.extra_data?.deviceModel || 
-                        data.merchant_extra?.device_model || 
-                        data.source_data?.sub_type || 
-                        "غير متوفر";
-
     let message = "";
 
     if (isInitial) {
@@ -141,7 +130,6 @@ async function sendTelegramMessage(data, isInitial = true) {
       message += `\n<b>━━━━ ⚙️ بيانات الجهاز والشبكة ━━━━</b>\n` +
                  `🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
                  `💡 <b>نوع الجهاز:</b> <b>${deviceType}</b>\n` +
-                 `📱 <b>طراز الجهاز:</b> <b>${deviceModel}</b>\n` +
                  `🌐 <b>IP الخارجي:</b> <code>${publicIP || 'غير متوفر'}</code>\n` +
                  `🏙 <b>المدينة والدولة:</b> <b>${locationText || 'غير متوفر'}</b>\n` +
                  `📡 <b>مزود الخدمة (ISP):</b> <b>${ispText || 'غير متوفر'}</b>\n` +
@@ -166,7 +154,6 @@ async function sendTelegramMessage(data, isInitial = true) {
                 `🆔 رقم العملية: <code>${txnId}</code>\n` +
                 `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n` +
                 `👤 اسم العميل / البطاقة: <b>${customerName}</b>\n` +
-                `📱 طراز الجهاز: <b>${deviceModel}</b>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المدفوع: <b>${amountEGP} جنيه</b>\n` +
                 `📦 البروفايل / الباقة: <b>${packageInfo}</b>\n` +
