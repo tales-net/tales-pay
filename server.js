@@ -23,6 +23,16 @@ const BRANCH_NAMES = {
 // خريطة عالمية لحفظ الكروت مؤقتاً
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
+// 🧹 تنظيف الكروت المحفوظة مؤقتاً التي مر عليها أكثر من ساعة لتفريغ الذاكرة تلقائياً
+setInterval(() => {
+  const oneHourAgo = Date.now() - (60 * 60 * 1000);
+  for (let [key, value] of global.generatedCardsMap.entries()) {
+    if (value.createdAt && new Date(value.createdAt).getTime() < oneHourAgo) {
+      global.generatedCardsMap.delete(key);
+    }
+  }
+}, 30 * 60 * 1000); // يفحص كل نصف ساعة
+
 app.use(cors());
 app.use(express.json());
 app.use(bodyParser.json());
