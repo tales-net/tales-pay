@@ -8,6 +8,7 @@ const { processPayment } = require("./pay");
 const { sendTelegramMessage } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
+const { processPaymentAndCreateCard } = require("./mikrotikService"); // استدعاء خدمة الميكروتيك لإضافة الكروت
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -129,7 +130,50 @@ async function handlePaymentRequest(req, res) {
 app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
 
-// API للاستعلام عن حالة الكارت المولد للمستخدم في صفحة النجاح
+// 🧪 مسار اختبار مباشر لتوليد وإضافة الكارت للميكروتيك دون دفع حقيقي
+app.get("/api/test-create-card", async (req, res) => {
+  try {
+    const amount = req.query.amount || "5";
+    const branch = req.query.branch || "main";
+    const testTxId = "TEST_" + Date.now();
+
+    console.log(`🧪 [TEST] بدء اختبار إنشاء كارت بمبلغ ${amount} جنيه لفرع ${branch}...`);
+
+    const result = await processPaymentAndCreateCard(amount, branch, testTxId);
+
+    if (result.success && !result.isCustomAmount) {
+      const cardPayload = {
+        code: result.cardCode,
+        packageName: result.packageName,
+        amount: parseFloat(amount),
+        phone: "01000000000",
+        branchKey: result.branchKey,
+        branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.main,
+        createdAt: new Date()
+      };
+
+      global.generatedCardsMap.set(testTxId, cardPayload);
+
+      return res.json({
+        success: true,
+        message: "✅ تم إضافة الكارت إلى الميكروتيك بنجاح وتوليده!",
+        data: result,
+        successPageLink: `/success?merchant_order_id=${testTxId}&branch=${branch}`
+      });
+    } else {
+      return res.json({
+        success: false,
+        message: "⚠️ فشل توليد الكارت من الميكروتيك",
+        details: result
+      });
+    }
+  } catch (error) {
+    console.error("❌ [TEST ERROR]:", error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// API مرن للاستعلام عن حالة الكارت المولد في صفحة النجاح
 app.get("/api/check-voucher/:txId", (req, res) => {
   const txId = String(req.params.txId || "").trim();
   
@@ -137,11 +181,16 @@ app.get("/api/check-voucher/:txId", (req, res) => {
     return res.json({ success: false, message: "رقم المعاملة غير صالح" });
   }
 
-  if (global.generatedCardsMap && global.generatedCardsMap.has(txId)) {
-    return res.json({ 
-      success: true, 
-      data: global.generatedCardsMap.get(txId) 
-    });
+  if (global.generatedCardsMap) {
+    if (global.generatedCardsMap.has(txId)) {
+      return res.json({ success: true, data: global.generatedCardsMap.get(txId) });
+    }
+    
+    for (let [key, value] of global.generatedCardsMap.entries()) {
+      if (String(key).includes(txId) || txId.includes(String(key))) {
+        return res.json({ success: true, data: value });
+      }
+    }
   }
 
   return res.json({ 
@@ -169,11 +218,10 @@ app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "";
   const queryBranch = req.query.branch || "";
   
-  // استنتاج الفرع تلقائياً من رقم المعاملة في حال تمريره من Paymob
   let inferredBranch = "main";
   const upperTx = transactionId.toUpperCase();
-  if (upperTx.includes("BRANCH2")) inferredBranch = "branch2";
-  else if (upperTx.includes("BRANCH3")) inferredBranch = "branch3";
+  if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
+  else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
   else if (upperTx.includes("MAIN")) inferredBranch = "main";
 
   const activeBranchKey = queryBranch || inferredBranch;
@@ -269,7 +317,7 @@ app.get("/success", (req, res) => {
           const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
           
           let attempts = 0;
-          const maxAttempts = 25; // زمن انتظار حتى 50 ثانية لضمان نجاح الاتصال بالميكروتيك وتوليد الكارت
+          const maxAttempts = 30;
 
           async function pollVoucher() {
             if (!txId || txId === "غير محدد") {
@@ -293,8 +341,8 @@ app.get("/success", (req, res) => {
                 if (attempts < maxAttempts) {
                   setTimeout(pollVoucher, 2000);
                 } else {
-                  document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: " + txId + "</span>";
-                  document.getElementById('pkgName').innerText = "في انتظار الاستجابة";
+                  document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>⚠️ تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: " + txId + "</span>";
+                  document.getElementById('pkgName').innerText = "انتهت مهلة الانتظار";
                 }
               }
             } catch (e) {
