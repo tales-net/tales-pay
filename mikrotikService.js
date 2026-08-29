@@ -161,7 +161,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
   }
 }
 
-module.exports, {
+module.exports = {
   processPaymentAndCreateCard,
   getCardPrefixAndType,
   BRANCH_ROUTERS
