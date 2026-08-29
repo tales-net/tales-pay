@@ -167,8 +167,17 @@ app.post("/api/disable-queue", async (req, res) => {
 // صفحة نجاح الدفع وعرض الكارت للمستخدم
 app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "";
-  const branchKey = req.query.branch || "main";
-  const defaultBranchName = BRANCH_NAMES[branchKey] || BRANCH_NAMES.main;
+  const queryBranch = req.query.branch || "";
+  
+  // استنتاج الفرع تلقائياً من رقم المعاملة في حال تمريره من Paymob
+  let inferredBranch = "main";
+  const upperTx = transactionId.toUpperCase();
+  if (upperTx.includes("BRANCH2")) inferredBranch = "branch2";
+  else if (upperTx.includes("BRANCH3")) inferredBranch = "branch3";
+  else if (upperTx.includes("MAIN")) inferredBranch = "main";
+
+  const activeBranchKey = queryBranch || inferredBranch;
+  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.main;
 
   res.send(`
     <!DOCTYPE html>
@@ -257,7 +266,7 @@ app.get("/success", (req, res) => {
 
         <script>
           const urlParams = new URLSearchParams(window.location.search);
-          const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || "${transactionId}";
+          const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
           
           let attempts = 0;
           const maxAttempts = 25; // زمن انتظار حتى 50 ثانية لضمان نجاح الاتصال بالميكروتيك وتوليد الكارت
