@@ -31,7 +31,7 @@ function getCardPrefixAndType(amount) {
   const numAmount = Number(amount);
   switch (numAmount) {
     case 5:
-      return { prefix: "01", profile: "Bronze (البرونزي)", packageName: "الباقة البرونزية", isCustom: false };
+      return { prefix: "01", profile: "Bronze", packageName: "الباقة البرونزية", isCustom: false };
     case 15:
       return { prefix: "02", profile: "Silver", packageName: "الباقة الفضية", isCustom: false };
     case 30:
@@ -58,7 +58,7 @@ function generateCardCode(prefix, randomLength = 6) {
 }
 
 /**
- * الدالة الرئيسية لمعالجة الدفع وإنشاء الكارت وتفعيله لنسخة ميكروتيك 5.26
+ * الدالة الرئيسية لمعالجة الدفع وإنشاء الكارت وتفعليه لنسخة ميكروتيك 5.26 عبر User-Manager
  */
 async function processPaymentAndCreateCard(amount, branchKey = "main", transactionId = "") {
   const cardInfo = getCardPrefixAndType(amount);
@@ -75,7 +75,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
   const targetBranch = BRANCH_ROUTERS[branchKey] ? branchKey : "main";
   const routerConfig = BRANCH_ROUTERS[targetBranch];
 
-  console.log(`🌐 [MikroTik v5.26] جاري الاتصال بالفرع: [ ${targetBranch.toUpperCase()} ] على العنوان: ${routerConfig.host}`);
+  console.log(`🌐 [MikroTik v5.26 User-Manager] جاري الاتصال بالفرع: [ ${targetBranch.toUpperCase()} ] على العنوان: ${routerConfig.host}`);
 
   const client = new RouterOSClient({
     host: routerConfig.host,
@@ -98,14 +98,22 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       cardCode = generateCardCode(cardInfo.prefix);
 
       try {
-        // طريقة إضافة المستخدم في Hotspot Users مباشرة (أكثر استقراراً في النسخ القديمة 5.x)
-        console.log(`👤 [Hotspot User] (${targetBranch}) جاري إضافة المستخدم: ${cardCode}`);
+        console.log(`👤 [User-Manager] (${targetBranch}) جاري إضافة المستخدم: ${cardCode}`);
         
-        await api.menu("/ip/hotspot/user").add({
-          name: cardCode,
+        // 1. إضافة المستخدم أولاً
+        await api.menu("/tool/user-manager/user").add({
+          username: cardCode,
           password: cardCode,
+          customer: "admin"
+        });
+
+        console.log(`⚡ [User-Manager] جاري تفعيل البروفايل (${cardInfo.profile}) للمستخدم: ${cardCode}`);
+        
+        // 2. تفعيل البروفايل بالترتيب الصحيح الذي أثبت نجاحه
+        await api.menu("/tool/user-manager/user").cmd("create-and-activate-profile", {
+          user: cardCode,
           profile: cardInfo.profile,
-          comment: `Paymob TXN: ${transactionId} | Branch: ${targetBranch}`
+          customer: "admin"
         });
 
         isCreated = true;
@@ -113,22 +121,18 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
         if (addError.message && (addError.message.includes("already exists") || addError.message.includes("already"))) {
           console.warn(`⚠️ [${targetBranch}] الكود ${cardCode} موجود مسبقاً، جاري إعادة المحاولة...`);
         } else {
-          // محاولة بديلة لنسخ User-Manager القديمة إذا فشل الـ Hotspot User العادي
+          // محاولة احتياطية ثانية في مسار Hotspot العادي إذا فشل الـ User-Manager
           try {
-            console.log(`🔄 [User-Manager v5] محاولة إضافة عبر اليوزر مانجر القديم للمستخدم: ${cardCode}`);
-            await api.menu("/tool/user-manager/user").add({
-              username: cardCode,
+            console.log(`🔄 [Hotspot Regular] محاولة إضافة عبر Hotspot التقليدي للمستخدم: ${cardCode}`);
+            await api.menu("/ip/hotspot/user").add({
+              name: cardCode,
               password: cardCode,
-              customer: "admin"
-            });
-            
-            await api.menu("/tool/user-manager/user").cmd("set-rates", {
-              numbers: cardCode,
-              profile: cardInfo.profile
+              profile: cardInfo.profile,
+              comment: `Paymob TXN: ${transactionId} | Branch: ${targetBranch}`
             });
             isCreated = true;
-          } catch (umError) {
-            throw addError; // إذا فشلت الطريقتان يرمي الخطأ الأصلي للفحص
+          } catch (hotspotError) {
+            throw addError; // رمي الخطأ الأصلي الخاص بـ User-Manager لو فشل الاتجاهين
           }
         }
       }
