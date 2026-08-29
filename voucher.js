@@ -16,40 +16,46 @@ const BRANCH_NAMES = {
 };
 
 /**
- * تحميل البيانات من ملف JSON مع دعم الهيكلية المباشرة وتلك الملتفة بـ branches
+ * تحميل البيانات من ملف JSON مع دعم الهيكلية متعددة الفروع
+ */
+/**
+ * تحميل البيانات من ملف JSON مع دعم الهيكلية متعددة الفروع
  */
 function loadVouchersData() {
-  const defaultStructure = {
-    main: { name: BRANCH_NAMES.main, available: {}, used_archive: [] },
-    branch2: { name: BRANCH_NAMES.branch2, available: {}, used_archive: [] },
-    branch3: { name: BRANCH_NAMES.branch3, available: {}, used_archive: [] }
-  };
-
   if (!fs.existsSync(VOUCHERS_FILE)) {
-    saveVouchersData(defaultStructure);
-    return defaultStructure;
+    const emptyStructure = {
+      branches: {
+        main: { name: 'حكايات نت رئيسي', available: {}, used_archive: [] },
+        branch2: { name: 'حكايات نت فرع ثاني', available: {}, used_archive: [] },
+        branch3: { name: 'حكايات نت فرع ثالث', available: {}, used_archive: [] }
+      }
+    };
+    saveVouchersData(emptyStructure);
+    return emptyStructure.branches;
   }
-
   try {
     const rawData = fs.readFileSync(VOUCHERS_FILE, 'utf8');
     const parsed = JSON.parse(rawData);
 
-    // دعم استخراج البيانات سواء كانت في الجذر مباشرة أو داخل مفتاح branches
-    const dataRoot = parsed.branches || parsed;
+    // الوصول لعقدة الفروع سواء كانت تحت branches أو مباشرة في الجذر
+    const branches = parsed.branches || parsed;
 
     const result = {
-      main: dataRoot.main || { name: BRANCH_NAMES.main, available: {}, used_archive: [] },
-      branch2: dataRoot.branch2 || { name: BRANCH_NAMES.branch2, available: {}, used_archive: [] },
-      branch3: dataRoot.branch3 || { name: BRANCH_NAMES.branch3, available: {}, used_archive: [] }
+      main: branches.main || { name: 'حكايات نت رئيسي', available: {}, used_archive: [] },
+      branch2: branches.branch2 || { name: 'حكايات نت فرع ثاني', available: {}, used_archive: [] },
+      branch3: branches.branch3 || { name: 'حكايات نت فرع ثالث', available: {}, used_archive: [] }
     };
 
     return result;
   } catch (err) {
     console.error('❌ [Voucher] خطأ في قراءة ملف الكروت:', err.message);
-    return defaultStructure;
+    return {
+      main: { name: 'حكايات نت رئيسي', available: {}, used_archive: [] },
+      branch2: { name: 'حكايات نت فرع ثاني', available: {}, used_archive: [] },
+      branch3: { name: 'حكايات نت فرع ثالث', available: {}, used_archive: [] }
+    };
   }
 }
-
 /**
  * حفظ البيانات في ملف JSON بشكل متزامن وآمن
  */
@@ -81,11 +87,12 @@ async function getNextVoucher(amount, transactionId = null, branchKey = 'main') 
         const branchDisplayName = BRANCH_NAMES[selectedBranch];
 
         const allVouchersData = loadVouchersData();
-        const branchData = allVouchersData[selectedBranch] || { name: branchDisplayName, available: {}, used_archive: [] };
+        const branchData = allVouchersData[selectedBranch] || { available: {}, used_archive: [] };
 
         let numVal = Number(amount);
 
-        // تحويل القروش لجنيهات إذا كان المبلغ كبيراً وغير موجود كمفتاح مباشر
+        // التحقق مما إذا كانت الفئة القادمة محددة كمفتاح مباشر في الملف (مثل فئة "500" إن وجدت)
+        // أو إذا كانت قادمة كـ "قروش" من Paymob ويجب تحويلها لجنيهات
         if (numVal >= 500 && !branchData.available[String(Math.round(numVal))]) {
           numVal = numVal / 100;
         }
@@ -94,7 +101,7 @@ async function getNextVoucher(amount, transactionId = null, branchKey = 'main') 
 
         console.log(`🔍 [Voucher] البحث عن كارت | الفرع: ${branchDisplayName} | الفئة: ${key} جنيه (المبلغ: ${amount})`);
 
-        if (!branchData.available || !branchData.available[key]) {
+        if (!branchData.available[key]) {
           console.error(`🚨 [Voucher] الفئة المطلوب سحبها (${key}) غير موجودة في الفرع (${branchDisplayName})!`);
           return resolve({ card: null, remaining: 0, branchName: branchDisplayName });
         }
