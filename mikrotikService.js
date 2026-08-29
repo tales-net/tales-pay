@@ -58,7 +58,7 @@ function generateCardCode(prefix, randomLength = 6) {
 }
 
 /**
- * الدالة الرئيسية لمعالجة الدفع وإنشاء الكارت مع ضمان عدم التعارض نهائياً
+ * الدالة الرئيسية لمعالجة الدفع وإنشاء الكارت وتفعيله منفصلاً حسب الفرع المختار
  */
 async function processPaymentAndCreateCard(amount, branchKey = "main", transactionId = "") {
   const cardInfo = getCardPrefixAndType(amount);
@@ -77,8 +77,12 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
     };
   }
 
-  // 2. إعداد الاتصال بالميكروتيك
-  const routerConfig = BRANCH_ROUTERS[branchKey] || BRANCH_ROUTERS.main;
+  // 2. اختيار الفرع المستهدف بدقة وضبط الاتصال
+  const targetBranch = BRANCH_ROUTERS[branchKey] ? branchKey : "main";
+  const routerConfig = BRANCH_ROUTERS[targetBranch];
+
+  console.log(`🌐 [MikroTik Router] جاري الاتصال بالفرع: [ ${targetBranch.toUpperCase()} ] على العنوان: ${routerConfig.host}`);
+
   const client = new RouterOSClient({
     host: routerConfig.host,
     user: routerConfig.user,
@@ -90,39 +94,40 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
   let cardCode = "";
   let isCreated = false;
   let attempts = 0;
-  const maxAttempts = 5; // عدد محاولات توليد رقم جديد في حال حدث تعارض نادر جداً
+  const maxAttempts = 5; // عدد محاولات توليد رقم فريد جديد في حال حدث تعارض مسبقاً
 
   try {
     const api = await client.connect();
 
-    // حلقة تكرارية للتأكد من عدم تكرار الكود
+    // حلقة تكرارية لضمان توليد كود غير مكرر داخل الفرع
     while (!isCreated && attempts < maxAttempts) {
       attempts++;
       cardCode = generateCardCode(cardInfo.prefix);
 
       try {
-        // محاولة إضافة الكارت في User Manager
+        // الخطوة الأولى: إضافة المستخدم بشكل منفصل تماماً
+        console.log(`👤 [User-Manager] (${targetBranch}) جاري إضافة المستخدم: ${cardCode}`);
         await api.menu("/tool/user-manager/user").add({
           username: cardCode,
           password: cardCode,
           customer: "admin",
-          comment: `Paymob TXN: ${transactionId} | Amount: ${amount} EGP`
+          comment: `Branch: ${targetBranch} | Paymob TXN: ${transactionId} | Amount: ${amount} EGP`
         });
 
-        // تفعيل البروفايل إذا نجحت الإضافة بدون خطأ تكرار
+        // الخطوة الثانية: تفعيل البروفايل للمستخدم بشكل منفصل تماماً بعد الإضافة الناجحة
+        console.log(`📦 [User-Manager] (${targetBranch}) تفعيل البروفايل "${cardInfo.profile}" للمستخدم: ${cardCode}`);
         await api.menu("/tool/user-manager/user").cmd("create-and-activate-profile", {
           user: cardCode,
           profile: cardInfo.profile,
           customer: "admin"
         });
 
-        isCreated = true; // تم الإنشاء بنجاح وبدون تكرار
+        isCreated = true; // تم إنشاء الكارت وتفعيله بنجاح تام
       } catch (addError) {
-        // إذا كان الخطأ بسبب أن اسم المستخدم موجود مسبقاً (تعارض)، سيعيد الحلقة لتوليد رقم جديد تلقائياً
-        if (addError.message && addError.message.includes("already exists")) {
-          console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، جاري توليد كود جديد... (محاولة ${attempts})`);
+        // إذا كان الخطأ بسبب تكرار اسم المستخدم، نقوم بإعادة المحاولة برقم جديد
+        if (addError.message && (addError.message.includes("already exists") || addError.message.includes("already"))) {
+          console.warn(`⚠️ [${targetBranch}] الكود ${cardCode} موجود مسبقاً، جاري توليد كود بديل... (محاولة ${attempts})`);
         } else {
-          // إذا كان خطأ آخر (مثل انقطاع الاتصال)، أوقف العملية وارم الخطأ
           throw addError;
         }
       }
@@ -141,24 +146,26 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       amount: amount,
       packageName: cardInfo.packageName,
       profile: cardInfo.profile,
+      branchKey: targetBranch,
       notification: {
         title: "🎉 تم إصدار الكارت بنجاح!",
-        body: `كارت ${cardInfo.packageName} بقيمة ${amount} ج.م هو: (${cardCode}) — اسم المستخدم وكلمة السر متطابقان.`
+        body: `كارت ${cardInfo.packageName} لفرع (${targetBranch}) بقيمة ${amount} ج.م هو: (${cardCode}) — اسم المستخدم وكلمة السر متطابقان.`
       }
     };
 
   } catch (error) {
-    console.error(`❌ خطأ في الاتصال بميكروتيك الفرع (${branchKey}):`, error.message);
+    console.error(`❌ خطأ في الاتصال أو تنفيذ الأوامر بميكروتيك الفرع (${targetBranch}):`, error.message);
     if (client) await client.close().catch(() => {});
 
     return {
       success: false,
-      error: "تعذر توليد الكارت تلقائياً من نظام الشبكة. يرجى مراجعة الدعم الفني."
+      error: `تعذر توليد الكارت تلقائياً من نظام شبكة (${targetBranch}). يرجى مراجعة الدعم الفني.`
     };
   }
 }
 
 module.exports = {
   processPaymentAndCreateCard,
-  getCardPrefixAndType
+  getCardPrefixAndType,
+  BRANCH_ROUTERS
 };
