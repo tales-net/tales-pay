@@ -1,18 +1,12 @@
 const express = require("express");
 const router = express.Router();
 const profiles = require("./profiles");
-const { getNextVoucher } = require("./voucher");
+const { getNextVoucher, BRANCH_NAMES } = require("./voucher");
 const { generateCardImage } = require("./cardGenerator");
 const { sendTelegramMessage, sendVoucherWithCardImage } = require("./telegram");
 
-// خريطة عالمية لحفظ بيانات الكروت
+// خريطة عالمية لحفظ بيانات الكروت في الذاكرة لصفحة النجاح
 global.generatedCardsMap = global.generatedCardsMap || new Map();
-
-const BRANCH_NAMES = {
-  main: "حكايات نت رئيسي",
-  branch2: "حكايات نت فرع ثاني",
-  branch3: "حكايات نت فرع ثالث"
-};
 
 router.post("/paymob-webhook", async (req, res) => {
   try {
@@ -26,19 +20,24 @@ router.post("/paymob-webhook", async (req, res) => {
 
     const isSuccess = obj.success === true || obj.success === "true";
     const transactionId = String(obj.id);
+
+    // حساب المبلغ وقراءة القروش والجنيهات بدقة
     const amountCents = obj.amount_cents || obj.order?.amount_cents || 0;
     const amountEgp = (amountCents / 100).toFixed(2);
     const numericAmount = parseFloat(amountEgp);
 
+    // استخراج مفتاح الفرع من أمتاد البيانات المتنوعة لـ Paymob
     const branchKey = 
       obj.extra_data?.branch || 
       obj.order?.extra_data?.branch || 
       obj.merchant_extra?.branch || 
+      obj.payment_key_claims?.extra_data?.branch ||
       obj.branch || 
       "main";
 
     const branchDisplayName = BRANCH_NAMES[branchKey] || BRANCH_NAMES.main;
 
+    // استخراج رقم الهاتفك
     const phone = obj.phone || 
                   obj.billing_data?.phone_number || 
                   obj.customer?.phone_number || 
@@ -54,6 +53,7 @@ router.post("/paymob-webhook", async (req, res) => {
 
       console.log(`💳 [Webhook Debug] معاملة مؤكدة: ${transactionId} | الفرع: ${branchDisplayName} | المبلغ: ${numericAmount}ج`);
 
+      // تحديد اسم الباقة
       let packageName = "باقة إنترنت شبكة حكايات";
       if (typeof profiles.getPackageName === "function") {
         packageName = profiles.getPackageName(numericAmount);
@@ -63,15 +63,22 @@ router.post("/paymob-webhook", async (req, res) => {
         packageName = profiles[numericAmount] || profiles[amountEgp] || profiles[parseInt(numericAmount)] || "باقة إنترنت شبكة حكايات";
       }
 
-      // 🎟️ سحب الكارت الحقيقي والوحيد
+      // 🎟️ سحب الكارت الحقيقي والوحيد للفرع المحدد
       const { card, remaining } = await getNextVoucher(numericAmount, transactionId, branchKey);
 
       let cardImageBuffer = null;
 
       if (card) {
-        cardImageBuffer = await generateCardImage(card.code, packageName, numericAmount, transactionId, branchDisplayName);
+        // إنشاء صورة الكارت
+        cardImageBuffer = await generateCardImage(
+          card.code, 
+          packageName, 
+          numericAmount, 
+          transactionId, 
+          branchDisplayName
+        );
 
-        // حفظ بيانات الكارت في الذاكرة لتستطيع صفحة النجاح قراءته فقط
+        // حفظ بيانات الكارت في الذاكرة لتستطيع صفحة النجاح (Success Page) عرضها مباشرة
         global.generatedCardsMap.set(transactionId, {
           buffer: cardImageBuffer,
           code: card.code,
@@ -79,18 +86,21 @@ router.post("/paymob-webhook", async (req, res) => {
           amount: numericAmount,
           phone: phone,
           branchKey: branchKey,
-          branchName: branchDisplayName
+          branchName: branchDisplayName,
+          createdAt: new Date()
         });
       } else {
         console.warn(`⚠️ [Webhook Warning] لم يتم العثور على كارت متاح للفئة: ${numericAmount}ج في الفرع: ${branchDisplayName}`);
       }
 
+      // إعداد البيانات للتلجرام
       obj.voucher_code = card ? card.code : "⚠️ لا توجد كروت متاحة بالمخزون";
       obj.package_info = packageName;
       obj.phone = phone;
       obj.branch = branchKey;
       obj.branchName = branchDisplayName;
 
+      // إرسال الإشعارات إلى تلجرام
       await sendTelegramMessage(obj, false);
 
       await sendVoucherWithCardImage(
@@ -110,9 +120,11 @@ router.post("/paymob-webhook", async (req, res) => {
       console.log(`✅ [Webhook SUCCESS] تم تأكيد العملية: ${transactionId} | الكارت: ${card ? card.code : 'نفدت الكروت'}`);
 
     } else {
+      // التعامل مع المعاملات الفاشلة
       obj.phone = phone;
       obj.branch = branchKey;
       obj.branchName = branchDisplayName;
+      
       await sendTelegramMessage(obj, false);
       console.log(`❌ [Webhook FAILED] عملية دفع فاشلة: ${transactionId}`);
     }
