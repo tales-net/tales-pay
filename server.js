@@ -115,11 +115,23 @@ app.post("/api/pay", handlePaymentRequest);
 
 // 🔍 API للاستعلام عن الكارت المسحوب فعلياً في الـ Webhook
 app.get("/api/check-voucher/:txId", (req, res) => {
-  const { txId } = req.params;
-  if (global.generatedCardsMap && global.generatedCardsMap.has(String(txId))) {
-    return res.json({ success: true, data: global.generatedCardsMap.get(String(txId)) });
+  const txId = String(req.params.txId || "").trim();
+  
+  if (!txId || txId === "null" || txId === "undefined") {
+    return res.json({ success: false, message: "رقم المعاملة غير صالح" });
   }
-  return res.json({ success: false, message: "جاري تأكيد عملية الدفع وتفعيل الكارت..." });
+
+  if (global.generatedCardsMap && global.generatedCardsMap.has(txId)) {
+    return res.json({ 
+      success: true, 
+      data: global.generatedCardsMap.get(txId) 
+    });
+  }
+
+  return res.json({ 
+    success: false, 
+    message: "جاري تأكيد عملية الدفع وتفعيل الكارت..." 
+  });
 });
 
 app.post("/api/disable-queue", async (req, res) => {
@@ -136,9 +148,9 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-// صفحة نجاح الدفع (تنتظر الـ Webhook الحقيقي دون توليد أكواد عشوائية)
+// صفحة نجاح الدفع (تنتظر الـ Webhook الحقيقي مع الاستعلام المتقدم)
 app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || "";
+  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "";
   const branchKey = req.query.branch || "main";
   const defaultBranchName = BRANCH_NAMES[branchKey] || BRANCH_NAMES.main;
 
@@ -168,7 +180,7 @@ app.get("/success", (req, res) => {
           .ticket-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px; margin-bottom: 15px; }
           .ticket-title { font-size: 16px; font-weight: bold; }
           .ticket-brand { font-size: 12px; background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 4px; }
-          .code-box { background: #ffffff; color: #01338D; text-align: center; padding: 12px; border-radius: 8px; margin: 15px 0; font-family: monospace; font-size: 24px; font-weight: bold; letter-spacing: 2px; }
+          .code-box { background: #ffffff; color: #01338D; text-align: center; padding: 12px; border-radius: 8px; margin: 15px 0; font-family: monospace; font-size: 24px; font-weight: bold; letter-spacing: 2px; min-height: 50px; display: flex; align-items: center; justify-content: center; }
           .info-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: #e0e0e0; }
           .info-row strong { color: #ffffff; }
 
@@ -178,7 +190,7 @@ app.get("/success", (req, res) => {
           .btn-download { background: #01338D; color: white; }
           .btn-home { background: #e9ecef; color: #333; width: 100%; margin-top: 10px; text-decoration: none; text-align: center; padding: 12px; border-radius: 8px; font-weight: bold; display: block; }
           
-          .spinner { border: 4px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 4px solid #fff; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 10px auto; }
+          .spinner { border: 4px solid rgba(1, 51, 141, 0.2); border-radius: 50%; border-top: 4px solid #01338D; width: 26px; height: 26px; animation: spin 1s linear infinite; margin-left: 10px; display: inline-block; }
           @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
           @media print {
@@ -206,7 +218,7 @@ app.get("/success", (req, res) => {
 
             <div class="code-box" id="codeContainer">
               <div class="spinner"></div>
-              <span style="font-size: 14px; font-weight: normal; color: #01338D;">جاري استخراج كارت الإنترنت...</span>
+              <span style="font-size: 14px; font-weight: normal;">جاري استخراج كارت الإنترنت...</span>
             </div>
 
             <div class="info-row">
@@ -228,16 +240,22 @@ app.get("/success", (req, res) => {
         </div>
 
         <script>
-          const txId = "${transactionId}";
+          const urlParams = new URLSearchParams(window.location.search);
+          const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || "${transactionId}";
           
+          let attempts = 0;
+          const maxAttempts = 20; // إجمالي زمن الانتظار 40 ثانية
+
           async function pollVoucher() {
-            if (!txId) {
-              document.getElementById('codeContainer').innerText = "لم يتم العثور على رقم العملية";
+            if (!txId || txId === "غير محدد") {
+              document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:14px;'>لم يتم العثور على رقم العملية</span>";
+              document.getElementById('pkgName').innerText = "غير معروف";
               return;
             }
 
             try {
-              const res = await fetch('/api/check-voucher/' + txId);
+              attempts++;
+              const res = await fetch('/api/check-voucher/' + encodeURIComponent(txId));
               const data = await res.json();
 
               if (data.success && data.data) {
@@ -247,10 +265,19 @@ app.get("/success", (req, res) => {
                   document.getElementById('bName').innerText = data.data.branchName;
                 }
               } else {
-                setTimeout(pollVoucher, 2000);
+                if (attempts < maxAttempts) {
+                  setTimeout(pollVoucher, 2000);
+                } else {
+                  document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>تعذر استلام الكارت تلقائياً. يرجى تزويد الدعم الفني برقم العملية: " + txId + "</span>";
+                  document.getElementById('pkgName').innerText = "في انتظار التأكيد";
+                }
               }
             } catch (e) {
-              setTimeout(pollVoucher, 2500);
+              if (attempts < maxAttempts) {
+                setTimeout(pollVoucher, 2500);
+              } else {
+                document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>حدث خطأ في الاتصال بالسيرفر</span>";
+              }
             }
           }
 
@@ -259,7 +286,6 @@ app.get("/success", (req, res) => {
           function downloadHTML() {
             const cardElement = document.getElementById('printableCard').outerHTML;
             const blob = new Blob(['<html><head><meta charset="utf-8"><title>كارت شبكة حكايات</title></head><body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#f0f2f5;font-family:sans-serif;">' + cardElement + '</body></html>'], { type: 'text/html' });
-            const link = document.createElement('link');
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
             a.download = "Hikayat_Card_" + txId + ".html";
