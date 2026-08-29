@@ -10,7 +10,7 @@ const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 
 const app = express();
-const PORT = process.env.MIKROTIK_PORT || process.env.PORT || 9595;
+const PORT = process.env.MIKROTIK_PORT || process.env.PORT;
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
 
 const BRANCH_NAMES = {
