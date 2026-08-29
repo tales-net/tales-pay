@@ -95,7 +95,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
 
     while (!isCreated && attempts < maxAttempts) {
       attempts++;
-      cardCode = generateCardCardCode ? generateCardCode(cardInfo.prefix) : generateCardCode(cardInfo.prefix);
+      cardCode = generateCardCode(cardInfo.prefix);
 
       try {
         console.log(`👤 [User-Manager] (${targetBranch}) جاري إضافة المستخدم وتفعيل البروفايل: ${cardCode}`);
@@ -116,7 +116,6 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
             customer: "admin"
           });
         } else {
-          // بديل متوافق في حال كانت المكتبة تدعم التوجيه المباشر
           await api.write(["/tool/user-manager/user/create-and-activate-profile", `=user=${cardCode}`, `=profile=${cardInfo.profile}`, `=customer=admin`]);
         }
 
@@ -136,7 +135,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
             });
             isCreated = true;
           } catch (hotspotError) {
-            throw addError; // رمي الخطأ الأصلي في حال فشل الاتجاهين
+            throw addError;
           }
         }
       }
