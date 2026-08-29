@@ -17,6 +17,34 @@ const BRANCH_NAMES = {
   branch3: "حكايات نت فرع ثالث"
 };
 
+/**
+ * دالة مساعدة لتحديد مفتاح الفرع بدقة من الحمولة أو من merchant_order_id
+ */
+function extractBranchKey(obj) {
+  // 1. الفحص من الحقول المباشرة داخل obj أو obj.order
+  const directBranch = 
+    obj.merchant_extra?.branch ||
+    obj.order?.merchant_extra?.branch ||
+    obj.extra_data?.branch || 
+    obj.order?.extra_data?.branch || 
+    obj.branch || 
+    obj.order?.branch;
+
+  if (directBranch && BRANCH_NAMES[directBranch]) {
+    return directBranch;
+  }
+
+  // 2. تحليل merchant_order_id كمصدر إضافي (مثال: TALES-BRANCH2-1788021445815)
+  const merchantOrderId = String(obj.order?.merchant_order_id || obj.merchant_order_id || "").toLowerCase();
+  
+  if (merchantOrderId.includes("branch2")) return "branch2";
+  if (merchantOrderId.includes("branch3")) return "branch3";
+  if (merchantOrderId.includes("main")) return "main";
+
+  // 3. التراجع للفرع الافتراضي
+  return "main";
+}
+
 router.post("/paymob-webhook", async (req, res) => {
   try {
     // 1. استخراج البيانات من Paymob سواء كانت مباشرة أو داخل obj
@@ -38,14 +66,8 @@ router.post("/paymob-webhook", async (req, res) => {
     const amountEgp = (amountCents / 100).toFixed(2);
     const numericAmount = parseFloat(amountEgp);
 
-    // استخراج الفرع المختار بأي طريقة متاحة في بيانات Paymob
-    const branchKey = 
-      obj.extra_data?.branch || 
-      obj.order?.extra_data?.branch || 
-      obj.merchant_extra?.branch || 
-      obj.branch || 
-      "main";
-
+    // 🔍 استخراج الفرع بدقة عبر الدالة المخصصة
+    const branchKey = extractBranchKey(obj);
     const branchDisplayName = BRANCH_NAMES[branchKey] || BRANCH_NAMES.main;
 
     // استخراج رقم الهاتف بجميع الاحتمالات الممكنة لضمان وصوله
@@ -57,7 +79,7 @@ router.post("/paymob-webhook", async (req, res) => {
 
     if (isSuccess) {
       // طباعة بيانات الدفع في السيرفر للتحقق والتتبع
-      console.log(`💳 [Webhook Debug] معاملة رقم: ${transactionId} (طلب: ${orderId}) | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ بالقروش: ${amountCents} | المبلغ بالجنيه: ${numericAmount}ج`);
+      console.log(`💳 [Webhook Debug] معاملة رقم: ${transactionId} (طلب: ${orderId}) | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ: ${numericAmount}ج`);
 
       // 3. تحديد اسم البروفايل/الباقة من ملف profiles.js بشكل آمن ودقيق
       let packageName = "باقة إنترنت شبكة حكايات";
