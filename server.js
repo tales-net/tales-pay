@@ -8,13 +8,19 @@ const { processPayment } = require("./pay");
 const { sendTelegramMessage } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
-const { BRANCH_NAMES } = require("./voucher");
 
 const app = express();
-const PORT = process.env.MIKROTIK_PORT || process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
 
-// خريطة عالمية لحفظ بيانات الكروت
+// خريطة الفروع المعتمدة
+const BRANCH_NAMES = {
+  main: "حكايات نت رئيسي",
+  branch2: "حكايات نت فرع ثاني",
+  branch3: "حكايات نت فرع ثالث"
+};
+
+// خريطة عالمية لحفظ الكروت مؤقتاً
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
 app.use(cors());
@@ -36,7 +42,7 @@ function getClientPublicIP(req) {
   );
 }
 
-// معالجة طلب الدفع
+// معالجة طلب الدفع الموحد
 async function handlePaymentRequest(req, res) {
   try {
     const data = { ...req.query, ...req.body };
@@ -55,7 +61,7 @@ async function handlePaymentRequest(req, res) {
     const selectedMethod = payment_method || method || "wallet";
     const selectedBranch = branch || branch_key || "main";
     const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.main;
-    const userPhone = phone || user_phone || phoneNumber || (data.phone_number) || "غير محدد";
+    const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
 
     const paymentPayload = {
@@ -102,7 +108,7 @@ async function handlePaymentRequest(req, res) {
       return res.send(result.content);
     }
   } catch (err) {
-    console.error("❌ خطأ في معالجة الدفع:", err.response?.data || err.message);
+    console.error("❌ خطأ في معالجة طلب الدفع:", err.response?.data || err.message);
     if (req.headers["content-type"]?.includes("application/json")) {
       return res.status(500).json({ error: `حدث خطأ أثناء معالجة عملية الدفع: ${err.message}` });
     }
@@ -113,7 +119,7 @@ async function handlePaymentRequest(req, res) {
 app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
 
-// 🔍 API للاستعلام عن الكارت المسحوب فعلياً في الـ Webhook
+// API للاستعلام عن حالة الكارت المولد للمستخدم في صفحة النجاح
 app.get("/api/check-voucher/:txId", (req, res) => {
   const txId = String(req.params.txId || "").trim();
   
@@ -130,7 +136,7 @@ app.get("/api/check-voucher/:txId", (req, res) => {
 
   return res.json({ 
     success: false, 
-    message: "جاري تأكيد عملية الدفع وتفعيل الكارت..." 
+    message: "جاري تأكيد عملية الدفع وتوليد الكارت من السيرفر..." 
   });
 });
 
@@ -143,12 +149,12 @@ app.post("/api/disable-queue", async (req, res) => {
     }
     return res.json({ success: true, message: "تم استقبال الطلب" });
   } catch (err) {
-    console.error("❌ خطأ في تنفيذ أمر السيرفر الرئيسي:", err.message);
+    console.error("❌ خطأ في تعطيل الـ Queue:", err.message);
     return res.status(500).json({ success: false, error: "حدث خطأ في الخادم الداخلي" });
   }
 });
 
-// صفحة نجاح الدفع (تنتظر الـ Webhook الحقيقي مع الاستعلام المتقدم)
+// صفحة نجاح الدفع وعرض الكارت للمستخدم
 app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "";
   const branchKey = req.query.branch || "main";
@@ -218,7 +224,7 @@ app.get("/success", (req, res) => {
 
             <div class="code-box" id="codeContainer">
               <div class="spinner"></div>
-              <span style="font-size: 14px; font-weight: normal;">جاري استخراج كارت الإنترنت...</span>
+              <span style="font-size: 14px; font-weight: normal;">جاري إصدار الكارت من السيرفر...</span>
             </div>
 
             <div class="info-row">
@@ -227,7 +233,7 @@ app.get("/success", (req, res) => {
             </div>
             <div class="info-row">
               <span>حالة الدفع:</span>
-              <strong style="color: #2ec771;"><i class="fa fa-shield"></i> مؤكد ومفعل</strong>
+              <strong style="color: #2ec771;"><i class="fa fa-shield"></i> مؤكد ومفعل آلياً</strong>
             </div>
           </div>
 
@@ -244,7 +250,7 @@ app.get("/success", (req, res) => {
           const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || "${transactionId}";
           
           let attempts = 0;
-          const maxAttempts = 20; // إجمالي زمن الانتظار 40 ثانية
+          const maxAttempts = 25; // زمن انتظار حتى 50 ثانية لضمان نجاح الاتصال بالميكروتيك وتوليد الكارت
 
           async function pollVoucher() {
             if (!txId || txId === "غير محدد") {
@@ -268,15 +274,15 @@ app.get("/success", (req, res) => {
                 if (attempts < maxAttempts) {
                   setTimeout(pollVoucher, 2000);
                 } else {
-                  document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>تعذر استلام الكارت تلقائياً. يرجى تزويد الدعم الفني برقم العملية: " + txId + "</span>";
-                  document.getElementById('pkgName').innerText = "في انتظار التأكيد";
+                  document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: " + txId + "</span>";
+                  document.getElementById('pkgName').innerText = "في انتظار الاستجابة";
                 }
               }
             } catch (e) {
               if (attempts < maxAttempts) {
                 setTimeout(pollVoucher, 2500);
               } else {
-                document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>حدث خطأ في الاتصال بالسيرفر</span>";
+                document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>خطأ في الاتصال بالسيرفر</span>";
               }
             }
           }
