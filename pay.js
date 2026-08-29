@@ -1,5 +1,27 @@
+const axios = require('axios');
+const { getCheckoutPage } = require('./checkout');
+const { getAuthToken, createOrder, getPaymentKey } = require('./paymob');
+
+/**
+ * أسماء الفروع للطباعة والتحديد
+ */
+const BRANCH_NAMES = {
+  main: 'حكايات نت رئيسي',
+  branch2: 'حكايات نت فرع ثاني',
+  branch3: 'حكايات نت فرع ثالث'
+};
+
+/**
+ * إنشاء المعاملة وتجهيز رابط الدفع الخاص بـ Paymob بناءً على نوع الوسيلة والفرع المختار
+ * @param {string} phone - رقم الهاتف أو المحفظة
+ * @param {string|number} amount - المبلغ بالجنيه
+ * @param {string} method - وسيلة الدفع (wallet, card, etc.)
+ * @param {string} branch - الفرع (main, branch2, branch3)
+ * @returns {Promise<{type: string, url?: string, content?: string}>}
+ */
 async function createPaymobPayment(phone, amount, method = 'wallet', branch = 'main') {
   try {
+    // 1. تحويل المبلغ إلى قروش (Cents) وتوحيد نص وسيلة الدفع والفرع
     const amountCents = Math.round(parseFloat(amount) * 100).toString();
     const cleanMethod = (method || 'wallet').toLowerCase();
     const selectedBranch = (branch && BRANCH_NAMES[branch]) ? branch : 'main';
@@ -7,6 +29,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = 'm
 
     console.log(`💳 [Pay.js] البدء في إنشاء معاملة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amount} ج.م | الوسيلة: ${cleanMethod}`);
 
+    // 2. تحديد Integration ID المناسب من متغيرات البيئة
     let integrationId;
     switch (cleanMethod) {
       case 'card':
@@ -22,18 +45,16 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = 'm
       throw new Error(`Missing Integration ID for method: ${cleanMethod}`);
     }
 
+    // 3. الحصول على توكن المصادقة، رقم الطلب، ومفتاح الدفع مع تمرير اسم الفرع
     const token = await getAuthToken();
     
-    // 💡 التعديل الهام هنا: دمج اسم الفرع بداخل merchant_order_id لضمان عودته في الـ Webhook
-    const customMerchantOrderId = `${selectedBranch}_${Date.now()}`;
-
-    // إنشاء الطلب مع تمرير الـ merchant_order_id الجديد
+    // تمرير الفرع ضمن بيانات الطلب (مهم لتتبعه في Webhook)
     const orderId = await createOrder(token, amountCents, {
       branch: selectedBranch,
-      branch_name: branchDisplayName,
-      merchant_order_id: customMerchantOrderId
+      branch_name: branchDisplayName
     });
 
+    // الحصول على مفتاح الدفع مع تضمين الفرع بداخل بيانات العميل/الطلب
     const paymentKey = await getPaymentKey(
       token, 
       orderId, 
@@ -43,6 +64,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = 'm
       { branch: selectedBranch, branchName: branchDisplayName }
     );
 
+    // 4. معالجة وسيلة المحفظة الإلكترونية (Mobile Wallet)
     if (cleanMethod === 'wallet') {
       const walletRes = await axios.post('https://accept.paymob.com/api/acceptance/payments/pay', {
         source: {
@@ -58,7 +80,10 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = 'm
       }
       return { type: 'redirect', url: redirectUrl };
     } 
+    
+    // 5. معالجة البطاقات البنكية ووسائل التقسيط (Card, etc.)
     else {
+      // السماح بتخصيص Iframe ID خاص بالبطاقة أو استخدام الـ ID العام كبديل
       const iframeId = cleanMethod === 'card' 
         ? (process.env.CARD_IFRAME_ID || process.env.PAYMOB_IFRAME_ID) 
         : process.env.PAYMOB_IFRAME_ID;
@@ -81,3 +106,9 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = 'm
     throw new Error(`Payment processing failed: ${err.message}`);
   }
 }
+
+module.exports = { 
+  createPaymobPayment, 
+  processPayment: createPaymobPayment,
+  BRANCH_NAMES
+};
