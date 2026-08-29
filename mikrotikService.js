@@ -95,26 +95,30 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
 
     while (!isCreated && attempts < maxAttempts) {
       attempts++;
-      cardCode = generateCardCode(cardInfo.prefix);
+      cardCode = generateCardCardCode ? generateCardCode(cardInfo.prefix) : generateCardCode(cardInfo.prefix);
 
       try {
-        console.log(`👤 [User-Manager] (${targetBranch}) جاري إضافة المستخدم: ${cardCode}`);
+        console.log(`👤 [User-Manager] (${targetBranch}) جاري إضافة المستخدم وتفعيل البروفايل: ${cardCode}`);
         
-        // 1. إضافة المستخدم أولاً
+        // 1. إضافة المستخدم أولاً في User Manager
         await api.menu("/tool/user-manager/user").add({
           username: cardCode,
           password: cardCode,
           customer: "admin"
         });
 
-        console.log(`⚡ [User-Manager] جاري تفعيل البروفايل (${cardInfo.profile}) للمستخدم: ${cardCode}`);
-        
-        // 2. تفعيل البروفايل بالترتيب الصحيح الذي أثبت نجاحه
-        await api.menu("/tool/user-manager/user").cmd("create-and-activate-profile", {
-          user: cardCode,
-          profile: cardInfo.profile,
-          customer: "admin"
-        });
+        // 2. تفعيل البروفايل باستخدام action المناسبة للمكتبة أو إرسال الأمر المباشر
+        const userMenu = api.menu("/tool/user-manager/user");
+        if (typeof userMenu.action === "function") {
+          await userMenu.action("create-and-activate-profile", {
+            user: cardCode,
+            profile: cardInfo.profile,
+            customer: "admin"
+          });
+        } else {
+          // بديل متوافق في حال كانت المكتبة تدعم التوجيه المباشر
+          await api.write(["/tool/user-manager/user/create-and-activate-profile", `=user=${cardCode}`, `=profile=${cardInfo.profile}`, `=customer=admin`]);
+        }
 
         isCreated = true;
       } catch (addError) {
@@ -132,7 +136,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
             });
             isCreated = true;
           } catch (hotspotError) {
-            throw addError; // رمي الخطأ الأصلي الخاص بـ User-Manager لو فشل الاتجاهين
+            throw addError; // رمي الخطأ الأصلي في حال فشل الاتجاهين
           }
         }
       }
