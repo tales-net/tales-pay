@@ -8,16 +8,14 @@ const { processPayment } = require("./pay");
 const { sendTelegramMessage } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
+const { BRANCH_NAMES } = require("./voucher");
 
 const app = express();
-const PORT = process.env.MIKROTIK_PORT || process.env.PORT;
+const PORT = process.env.MIKROTIK_PORT || process.env.PORT || 3000;
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
 
-const BRANCH_NAMES = {
-  main: 'حكايات نت رئيسي',
-  branch2: 'حكايات نت فرع ثاني',
-  branch3: 'حكايات نت فرع ثالث'
-};
+// خريطة عالمية لحفظ بيانات الكروت
+global.generatedCardsMap = global.generatedCardsMap || new Map();
 
 app.use(cors());
 app.use(express.json());
@@ -283,7 +281,7 @@ app.get("/fail", (req, res) => {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>فشل الدفع - شبكة حكايات</title>
         <style>
-          body { font-family: Tahoma, Cairo, sans-serif; background: #f0f2f5; text-align: text-center; padding: 40px 20px; direction: rtl; }
+          body { font-family: Tahoma, Cairo, sans-serif; background: #f0f2f5; text-align: center; padding: 40px 20px; direction: rtl; }
           .card { background: white; max-width: 420px; margin: auto; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
           .icon { font-size: 50px; color: #e74c3c; margin-bottom: 10px; }
           h1 { color: #2c3e50; font-size: 22px; margin-bottom: 10px; }
