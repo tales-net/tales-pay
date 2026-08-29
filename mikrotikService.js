@@ -58,7 +58,7 @@ function generateCardCode(prefix, randomLength = 6) {
 }
 
 /**
- * الدالة الرئيسية لمعالجة الدفع وإنشاء الكارت وتفعليه لنسخة ميكروتيك 5.26 عبر User-Manager
+ * الدالة الرئيسية لمعالجة الدفع وإنشاء وتفعيل الكارت في نظام User-Manager
  */
 async function processPaymentAndCreateCard(amount, branchKey = "main", transactionId = "") {
   const cardInfo = getCardPrefixAndType(amount);
@@ -75,7 +75,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
   const targetBranch = BRANCH_ROUTERS[branchKey] ? branchKey : "main";
   const routerConfig = BRANCH_ROUTERS[targetBranch];
 
-  console.log(`🌐 [MikroTik v5.26 User-Manager] جاري الاتصال بالفرع: [ ${targetBranch.toUpperCase()} ] على العنوان: ${routerConfig.host}`);
+  console.log(`🌐 [MikroTik v5.26] جاري الاتصال بالفرع: [ ${targetBranch.toUpperCase()} ] على العنوان: ${routerConfig.host}`);
 
   const client = new RouterOSClient({
     host: routerConfig.host,
@@ -98,35 +98,33 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       cardCode = generateCardCode(cardInfo.prefix);
 
       try {
-        console.log(`👤 [User-Manager] (${targetBranch}) جاري إضافة المستخدم وتفعيل البروفايل: ${cardCode}`);
+        console.log(`👤 [User-Manager] (${targetBranch}) جاري إضافة المستخدم: ${cardCode}`);
         
-        // 1. إضافة المستخدم أولاً في User Manager
+        // 1. تنفيذ أمر إضافة المستخدم
         await api.menu("/tool/user-manager/user").add({
           username: cardCode,
           password: cardCode,
           customer: "admin"
         });
 
-        // 2. تفعيل البروفايل باستخدام action المناسبة للمكتبة أو إرسال الأمر المباشر
-        const userMenu = api.menu("/tool/user-manager/user");
-        if (typeof userMenu.action === "function") {
-          await userMenu.action("create-and-activate-profile", {
-            user: cardCode,
-            profile: cardInfo.profile,
-            customer: "admin"
-          });
-        } else {
-          await api.write(["/tool/user-manager/user/create-and-activate-profile", `=user=${cardCode}`, `=profile=${cardInfo.profile}`, `=customer=admin`]);
-        }
+        console.log(`⚡ [User-Manager] جاري تفعيل البروفايل (${cardInfo.profile}) للمستخدم: ${cardCode}`);
+        
+        // 2. تنفيذ أمر تفعيل البروفايل (نفس الأوامر اليدوية الناجحة)
+        await api.menu("/tool/user-manager/user").add({
+          "create-and-activate-profile": "",
+          "user": cardCode,
+          "profile": cardInfo.profile,
+          "customer": "admin"
+        });
 
         isCreated = true;
       } catch (addError) {
         if (addError.message && (addError.message.includes("already exists") || addError.message.includes("already"))) {
           console.warn(`⚠️ [${targetBranch}] الكود ${cardCode} موجود مسبقاً، جاري إعادة المحاولة...`);
         } else {
-          // محاولة احتياطية ثانية في مسار Hotspot العادي إذا فشل الـ User-Manager
+          // خطة بديلة (Fallback) عبر الهوت سبوت العادي في حال حدثت مشكلة في اليوزر مانجر
           try {
-            console.log(`🔄 [Hotspot Regular] محاولة إضافة عبر Hotspot التقليدي للمستخدم: ${cardCode}`);
+            console.log(`🔄 [Hotspot Regular] محاولة إضافة احتياطية عبر Hotspot: ${cardCode}`);
             await api.menu("/ip/hotspot/user").add({
               name: cardCode,
               password: cardCode,
@@ -135,7 +133,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
             });
             isCreated = true;
           } catch (hotspotError) {
-            throw addError;
+            throw addError; // إعادة رمي الخطأ الأصلي لو فشل الاتجاهين
           }
         }
       }
@@ -158,7 +156,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
     };
 
   } catch (error) {
-    console.error(`❌ خطأ في الاتصال بميكروتيك الفرع (${targetBranch}) إصدار 5.26:`, error.message);
+    console.error(`❌ خطأ في الاتصال بميكروتيك الفرع (${targetBranch}):`, error.message);
     if (client) await client.close().catch(() => {});
 
     return {
