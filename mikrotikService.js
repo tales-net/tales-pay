@@ -39,7 +39,7 @@ function getCardPrefixAndType(amount) {
   }
 }
 
-function generateCardCode(prefix, randomLength = 8) {
+function generateCardCode(prefix, randomLength = 6) {
   const chars = "0123456789";
   let result = prefix;
   for (let i = 0; i < randomLength; i++) {
@@ -86,23 +86,42 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       try {
         const api = await client.connect();
 
-        // الخطوة 1: إضافة الكارت أولاً
+        // -------------------------------------------------------------
+        // الخطوة 1: إضافة المستخدم باستخدام قائمة الأوامر المباشرة (Array)
+        // -------------------------------------------------------------
         console.log(`👤 [User-Manager] (${targetBranch}) محاولة إضافة الكارت: ${cardCode}`);
         
-        await api.menu("/tool/user-manager/user").add({
-          username: cardCode,
-          password: cardCode,
-          customer: "admin"
-        });
+        const addUserCommand = [
+          "/tool/user-manager/user/add",
+          `=username=${cardCode}`,
+          `=password=${cardCode}`,
+          `=customer=admin`
+        ];
 
-        // إذا تم الإضافة بنجاح، نقوم بقطع الاتصال مؤقتاً
+        if (typeof client.write === "function") {
+          await client.write(addUserCommand);
+        } else if (typeof api.write === "function") {
+          await api.write(addUserCommand);
+        } else {
+          // الطريقة الاحتياطية البديلة
+          await api.menu("/tool/user-manager/user").add({
+            username: cardCode,
+            password: cardCode,
+            customer: "admin"
+          });
+        }
+
         await client.close().catch(() => {});
 
-        // الانتظار لمدة 10 ثوانٍ لضمان التثبيت الكامل كما طلبت
+        // -------------------------------------------------------------
+        // الانتظار لمدة 10 ثوانٍ لضمان التثبيت الكامل
+        // -------------------------------------------------------------
         console.log(`⏳ تم إضافة الكارت بنجاح، الانتظار 10 ثوانٍ قبل تفعيل الباقة...`);
         await sleep(10000);
 
-        // الخطوة 2: إعادة الاتصال وتفعيل البروفايل/الباقة
+        // -------------------------------------------------------------
+        // الخطوة 2: تفعيل البروفايل باستخدام نفس أسلوب قائمة الأوامر (Array) تماماً
+        // -------------------------------------------------------------
         console.log(`⚡ [User-Manager] جاري تفعيل الباقة (${cardInfo.profile}) للكارت: ${cardCode}`);
         
         const client2 = new RouterOSClient({
@@ -127,6 +146,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
         } else if (typeof api2.write === "function") {
           await api2.write(activateCommand);
         } else {
+          // محاولة بديلة عبر تنفيذ الكوماند المباشر
           await api2.menu("/tool/user-manager/user").add({
             command: "create-and-activate-profile",
             user: cardCode,
@@ -141,13 +161,11 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       } catch (stepError) {
         if (client) await client.close().catch(() => {});
         
-        // التحقق مما إذا كان الخطأ بسبب أن الكارت موجود مسبقاً
         const errStr = stepError.message || "";
         if (errStr.includes("already exists") || errStr.includes("such username already exists")) {
           console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، سيتم توليد رقم كارت جديد وإعادة المحاولة...`);
-          continue; // الاستمرار في الـ while لتوليد رقم جديد
+          continue;
         } else {
-          // إذا كان خطأ آخر غير تكرار الاسم، نقوم برميه لإظهاره
           throw stepError;
         }
       }
