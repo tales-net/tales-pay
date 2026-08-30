@@ -25,7 +25,7 @@ const BRANCH_ROUTERS = {
 
 // 📌 دالة جلب إعدادات الفرع مع رسالة توضيحية في اللوج
 function getRouterConfig(branchName) {
-  const branch = BRANCH_ROUTERS[branchName] || BRANCH_ROUTERS.main;
+  const branch = BRANCH_ROUTERS[branchName] || BRANCH_ROUTERS.branch2;
   console.log(`📌 جاري الاتصال بالراوتر للفرع: [${branchName}] على العنوان: ${branch.host || 'غير محدد'}:${branch.port}`);
   return branch;
 }
@@ -48,7 +48,20 @@ function getCardPrefixAndType(amount) {
   }
 }
 
-async function processPaymentAndCreateCard(amount, branchKey = "main", transactionId = "") {
+// 🛡️ دالة ذكية لتنظيف وتصحيح مفتاح الفرع القادم من أي مكان (سواء حروف كبيرة أو رموز)
+function normalizeBranchKey(branchKey) {
+  if (!branchKey) return "branch2"; // الافتراضي الآمن
+  
+  const clean = String(branchKey).toLowerCase().trim().replace(/[-_\s]/g, "");
+  
+  if (clean.includes("branch3") || clean.includes("3") || clean.includes("ثالث")) return "branch3";
+  if (clean.includes("branch2") || clean.includes("2") || clean.includes("ثاني")) return "branch2";
+  if (clean.includes("main") || clean.includes("رئيسي") || clean.includes("1")) return "main";
+  
+  return "branch2"; // القيمة الافتراضية في حال عدم المطابقة
+}
+
+async function processPaymentAndCreateCard(amount, branchKey = "branch2", transactionId = "") {
   const cardInfo = getCardPrefixAndType(amount);
 
   if (cardInfo.isCustom) {
@@ -60,8 +73,8 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
     };
   }
 
-  // 1. تحديد الفرع بدقة واستدعاء الإعدادات الخاصة به
-  const targetBranch = BRANCH_ROUTERS[branchKey] ? branchKey : "main";
+  // 1. التطبيع الآكي لاسم الفرع لضمان عدم الوقوع في فخ الفروع الخاطئة
+  const targetBranch = normalizeBranchKey(branchKey);
   const routerConfig = getRouterConfig(targetBranch);
 
   // 2. التحقق من وجود Host حقيقي للفرع المطلوب
@@ -96,5 +109,6 @@ module.exports = {
   processPaymentAndCreateCard,
   getCardPrefixAndType,
   BRANCH_ROUTERS,
-  getRouterConfig
+  getRouterConfig,
+  normalizeBranchKey
 };
