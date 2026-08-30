@@ -3,10 +3,10 @@ const { RouterOSClient } = require("routeros-client");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * تفعيل الباقة/البروفايل للكارت باستخدام الطريقة المباشرة المطابقة للـ Terminal
+ * تفعيل الباقة/البروفايل للكارت بعد الانتظار تماماً مثل الـ Terminal
  */
 async function activateCardProfile(routerConfig, cardCode, profileName, delaySeconds = 10) {
-  console.log(`⏳ الانتظار لمدة ${delaySeconds} ثوانٍ لضمان استقرار الكارت (${cardCode}) في السيرفر...`);
+  console.log(`⏳ الانتظار لمدة ${delaySeconds} ثوانٍ لضمان استقرار الكارت (${cardCode}) قبل تفعيل الباقة...`);
   await sleep(delaySeconds * 1000);
 
   const client = new RouterOSClient({
@@ -19,26 +19,22 @@ async function activateCardProfile(routerConfig, cardCode, profileName, delaySec
 
   try {
     const api = await client.connect();
-    console.log(`⚡ [User-Manager] جاري إرسال أمر تفعيل الباقة (${profileName}) للكارت: ${cardCode}`);
+    console.log(`⚡ [User-Manager] تنفيذ أمر تفعيل البروفايل (${profileName}) للمستخدم: ${cardCode}`);
 
-    // مصفوفة الأوامر المطابقة تماماً للأمر الناجح في الـ Terminal:
-    // /tool user-manager user create-and-activate-profile user="..." profile="..." customer=admin
-    const activateCommand = [
+    // كتابة الأمر بصيغة قائمة (Array) مطابقة تماماً للـ Terminal
+    const commandArray = [
       "/tool/user-manager/user/create-and-activate-profile",
       `=user=${cardCode}`,
       `=profile=${profileName}`,
       `=customer=admin`
     ];
 
-    // تنفيذ الأمر بالطريقة المباشرة المتاحة في عميل الاتصال
     if (typeof client.write === "function") {
-      await client.write(activateCommand);
+      await client.write(commandArray);
     } else if (typeof api.write === "function") {
-      await api.write(activateCommand);
-    } else if (typeof client.send === "function") {
-      await client.send(activateCommand);
+      await api.write(commandArray);
     } else {
-      // محاولة بديلة عبر القائمة إذا لم تتوفر كتابة مباشرة
+      // طريقة بديلة في حال تطلبت المكتبة تمرير كائن مباشر
       await api.menu("/tool/user-manager/user").add({
         command: "create-and-activate-profile",
         user: cardCode,
@@ -53,8 +49,8 @@ async function activateCardProfile(routerConfig, cardCode, profileName, delaySec
 
   } catch (error) {
     if (client) await client.close().catch(() => {});
-    console.error(`❌ خطأ أثناء تفعيل الباقة للكارت ${cardCode}:`, error.message);
-    throw new Error(`تعذر تفعيل الباقة في اليوزر مانجر: ${error.message}`);
+    console.error(`❌ خطأ أثناء تفعيل الباقة: ${error.message}`);
+    throw new Error(`فشل تفعيل البروفايل: ${error.message}`);
   }
 }
 
