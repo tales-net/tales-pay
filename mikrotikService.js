@@ -1,4 +1,5 @@
-const { RouterOSClient } = require("routeros-client");
+const { createCardOnly } = require("./mikrotikCardService");
+const { activateCardProfile } = require("./mikrotikProfileService");
 
 const BRANCH_ROUTERS = {
   main: {
@@ -39,17 +40,6 @@ function getCardPrefixAndType(amount) {
   }
 }
 
-function generateCardCode(prefix, randomLength = 8) {
-  const chars = "0123456789";
-  let result = prefix;
-  for (let i = 0; i < randomLength; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 async function processPaymentAndCreateCard(amount, branchKey = "main", transactionId = "") {
   const cardInfo = getCardPrefixAndType(amount);
 
@@ -65,105 +55,12 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
   const targetBranch = BRANCH_ROUTERS[branchKey] ? branchKey : "main";
   const routerConfig = BRANCH_ROUTERS[targetBranch];
 
-  let cardCode = "";
-  let isCreated = false;
-  let attempts = 0;
-  const maxAttempts = 5;
-
   try {
-    while (!isCreated && attempts < maxAttempts) {
-      attempts++;
-      cardCode = generateCardCode(cardInfo.prefix);
+    // 1. استدعاء ملف إضافة الكارت فقط
+    const cardCode = await createCardOnly(routerConfig, cardInfo.prefix, transactionId);
 
-      const client = new RouterOSClient({
-        host: routerConfig.host,
-        user: routerConfig.user,
-        password: routerConfig.password,
-        port: routerConfig.port,
-        timeout: 10
-      });
-
-      try {
-        const api = await client.connect();
-
-        // -------------------------------------------------------------
-        // الخطوة 1: إضافة الكارت باستخدام دالة add التي أثبتت نجاحها
-        // -------------------------------------------------------------
-        console.log(`👤 [User-Manager] (${targetBranch}) محاولة إضافة الكارت: ${cardCode}`);
-        
-        await api.menu("/tool/user-manager/user").add({
-          username: cardCode,
-          password: cardCode,
-          customer: "admin"
-        });
-
-        await client.close().catch(() => {});
-
-        // -------------------------------------------------------------
-        // الانتظار لمدة 10 ثوانٍ لضمان استقرار الكارت في قاعدة البيانات
-        // -------------------------------------------------------------
-        console.log(`⏳ تم إضافة الكارت بنجاح، الانتظار 10 ثوانٍ قبل تفعيل الباقة...`);
-        await sleep(10000);
-
-        // -------------------------------------------------------------
-        // الخطوة 2: تفعيل البروفايل عن طريق إرسال الأمر كـ add داخل قائمة اليوزر مانجر أو عبر دالة الـ write المتاحة في api
-        // -------------------------------------------------------------
-        console.log(`⚡ [User-Manager] جاري تفعيل الباقة (${cardInfo.profile}) للكارت: ${cardCode}`);
-        
-        const client2 = new RouterOSClient({
-          host: routerConfig.host,
-          user: routerConfig.user,
-          password: routerConfig.password,
-          port: routerConfig.port,
-          timeout: 10
-        });
-
-        const api2 = await client2.connect();
-
-        // محاولة تنفيذ الأمر بالطريقة التي تدعمها واجهة الـ API للتحكم بالكلمات المركبة
-        if (typeof api2.write === "function") {
-          await api2.write([
-            "/tool/user-manager/user/create-and-activate-profile",
-            `=user=${cardCode}`,
-            `=profile=${cardInfo.profile}`,
-            `=customer=admin`
-          ]);
-        } else if (typeof api2.send === "function") {
-          await api2.send([
-            "/tool/user-manager/user/create-and-activate-profile",
-            `=user=${cardCode}`,
-            `=profile=${cardInfo.profile}`,
-            `=customer=admin`
-          ]);
-        } else {
-          // طريقة بديلة لتمرير الأوامر الخاصة عبر الـ menu
-          await api2.menu("/tool/user-manager/user").add({
-            ".id": cardCode,
-            "create-and-activate-profile": "",
-            profile: cardInfo.profile,
-            customer: "admin"
-          });
-        }
-
-        await client2.close().catch(() => {});
-        isCreated = true; // تم إنشاء وتفعيل الكارت والباقة بنجاح تام!
-
-      } catch (stepError) {
-        if (client) await client.close().catch(() => {});
-        
-        const errStr = stepError.message || "";
-        if (errStr.includes("already exists") || errStr.includes("such username already exists")) {
-          console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، سيتم توليد رقم كارت جديد وإعادة المحاولة...`);
-          continue; // الاستمرار لتوليد رقم جديد
-        } else {
-          throw stepError;
-        }
-      }
-    }
-
-    if (!isCreated) {
-      throw new Error("فشل توليد كود فريد بعد عدة محاولات.");
-    }
+    // 2. استدعاء ملف تفعيل الباقة بعد الانتظار 10 ثوانٍ
+    await activateCardProfile(routerConfig, cardCode, cardInfo.profile, 10);
 
     return {
       success: true,
@@ -178,7 +75,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
   } catch (error) {
     return {
       success: false,
-      error: `تعذر توليد الكارت تلقائياً: ${error.message}`
+      error: `تعذر توليد الكارت وتفعيل الباقة: ${error.message}`
     };
   }
 }
