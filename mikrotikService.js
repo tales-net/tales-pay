@@ -25,7 +25,7 @@ function getCardPrefixAndType(amount) {
   const numAmount = Number(amount);
   switch (numAmount) {
     case 5:
-      return { prefix: "01", profile: "Bronze", packageName: "Bronze", isCustom: false };
+      return { prefix: "01", profile: "Bronze", packageName: "الباقة البرونزية", isCustom: false };
     case 15:
       return { prefix: "02", profile: "Silver", packageName: "الباقة الفضية", isCustom: false };
     case 30:
@@ -39,7 +39,7 @@ function getCardPrefixAndType(amount) {
   }
 }
 
-function generateCardCode(prefix, randomLength = 8) {
+function generateCardCode(prefix, randomLength = 6) {
   const chars = "0123456789";
   let result = prefix;
   for (let i = 0; i < randomLength; i++) {
@@ -48,7 +48,6 @@ function generateCardCode(prefix, randomLength = 8) {
   return result;
 }
 
-// دالة مساعدة لعمل تأخير زمني (Delay) بالمللي ثانية
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function processPaymentAndCreateCard(amount, branchKey = "main", transactionId = "") {
@@ -87,10 +86,8 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       try {
         const api = await client.connect();
 
-        // -------------------------------------------------------------
-        // الخطوة الأولى: إضافة الكارت فقط في اليوزر مانجر
-        // -------------------------------------------------------------
-        console.log(`👤 [User-Manager] (${targetBranch}) المحاولة ${attempts}: إضافة الكارت ${cardCode}`);
+        // الخطوة 1: إضافة الكارت أولاً
+        console.log(`👤 [User-Manager] (${targetBranch}) محاولة إضافة الكارت: ${cardCode}`);
         
         await api.menu("/tool/user-manager/user").add({
           username: cardCode,
@@ -98,19 +95,15 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
           customer: "admin"
         });
 
-        // قطع الاتصال الأول مؤقتاً لتجهيز خطوة التفعيل
+        // إذا تم الإضافة بنجاح، نقوم بقطع الاتصال مؤقتاً
         await client.close().catch(() => {});
 
-        // -------------------------------------------------------------
-        // الانتظار لمدة 10 ثوانٍ لضمان استقرار الكارت في قاعدة البيانات
-        // -------------------------------------------------------------
-        console.log(`⏳ جاري الانتظار 10 ثوانٍ لضمان تثبيت الكارت قبل تفعيل الباقة...`);
+        // الانتظار لمدة 10 ثوانٍ لضمان التثبيت الكامل كما طلبت
+        console.log(`⏳ تم إضافة الكارت بنجاح، الانتظار 10 ثوانٍ قبل تفعيل الباقة...`);
         await sleep(10000);
 
-        // -------------------------------------------------------------
-        // الخطوة الثانية: إعادة الاتصال وتفعيل الباقة/البروفايل
-        // -------------------------------------------------------------
-        console.log(`⚡ [User-Manager] (${targetBranch}) تفعيل الباقة (${cardInfo.profile}) للكارت: ${cardCode}`);
+        // الخطوة 2: إعادة الاتصال وتفعيل البروفايل/الباقة
+        console.log(`⚡ [User-Manager] جاري تفعيل الباقة (${cardInfo.profile}) للكارت: ${cardCode}`);
         
         const client2 = new RouterOSClient({
           host: routerConfig.host,
@@ -129,10 +122,10 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
           `=customer=admin`
         ];
 
-        if (typeof api2.write === "function") {
-          await api2.write(activateCommand);
-        } else if (typeof client2.write === "function") {
+        if (typeof client2.write === "function") {
           await client2.write(activateCommand);
+        } else if (typeof api2.write === "function") {
+          await api2.write(activateCommand);
         } else {
           await api2.menu("/tool/user-manager/user").add({
             command: "create-and-activate-profile",
@@ -143,33 +136,19 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
         }
 
         await client2.close().catch(() => {});
-        isCreated = true;
+        isCreated = true; // تم إنشاء وتفعيل الكارت بنجاح تام!
 
       } catch (stepError) {
         if (client) await client.close().catch(() => {});
         
-        if (stepError.message && (stepError.message.includes("already exists") || stepError.message.includes("already"))) {
-          console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، سيتم توليد كود جديد...`);
-          continue;
+        // التحقق مما إذا كان الخطأ بسبب أن الكارت موجود مسبقاً
+        const errStr = stepError.message || "";
+        if (errStr.includes("already exists") || errStr.includes("such username already exists")) {
+          console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، سيتم توليد رقم كارت جديد وإعادة المحاولة...`);
+          continue; // الاستمرار في الـ while لتوليد رقم جديد
         } else {
-          // إذا فشلت طريقة اليوزر مانجر، نجرب الطريقة الاحتياطية المباشرة عبر الهوت سبوت
-          console.warn(`⚠️ فشل اليوزر مانجر، المحاولة عبر الهوت سبوت العادي...`);
-          const fallbackClient = new RouterOSClient({
-            host: routerConfig.host,
-            user: routerConfig.user,
-            password: routerConfig.password,
-            port: routerConfig.port,
-            timeout: 10
-          });
-          const fbApi = await fallbackClient.connect();
-          await fbApi.menu("/ip/hotspot/user").add({
-            name: cardCode,
-            password: cardCode,
-            profile: cardInfo.profile,
-            comment: `Paymob TXN: ${transactionId} | Branch: ${targetBranch}`
-          });
-          await fallbackClient.close().catch(() => {});
-          isCreated = true;
+          // إذا كان خطأ آخر غير تكرار الاسم، نقوم برميه لإظهاره
+          throw stepError;
         }
       }
     }
