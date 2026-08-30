@@ -27,11 +27,17 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
       console.log(`🔄 [محاولة ${attempt}/${maxRetries}] تمرير الكارت (${cardCode}) والبروفايل (${profileName}) للـ Script...`);
       const conn = await client.connect();
 
-      // إرسال المتغيرات العالمية بالطريقة الصحيحة للميكروتيك
+      // الأوامر التي سيتم إرسالها للميكروتيك بالتسلسل تماماً مثل الـ Terminal
+      // 1. تعيين متغير اسم الكارت عالمياً
       const setCardCmd = ["/system/script/environment/set", "=name=currentCardName", `=value=${cardCode}`];
+      
+      // 2. تعيين متغير اسم البروفايل عالمياً
       const setProfileCmd = ["/system/script/environment/set", "=name=currentCardProfile", `=value=${profileName}`];
+      
+      // 3. تشغيل السكريبت المخزن
       const runScriptCmd = ["/system/script/run", "=.id=activate_profile_script"];
 
+      // إرسال الأوامر بالترتيب باستخدام دالة conn.write المعتمدة في المكتبة
       if (typeof conn.write === "function") {
         await conn.write(setCardCmd);
         await conn.write(setProfileCmd);
@@ -41,12 +47,7 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
         await client.write(setProfileCmd);
         await client.write(runScriptCmd);
       } else {
-        // طريقة بديلة عبر الـ menu
-        const scriptMenu = conn.menu("/system/script");
-        if (typeof scriptMenu.set === "function") {
-          // تعيين المتغيرات عبر بيئة العمل إذا أتاحها الكلاينت
-        }
-        await scriptMenu.run({ ".id": "activate_profile_script" });
+        throw new Error("لا توجد دالة كتابة (write) صالحة في اتصال RouterOSClient");
       }
 
       await client.close().catch(() => {});
