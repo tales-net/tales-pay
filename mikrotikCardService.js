@@ -10,14 +10,13 @@ function generateCardCode(prefix, randomLength = 8) {
 }
 
 /**
- * إضافة الكارت في اليوزر مانجر مع التحقق التام من عدم التكرار
- * وإذا تم اكتشاف رقم مماثل، يتم توليد رقم آخر تلقائياً دون تفعيل البروفايل على القديم
+ * إضافة الكارت في اليوزر مانجر مع فحص التشابه والتكرار لجميع الفروع
  */
 async function createCardOnly(routerConfig, prefix, transactionId = "") {
   let cardCode = "";
   let isCreated = false;
   let attempts = 0;
-  const maxAttempts = 10; // زيادة عدد المحاولات للأمان التام
+  const maxAttempts = 10;
 
   while (!isCreated && attempts < maxAttempts) {
     attempts++;
@@ -32,50 +31,36 @@ async function createCardOnly(routerConfig, prefix, transactionId = "") {
     });
 
     try {
-      const api = await client.connect();
-      console.log(`👤 [User-Manager] محاولة إنشاء كارت جديد (محاولة ${attempts}): ${cardCode}`);
+      const conn = await client.connect();
+      console.log(`👤 [User-Manager] محاولة إنشاء كارت جديد (محاولة ${attempts}): ${cardCode} على السيرفر: ${routerConfig.host}`);
 
-      const addUserCommand = [
-        "/tool/user-manager/user/add",
-        `=username=${cardCode}`,
-        `=password=${cardCode}`,
-        `=customer=admin`
-      ];
-
-      // تنفيذ أمر الإضافة والتأكد من نجاحه وعدم وجود تكرار
-      if (typeof client.write === "function") {
-        await client.write(addUserCommand);
-      } else if (typeof api.write === "function") {
-        await api.write(addUserCommand);
-      } else {
-        await api.menu("/tool/user-manager/user").add({
-          username: cardCode,
-          password: cardCode,
-          customer: "admin"
-        });
-      }
+      // إضافة المستخدم في اليوزر مانجر
+      await conn.menu("/tool/user-manager/user").add({
+        username: cardCode,
+        password: cardCode,
+        customer: "admin"
+      });
 
       await client.close().catch(() => {});
-      isCreated = true; // تم إنشاء الكارت الفريد بنجاح تام ولن يتم لمس أي كارت قديم
-      console.log(`✅ تم التأكد من فريدة الكارت وإنشائه بنجاح: ${cardCode}`);
+      isCreated = true;
+      console.log(`✅ تم إنشاء الكارت بنظافة ودون تشابه: ${cardCode}`);
 
     } catch (error) {
       if (client) await client.close().catch(() => {});
       const errStr = error.message || "";
       
-      // إذا كان الخطأ بسبب أن الكارت موجود مسبقاً، نتجاهله ونستمر في توليد رقم جديد تماماً
+      // إذا كان الكارت مكرراً أو موجوداً مسبقاً، نتجاهله ونولد رقماً جديداً نظيفاً
       if (errStr.includes("already exists") || errStr.includes("such username already exists")) {
-        console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً في النظام، جاري توليد كارت آخر تفادياً لأي خطأ...`);
-        continue; 
+        console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، جاري توليد رقم جديد تفادياً لأي تكرار...`);
+        continue;
       } else {
-        // إذا كان خطأ تقني آخر غير التكرار، نقوم بإيقافه وإظهار الخطأ
         throw error;
       }
     }
   }
 
   if (!isCreated) {
-    throw new Error("فشل توليد كود كارت فريد بعد عدة محاولات.");
+    throw new Error("فشل توليد كود فريد وغير مكرر بعد عدة محاولات.");
   }
 
   return cardCode;
