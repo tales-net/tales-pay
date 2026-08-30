@@ -70,8 +70,15 @@ async function handlePaymentRequest(req, res) {
     }
 
     const selectedMethod = payment_method || method || "wallet";
-    const selectedBranch = branch || branch_key || "main";
-    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.main;
+    
+    // التقاط الفرع المختار بدقة من الطلب (سواء branch أو branch_key) وإذا لم يوجد نأخذ الفرع الثاني أو الرئيسي بحذر
+    const rawBranch = branch || branch_key || "branch2";
+    const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "branch2";
+    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.branch2;
+
+    // 🔍 سطر تتبع لمراقبة الفرع المستلم في الـ Terminal فوراً
+    console.log(`🚨 [SERVER CHECK] الفرع المستلم من الواجهة هو: [${selectedBranch}] (${branchDisplayName})`);
+
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
 
@@ -134,7 +141,6 @@ app.post("/api/pay", handlePaymentRequest);
 app.get("/api/test-create-card", async (req, res) => {
   const secretKey = req.query.secret;
   
-  // 🔒 التحقق من المفتاح السري قبل تنفيذ أي شيء
   if (!secretKey || secretKey !== process.env.TEST_SECRET_KEY) {
     console.warn(`🚨 محاولة وصول غير مصرح بها للرابط التجريبي من IP: ${getClientPublicIP(req)}`);
     return res.status(403).json({ 
@@ -145,7 +151,8 @@ app.get("/api/test-create-card", async (req, res) => {
 
   try {
     const amount = req.query.amount || "5";
-    const targetBranch = req.query.branch || req.query.branch_key || "main";
+    const rawTarget = req.query.branch || req.query.branch_key || "branch2";
+    const targetBranch = BRANCH_NAMES[rawTarget] ? rawTarget : "branch2";
     const testTxId = "TEST_" + Date.now();
 
     console.log(`🧪 [TEST] طلب اختبار جديد من IP: ${getClientPublicIP(req)} | مبلغ: ${amount} | فرع الهدف: [${targetBranch}]`);
@@ -159,7 +166,7 @@ app.get("/api/test-create-card", async (req, res) => {
         amount: parseFloat(amount),
         phone: "01000000000",
         branchKey: result.branchKey,
-        branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.main,
+        branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.branch2,
         createdAt: new Date()
       };
 
@@ -229,14 +236,14 @@ app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "";
   const queryBranch = req.query.branch || "";
   
-  let inferredBranch = "main";
+  let inferredBranch = "branch2";
   const upperTx = transactionId.toUpperCase();
   if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
   else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
   else if (upperTx.includes("MAIN")) inferredBranch = "main";
 
   const activeBranchKey = queryBranch || inferredBranch;
-  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.main;
+  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.branch2;
 
   res.send(`
     <!DOCTYPE html>
