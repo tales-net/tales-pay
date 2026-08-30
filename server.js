@@ -24,7 +24,7 @@ const BRANCH_NAMES = {
 // خريطة عالمية لحفظ الكروت مؤقتاً
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
-// 🧹 تنظيف الكروت المحفوظة مؤقتاً التي مر عليها أكثر من ساعة لتفريغ الذاكرة تلقائياً
+// 🧹 تنظيف الكروت المحفوظة مؤقتاً التي مر عليها أكثر أكثر من ساعة لتفريغ الذاكرة تلقائياً
 setInterval(() => {
   const oneHourAgo = Date.now() - (60 * 60 * 1000);
   for (let [key, value] of global.generatedCardsMap.entries()) {
@@ -130,8 +130,19 @@ async function handlePaymentRequest(req, res) {
 app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
 
-// 🧪 مسار اختبار مباشر لتوليد وإضافة الكارت للميكروتيك دون دفع حقيقي
+// 🧪 مسار اختبار مباشر لتوليد وإضافة الكارت للميكروتيك (محمي بـ Secret Key)
 app.get("/api/test-create-card", async (req, res) => {
+  const secretKey = req.query.secret;
+  
+  // 🔒 التحقق من المفتاح السري قبل تنفيذ أي شيء
+  if (!secretKey || secretKey !== process.env.TEST_SECRET_KEY) {
+    console.warn(`🚨 محاولة وصول غير مصرح بها للرابط التجريبي من IP: ${req.ip}`);
+    return res.status(403).json({ 
+      success: false, 
+      message: "⚠️ غير مسموح لك بالوصول لهذا الرابط التجريبي. مفتاح الحماية غير صحيح أو مفقود." 
+    });
+  }
+
   try {
     const amount = req.query.amount || "5";
     const branch = req.query.branch || "main";
@@ -156,7 +167,7 @@ app.get("/api/test-create-card", async (req, res) => {
 
       return res.json({
         success: true,
-        message: "✅ تم إضافة الكارت إلى الميكروتيك بنجاح وتوليده!",
+        message: "✅ تم إضافة الكارت إلى الميكروتيك بنجاح وتوليده تحت الحماية!",
         data: result,
         successPageLink: `/success?merchant_order_id=${testTxId}&branch=${branch}`
       });
