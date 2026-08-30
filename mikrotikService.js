@@ -1,22 +1,22 @@
 const { createCardOnly } = require("./mikrotikCardService");
 const { activateCardProfileViaScript } = require("./mikrotikProfileService");
 
-// 🌐 تعريف الفروع وربطها بمتغيرات البيئة في Render بدقة
+// 🌐 تعريف الفروع ببيانات مستقلة تماماً وموحدة في البورت والباسورد واليوزر
 const BRANCH_ROUTERS = {
   main: {
-    host: process.env.MIKROTIK_HOST || "192.168.1.1",
+    host: process.env.MIKROTIK_HOST,
     user: process.env.MIKROTIK_USER || "admin",
     password: process.env.MIKROTIK_PASSWORD || "",
     port: parseInt(process.env.MIKROTIK_PORT || "8728")
   },
   branch2: {
-    host: process.env.MIKROTIK_HOST_BRANCH2 || process.env.MIKROTIK_HOST || "192.168.2.1",
+    host: process.env.MIKROTIK_HOST_BRANCH2,
     user: process.env.MIKROTIK_USER || "admin",
     password: process.env.MIKROTIK_PASSWORD || "",
     port: parseInt(process.env.MIKROTIK_PORT || "8728")
   },
   branch3: {
-    host: process.env.MIKROTIK_HOST_BRANCH3 || process.env.MIKROTIK_HOST || "192.168.3.1",
+    host: process.env.MIKROTIK_HOST_BRANCH3,
     user: process.env.MIKROTIK_USER || "admin",
     password: process.env.MIKROTIK_PASSWORD || "",
     port: parseInt(process.env.MIKROTIK_PORT || "8728")
@@ -53,17 +53,22 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
     };
   }
 
-  // التأكد من اختيار الفرع الصحيح أو الرجوع للرئيسي
+  // 1. تحديد الفرع بدقة والتأكد من وجوده
   const targetBranch = BRANCH_ROUTERS[branchKey] ? branchKey : "main";
   const routerConfig = BRANCH_ROUTERS[targetBranch];
 
-  console.log(`🌐 [Mikrotik Service] جاري إرسال طلب الكارت إلى الفرع: [${targetBranch}] على العنوان: ${routerConfig.host}:${routerConfig.port}`);
+  console.log(`🌐 [Mikrotik Service] جاري إرسال طلب الكارت إلى الفرع: [${targetBranch}] على العنوان: ${routerConfig.host || 'غير محدد'}:${routerConfig.port}`);
+
+  // 2. التحقق من وجود Host حقيقي للفرع المطلوب
+  if (!routerConfig.host) {
+    throw new Error(`عنوان الـ IP أو الدومين الخاص بالفرع (${targetBranch}) غير معرّف في متغيرات البيئة في Render!`);
+  }
 
   try {
-    // 1. إنشاء الكارت في الميكروتيك
+    // 3. إنشاء الكارت في الميكروتيك للفرع المستهدف
     const cardCode = await createCardOnly(routerConfig, cardInfo.prefix, transactionId);
 
-    // 2. تفعيل البروفايل عبر السكريبت
+    // 4. تفعيل البروفايل عبر السكريبت
     await activateCardProfileViaScript(routerConfig, cardCode, cardInfo.profile, 10);
 
     return {
@@ -78,7 +83,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
 
   } catch (error) {
     console.error(`❌ خطأ في معالجة الميكروتيك للفرع ${targetBranch} (${routerConfig.host}):`, error.message);
-    throw new Error(`تعذر توليد الكارت وتفعيل الباقة (${targetBranch}): ${error.message}`);
+    throw new Error(`تعذر توليد الكارت وتفعيل الباقة للفرع (${targetBranch}): ${error.message}`);
   }
 }
 
