@@ -3,7 +3,7 @@ const { RouterOSClient } = require("routeros-client");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * تنفيذ أوامر اليوزر مانجر مع نظام إعادة المحاولة التلقائي (Retry) لضمان نجاح تفعيل الباقة
+ * تفعيل الباقة باستخدام أمر الميكروتيك المباشر وبنظام محاولات ذكي (Retry)
  */
 async function activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds = 10, maxRetries = 3) {
   console.log(`⏳ الانتظار لمدة ${delaySeconds} ثوانٍ لضمان استقرار الكارت (${cardCode}) في السيرفر...`);
@@ -24,30 +24,36 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
     });
 
     try {
-      console.log(`🔄 [محاولة ${attempt}/${maxRetries}] الاتصال بالميكروتيك وتفعيل البروفايل (${profileName}) للكارت: ${cardCode}`);
+      console.log(`🔄 [محاولة ${attempt}/${maxRetries}] إرسال أمر تفعيل البروفايل (${profileName}) للكارت: ${cardCode}`);
       const conn = await client.connect();
-      const userManager = conn.menu("/tool/user-manager/user");
 
-      // 1. إضافة المستخدم أولاً (احتياطياً)
-      try {
-        await userManager.add({
-          username: cardCode,
-          password: cardCode,
-          customer: "admin"
-        });
-        console.log(`✅ تم إضافة المستخدم ${cardCode} في اليوزر مانجر بنجاح.`);
-      } catch (addErr) {
-        // نتجاوز الخطأ إذا كان المستخدم مضافاً مسبقاً
-        console.log(`ℹ️ ملاحظة (المستخدم موجود أو تم تخطيه): ${addErr.message}`);
+      // صياغة الأمر بصيغة مصفوفة مطابقة تماماً لأوامر الـ Terminal في الميكروتيك
+      // /tool/user-manager/user/create-and-activate-profile user=... profile=... customer=admin
+      const commandArray = [
+        "/tool/user-manager/user/create-and-activate-profile",
+        `=user=${cardCode}`,
+        `=profile=${profileName}`,
+        `=customer=admin`
+      ];
+
+      // إرسال الأمر بالطريقة الخام المباشرة المتوافقة مع الـ API
+      if (typeof conn.write === "function") {
+        await conn.write(commandArray);
+      } else if (typeof client.write === "function") {
+        await client.write(commandArray);
+      } else {
+        // طريقة بديلة لتنفيذ الأمر المباشر عبر الـ menu
+        const rawMenu = conn.menu("/tool/user-manager/user");
+        if (typeof rawMenu.write === "function") {
+          await rawMenu.write("create-and-activate-profile", {
+            user: cardCode,
+            profile: profileName,
+            customer: "admin"
+          });
+        } else {
+          throw noSupportedWriteMethod();
+        }
       }
-
-      // 2. تفعيل البروفايل للمستخدم
-      await userManager.add({
-        command: "create-and-activate-profile",
-        user: cardCode,
-        profile: profileName,
-        customer: "admin"
-      });
 
       await client.close().catch(() => {});
       console.log(`🎉 تم تفعيل البروفايل (${profileName}) للكارت ${cardCode} بنجاح تام في المحاولة ${attempt}!`);
@@ -58,23 +64,25 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
       lastError = error;
       console.warn(`⚠️ فشل المحاولة رقم ${attempt} للكارت ${cardCode}: ${error.message}`);
       
-      // إغلاق الاتصال بأمان قبل المحاولة التالية
       try {
         await client.close();
       } catch (e) {}
 
       if (attempt < maxRetries) {
-        const waitTime = attempt * 3; // زيادة وقت الانتظار تدريجياً بين المحاولات (3 ثوانٍ ثم 6 ثوانٍ...)
+        const waitTime = attempt * 3; // الانتظار لفترة أطول تدريجياً
         console.log(`⏳ الانتظار لمدة ${waitTime} ثوانٍ قبل إعادة محاولة تفعيل الباقة...`);
         await sleep(waitTime * 1000);
       }
     }
   }
 
-  // إذا نفدت جميع المحاولات ولم يتم النجاح
   throw new Error(
     `فشل تفعيل البروفايل بعد ${maxRetries} محاولات للمستخدم ${cardCode}. السبب الأخير: ${lastError ? lastError.message : "خطأ غير معروف"}`
   );
+}
+
+function noSupportedWriteMethod() {
+  return new Error("لا توجد طريقة كتابة مدعومة لإرسال الأمر المباشر في الاتصال الحالي");
 }
 
 module.exports = { activateCardProfileViaScript };
