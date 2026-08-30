@@ -3,7 +3,7 @@ const { RouterOSClient } = require("routeros-client");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * تفعيل الباقة/البروفايل للكارت عن طريق تشغيل السكريبت المخزن في الميكروتيك
+ * تفعيل الباقة/البروفايل للكارت عن طريق تشغيل السكريبت المخزن في الميكروتيك تماماً مثل الـ Terminal
  */
 async function activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds = 10) {
   console.log(`⏳ الانتظار لمدة ${delaySeconds} ثوانٍ لتثبيت الكارت (${cardCode})...`);
@@ -17,38 +17,30 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
     timeout: 10
   });
 
-  let conn;
   try {
-    conn = await client.connect();
+    const conn = await client.connect();
     console.log(`⚡ تشغيل سكريبت الميكروتيك لتفعيل الباقة للكارت: ${cardCode}`);
 
-    // الطريقة القياسية المعتمدة في routeros-client لتنفيذ الأوامر
-    // 1. تعيين اسم الكارت في المتغير العالمي
-    await conn.menu("/system/script/environment").add({
-      name: "currentCardName",
-      value: cardCode
-    }).catch(async () => {
-      // لو المتغير موجود مسبقاً نقوم بتحديثه
-      await conn.write(["/system/script/environment/set", `=name=currentCardName`, `=value=${cardCode}`]);
-    });
+    // إرسال الأوامر بالترتيب تماماً مثل الـ Terminal
+    // 1. تعيين المتغير العالمي للكارت
+    await conn.write([
+      "/system/script/environment/set",
+      `=name=currentCardName`,
+      `=value=${cardCode}`
+    ]);
 
-    // 2. تعيين اسم البروفايل في المتغير العالمي
-    await conn.menu("/system/script/environment").add({
-      name: "currentCardProfile",
-      value: profileName
-    }).catch(async () => {
-      await conn.write(["/system/script/environment/set", `=name=currentCardProfile`, `=value=${profileName}`]);
-    });
+    // 2. تعيين المتغير العالمي للبروفايل
+    await conn.write([
+      "/system/script/environment/set",
+      `=name=currentCardProfile`,
+      `=value=${profileName}`
+    ]);
 
-    // 3. تشغيل السكريبت المخزن
-    if (typeof conn.write === "function") {
-      await conn.write(["/system/script/run", `=.id=create_card_script`]);
-    } else {
-      // طريقة بديلة لتنفيذ الأوامر المباشرة
-      const channel = await client.openChannel();
-      await channel.write(["/system/script/run", `=.id=create_card_script`]);
-      await channel.close();
-    }
+    // 3. تشغيل السكريبت
+    await conn.write([
+      "/system/script/run",
+      `=.id=create_card_script`
+    ]);
 
     await client.close().catch(() => {});
     console.log(`✅ تم تنفيذ السكريبت وتفعيل الباقة بنجاح للكارت: ${cardCode}`);
