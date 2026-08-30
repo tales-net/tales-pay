@@ -39,14 +39,21 @@ function getCardPrefixAndType(amount) {
   }
 }
 
-function generateCardCode(prefix, randomLength = 6) {
+/**
+ * توليد كود كارت إجمالي 10 أرقام (البادئة + 8 أرقام عشوائية)
+ */
+function generateCardCode(prefix) {
   const chars = "0123456789";
+  const remainingLength = 10 - prefix.length; // البادئة رقمين، يتبقى 8 أرقام
   let result = prefix;
-  for (let i = 0; i < randomLength; i++) {
+  for (let i = 0; i < remainingLength; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return result;
 }
+
+// دالة مساعدة لعمل مهلة زمنية (Delay) بالثواني
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function processPaymentAndCreateCard(amount, branchKey = "main", transactionId = "") {
   const cardInfo = getCardPrefixAndType(amount);
@@ -84,27 +91,27 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       cardCode = generateCardCode(cardInfo.prefix);
 
       try {
-        console.log(`🚀 [MikroTik Script] جاري إنشاء وتفعيل الكارت عبر سكريبت الميكروتيك: ${cardCode}`);
-
-        // 1. تعيين المتغيرات العالمية في الميكروتيك لكي يقرأها السكريبت
-        await api.menu("/system/script").run({
-          number: "create-card-script"
-        });
-
-        // طريقة تعيين المتغيرات وتشغيل السكريبت مباشرة عبر الـ Environment أو أوامر البيئة
-        // ولأننا نريد ضمان عمل السكريبت، سنقوم بتحديث محتوى المتغيرات العالمية كأمر مباشر أو عبر السكريبت:
+        console.log(`👤 [User-Manager] جاري إضافة المستخدم (10 أرقام): ${cardCode}`);
         
-        // سنستخدم الطريقة الأكثر أماناً: إضافة الكارت أولاً بالطريقة المعتادة، ثم تفعيل البروفايل عبر أمر مباشر مقسم أو عبر السكريبت
+        // 1. إضافة المستخدم في اليوزر مانجر أولاً
         await api.menu("/tool/user-manager/user").add({
           username: cardCode,
           password: cardCode,
           customer: "admin"
         });
 
-        // تفعيل البروفايل بالطريقة التي تقبلها قائمة الميكروتيك v5.26 بدون مشاكل برمجية معقدة
-        // عبر استدعاء أمر إضافي أو سكريبت مخصص
-        await api.menu("/system/script").run({
-          number: "create-card-script"
+        // 2. الانتظار لمدة 5 ثوانٍ لضمان استقرار السيرفر وتسجيل المستخدم بقاعدة بيانات اليوزر مانجر
+        console.log(`⏳ [Wait] انتظار 5 ثوانٍ لتثبيت الكارت في قاعدة البيانات...`);
+        await sleep(5000);
+
+        console.log(`⚡ [User-Manager] جاري تفعيل البروفايل (${cardInfo.profile}) للمستخدم: ${cardCode}`);
+        
+        // 3. تفعيل البروفايل عبر الأمر المستقل المخصص لإصدار 5.26
+        await api.menu("/tool/user-manager/user").add({
+          command: "create-and-activate-profile",
+          user: cardCode,
+          profile: cardInfo.profile,
+          customer: "admin"
         });
 
         isCreated = true;
@@ -113,7 +120,19 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
           console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، جاري إعادة المحاولة...`);
           continue;
         } else {
-          throw addError;
+          // محاولة احتياطية عبر الهوت سبوت العادي في حال فشل اليوزر مانجر
+          try {
+            console.log(`🔄 [Hotspot Fallback] جاري إضافته عبر الهوت سبوت التقليدي...`);
+            await api.menu("/ip/hotspot/user").add({
+              name: cardCode,
+              password: cardCode,
+              profile: cardInfo.profile,
+              comment: `Paymob TXN: ${transactionId} | Branch: ${targetBranch}`
+            });
+            isCreated = true;
+          } catch (hotspotError) {
+            throw addError;
+          }
         }
       }
     }
