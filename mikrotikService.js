@@ -84,24 +84,24 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       cardCode = generateCardCode(cardInfo.prefix);
 
       try {
-        console.log(`👤 [User-Manager API] جاري إضافة المستخدم: ${cardCode}`);
+        console.log(`👤 [User-Manager] جاري إضافة المستخدم: ${cardCode}`);
         
-        // 1. تنفيذ أمر إضافة المستخدم
+        // 1. إضافة المستخدم في اليوزر مانجر
         await api.menu("/tool/user-manager/user").add({
           username: cardCode,
           password: cardCode,
           customer: "admin"
         });
 
-        console.log(`⚡ [User-Manager API] جاري تفعيل بروفايل (${cardInfo.profile}) للمستخدم: ${cardCode}`);
+        console.log(`⚡ [User-Manager] جاري تفعيل البروفايل (${cardInfo.profile}) للمستخدم: ${cardCode}`);
         
-        // 2. تنفيذ أمر تفعيل البروفايل مباشرة
+        // 2. تفعيل البروفايل للمستخدم بنفس الطريقة الناجحة لديك
         await api.menu("/tool/user-manager/user").add({
           ".proplist": "",
           "create-and-activate-profile": "",
-          "user": cardCode,
-          "profile": cardInfo.profile,
-          "customer": "admin"
+          user: cardCode,
+          profile: cardInfo.profile,
+          customer: "admin"
         });
 
         isCreated = true;
@@ -110,7 +110,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
           console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، جاري إعادة المحاولة...`);
           continue;
         } else {
-          // محاولة احتياطية أخيرة عبر الهوت سبوت التقليدي
+          // محاولة احتياطية عبر الهوت سبوت العادي في حال حدث خطأ طارئ
           try {
             await api.menu("/ip/hotspot/user").add({
               name: cardCode,
@@ -144,7 +144,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
 
   } catch (error) {
     if (client) await client.close().catch(() => {});
-    console.error(`❌ خطأ في الاتصال بالميكروتيك:`, error.message);
+    console.error(`❌ خطأ في النظام:`, error.message);
     return {
       success: false,
       error: `تعذر توليد الكارت: ${error.message}`
