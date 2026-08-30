@@ -52,7 +52,7 @@ function generateCardCode(prefix) {
   return result;
 }
 
-// دالة مساعدة لعمل مهلة زمنية (Delay) بالثواني
+// دالة مهلة زمنية (Delay) بالثواني
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function processPaymentAndCreateCard(amount, branchKey = "main", transactionId = "") {
@@ -91,30 +91,28 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       cardCode = generateCardCode(cardInfo.prefix);
 
       try {
-        console.log(`👤 [MikroTik Script Execution] جاري إنشاء الكارت (10 أرقام): ${cardCode} بروفايل: ${cardInfo.profile}`);
+        console.log(`👤 [MikroTik Script] جاري إرسال الكارت (10 أرقام): ${cardCode} بروفايل: ${cardInfo.profile}`);
 
-        // 1. تعيين المتغيرات العامة في الميكروتيك (Global Variables)
+        // إرسال الأمر المباشر لتعيين المتغيرات وتشغيل السكريبت بنفس الصيغة الناجحة يدويًا
+        const scriptCommand = `:global currentCardName "${cardCode}"; :global currentCardProfile "${cardInfo.profile}"; /system script run create-card-script;`;
+
         await api.menu("/system/script").add({
-          name: "temp_set_vars",
-          source: `:global currentCardName "${cardCode}"; :global currentCardProfile "${cardInfo.profile}";`
-        }).catch(() => {}); // تجاوز الخطأ لو السكريبت المؤقت موجود مسبقاً
+          name: "temp_runner",
+          source: scriptCommand
+        }).catch(() => {});
 
-        // تشغيل السكريبت المؤقت لتعيين المتغيرات
+        // تشغيل السكريبت المؤقت الذي يحتوي على المتغيرات والأمر معا
         try {
-          await api.menu("/system/script").run({ number: "temp_set_vars" });
-        } catch (e) {
-          // طريقة بديلة لتنفيذ الأوامر المباشرة إذا لم تكن دالة run مدعومة هكذا
+          await api.menu("/system/script").run({ number: "temp_runner" });
+        } catch (err) {
+          // طريقة بديلة للتنفيذ المباشر لو دالة run لم تتجاوب
+          const systemMenu = api.menu("/system/script");
+          if (typeof systemMenu.action === "function") {
+            await systemMenu.action("run", { number: "temp_runner" });
+          }
         }
 
-        // أو البديلة المباشرة عبر الـ API لتعيين المتغيرات وتشغيل السكريبت الجاهز
-        console.log(`⚡ [Global Setup] تعيين الكارت ${cardCode} وتشغيل السكريبت... العناوين جاهزة.`);
-
-        // 2. تشغيل السكريبت الأساسي لديك في الميكروتيك
-        await api.menu("/system/script").run({
-          number: "create-card-script"
-        });
-
-        // 3. انتظار 5 ثوانٍ لضمان اكتمال تنفيذ السكريبت وحفظ البيانات في اليوزر مانجر
+        // الانتظار لمدة 5 ثوانٍ لضمان اكتمال تنفيذ السكريبت وحفظه في قاعدة البيانات
         console.log(`⏳ [Wait] انتظار 5 ثوانٍ لتأكيد تفعيل البروفايل...`);
         await sleep(5000);
 
