@@ -25,7 +25,7 @@ function getCardPrefixAndType(amount) {
   const numAmount = Number(amount);
   switch (numAmount) {
     case 5:
-      return { prefix: "01", profile: "Bronze", packageName: "الباقة البرونزية", isCustom: false };
+      return { prefix: "01", profile: "Bronze", packageName: "Bronze", isCustom: false };
     case 15:
       return { prefix: "02", profile: "Silver", packageName: "الباقة الفضية", isCustom: false };
     case 30:
