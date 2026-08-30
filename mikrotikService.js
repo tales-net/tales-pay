@@ -1,25 +1,29 @@
 const { createCardOnly } = require("./mikrotikCardService");
 const { activateCardProfileViaScript } = require("./mikrotikProfileService");
 
-// خريطة إعدادات الميكروتيك لكل فرع
+// الاعتماد على البيانات الموحدة كقيم افتراضية لجميع الفروع
+const SHARED_USER = process.env.MIKROTIK_USER || "admin";
+const SHARED_PASSWORD = process.env.MIKROTIK_PASSWORD || "";
+const SHARED_PORT = parseInt(process.env.MIKROTIK_PORT || "8728");
+
 const BRANCH_ROUTERS = {
   main: {
     host: process.env.MIKROTIK_HOST || process.env.MIKROTIK_HOST_MAIN,
-    user: process.env.MIKROTIK_USER || process.env.MIKROTIK_USER_MAIN || "admin",
-    password: process.env.MIKROTIK_PASSWORD || process.env.MIKROTIK_PASSWORD_MAIN || "",
-    port: parseInt(process.env.MIKROTIK_PORT || process.env.MIKROTIK_PORT_MAIN || "8728")
+    user: SHARED_USER,
+    password: SHARED_PASSWORD,
+    port: SHARED_PORT
   },
   branch2: {
     host: process.env.MIKROTIK_HOST_BRANCH2,
-    user: process.env.MIKROTIK_USER_BRANCH2 || "admin",
-    password: process.env.MIKROTIK_PASSWORD_BRANCH2 || "",
-    port: parseInt(process.env.MIKROTIK_PORT_BRANCH2 || "8728")
+    user: SHARED_USER,
+    password: SHARED_PASSWORD,
+    port: SHARED_PORT
   },
   branch3: {
     host: process.env.MIKROTIK_HOST_BRANCH3,
-    user: process.env.MIKROTIK_USER_BRANCH3 || "admin",
-    password: process.env.MIKROTIK_PASSWORD_BRANCH3 || "",
-    port: parseInt(process.env.MIKROTIK_PORT_BRANCH3 || "8728")
+    user: SHARED_USER,
+    password: SHARED_PASSWORD,
+    port: SHARED_PORT
   }
 };
 
@@ -48,15 +52,12 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", txId = ""
   const { prefix, packageName, profile } = getCardPrefixAndType(amount);
 
   try {
-    // 1. توليد كود الكارت وإضافته للميكروتيك
     const cardResult = await createCardOnly(routerConfig, prefix);
     if (!cardResult || !cardResult.success) {
       throw new Error(cardResult?.error || "فشل توليد الكود من سيرفر الميكروتيك");
     }
 
     const cardCode = cardResult.code;
-
-    // 2. تفعيل البروفايل أو الـ User-Manager للرقم المولد
     await activateCardProfileViaScript(routerConfig, cardCode, profile);
 
     console.log(`✅ [SUCCESS] تم إنشاء الكارت وتفعيله بنجاح لفرع (${selectedBranch}) برقم: ${cardCode}`);
