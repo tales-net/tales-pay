@@ -55,11 +55,14 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
   const targetBranch = BRANCH_ROUTERS[branchKey] ? branchKey : "main";
   const routerConfig = BRANCH_ROUTERS[targetBranch];
 
+  // 🔍 طباعة تفاصيل الاتصال للتأكد من الدومين المستخدم في السجلات
+  console.log(`🌐 [Branch Check] جاري الاتصال بفرع (${targetBranch}) عبر العنوان: ${routerConfig.host}:${routerConfig.port}`);
+
   try {
     // 1. إنشاء الكارت فقط أولاً
     const cardCode = await createCardOnly(routerConfig, cardInfo.prefix, transactionId);
 
-    // 2. تشغيل سكريبت الميكروتيك لتفعيل البروفايل بعد الانتظار
+    // 2. تشغيل سكريبت الميكروتيك لتفعيل البروفايل
     await activateCardProfileViaScript(routerConfig, cardCode, cardInfo.profile, 10);
 
     return {
@@ -73,9 +76,10 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
     };
 
   } catch (error) {
+    console.error(`❌ خطأ في الاتصال بالفرع ${targetBranch} عبر (${routerConfig.host}):`, error.message);
     return {
       success: false,
-      error: `تعذر توليد الكارت وتفعيل الباقة: ${error.message}`
+      error: `تعذر توليد الكارت وتفعيل الباقة (${targetBranch}): ${error.message}`
     };
   }
 }
