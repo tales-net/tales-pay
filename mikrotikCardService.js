@@ -121,7 +121,7 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
       success = true;
       return true;
 
-    } catch (error) {
+    }.catch (error) {
       lastError = error;
       console.error(`❌ [خطأ في المحاولة ${attempt}] فشل تفعيل الكارت "${cardCode}" مع البروفايل "${profileName}":`, error.message || error);
       
@@ -144,8 +144,35 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
   );
 }
 
+/**
+ * 3. دالة رئيسية شاملة تُنفذ بعد الدفع مباشرة: تنشئ الكارت أولاً ثم تفعل البروفايل الخاص به
+ */
+async function processPaymentAndCreateCard(routerConfig, prefix, profileName, transactionId = "", delaySeconds = 10) {
+  try {
+    console.log(`🚀 بدء عملية إصدار الكارت وتفعيله بعد الدفع للمعاملة: ${transactionId}`);
+    
+    // الخطوة الأولى: إنشاء الكارت في اليوزر مانجر مع فحص التكرار
+    const cardCode = await createCardOnly(routerConfig, prefix, transactionId);
+
+    // الخطوة الثانية: تمرير الكارت وتفعيله بالبروفايل المطلوب عبر السكريبت
+    await activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds);
+
+    console.log(`✨ تمت العملية بنجاح كامل للكارت: ${cardCode} بالبروفايل: ${profileName}`);
+    return {
+      success: true,
+      cardCode: cardCode,
+      profileName: profileName
+    };
+
+  } catch (error) {
+    console.error(`❌ فشل في العملية المتكاملة لإنشاء وتفعيل الكارت:`, error.message);
+    throw error;
+  }
+}
+
 module.exports = {
   generateCardCode,
   createCardOnly,
-  activateCardProfileViaScript
+  activateCardProfileViaScript,
+  processPaymentAndCreateCard
 };
