@@ -3,7 +3,7 @@ const { RouterOSClient } = require("routeros-client");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * تفعيل الباقة/البروفايل للكارت عن طريق تشغيل السكريبت المخزن في الميكروتيك تماماً مثل الـ Terminal
+ * تفعيل الباقة وإضافتها كبروفايل للمستخدم في اليوزر مانجر
  */
 async function activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds = 10) {
   console.log(`⏳ الانتظار لمدة ${delaySeconds} ثوانٍ لتثبيت الكارت (${cardCode})...`);
@@ -19,37 +19,31 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
 
   try {
     const conn = await client.connect();
-    console.log(`⚡ تشغيل سكريبت الميكروتيك لتفعيل الباقة للكارت: ${cardCode}`);
+    console.log(`⚡ ربط وتفعيل البروفايل (${profileName}) للكارت: ${cardCode}`);
 
-    // إرسال الأوامر بالترتيب تماماً مثل الـ Terminal
-    // 1. تعيين المتغير العالمي للكارت
-    await conn.write([
-      "/system/script/environment/set",
-      `=name=currentCardName`,
-      `=value=${cardCode}`
-    ]);
-
-    // 2. تعيين المتغير العالمي للبروفايل
-    await conn.write([
-      "/system/script/environment/set",
-      `=name=currentCardProfile`,
-      `=value=${profileName}`
-    ]);
-
-    // 3. تشغيل السكريبت
-    await conn.write([
-      "/system/script/run",
-      `=.id=create_card_script`
-    ]);
+    // الطريقة الصحيحة لربط البروفايل بالمستخدم في User-Manager عبر الـ API
+    await conn.menu("/tool/user-manager/user").add({
+      command: "create-and-activate-profile",
+      user: cardCode,
+      profile: profileName,
+      customer: "admin"
+    }).catch(async () => {
+      // طريقة بديلة مباشرة في حال لم يقبل الأمر المتقدم، عن طريق إضافة البروفايل للمستخدم مباشرة
+      await conn.menu("/tool/user-manager/user/profile").add({
+        user: cardCode,
+        profile: profileName,
+        customer: "admin"
+      });
+    });
 
     await client.close().catch(() => {});
-    console.log(`✅ تم تنفيذ السكريبت وتفعيل الباقة بنجاح للكارت: ${cardCode}`);
+    console.log(`✅ تم تفعيل البروفايل بنجاح تام للكارت: ${cardCode}`);
     return true;
 
   } catch (error) {
     if (client) await client.close().catch(() => {});
-    console.error(`❌ خطأ أثناء تشغيل السكريبت: ${error.message}`);
-    throw new Error(`فشل تشغيل سكريبت الميكروتيك: ${error.message}`);
+    console.error(`❌ خطأ أثناء تفعيل البروفايل: ${error.message}`);
+    throw new Error(`فشل تفعيل البروفايل: ${error.message}`);
   }
 }
 
