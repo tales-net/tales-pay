@@ -3,10 +3,10 @@ const { RouterOSClient } = require("routeros-client");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * تفعيل الباقة مباشرة باستخدام أمر create-and-activate-profile والمطابق تماماً للـ Terminal
+ * تفعيل الباقة مباشرة باستخدام أمر create-and-activate-profile للميكروتيك
  */
-async function activateCardProfile(routerConfig, cardCode, profileName, delaySeconds = 10) {
-  console.log(`⏳ الانتظار لمدة ${delaySeconds} ثوانٍ لتثبيت الكارت (${cardCode}) في السيرفر...`);
+async function activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds = 10) {
+  console.log(`⏳ الانتظار لمدة ${delaySeconds} ثوانٍ لضمان استقرار الكارت (${cardCode}) في السيرفر...`);
   await sleep(delaySeconds * 1000);
 
   const client = new RouterOSClient({
@@ -19,9 +19,9 @@ async function activateCardProfile(routerConfig, cardCode, profileName, delaySec
 
   try {
     const api = await client.connect();
-    console.log(`⚡ [User-Manager] تفعيل الباقة (${profileName}) للكارت: ${cardCode}`);
+    console.log(`⚡ [User-Manager] تنفيذ أمر تفعيل البروفايل (${profileName}) للكارت: ${cardCode}`);
 
-    // إرسال الأمر مباشرة كقائمة مطابقة للـ Terminal تماماً
+    // إرسال الأمر مباشرة كقائمة مطابقة تماماً للـ Terminal
     const commandArray = [
       "/tool/user-manager/user/create-and-activate-profile",
       `=user=${cardCode}`,
@@ -53,4 +53,5 @@ async function activateCardProfile(routerConfig, cardCode, profileName, delaySec
   }
 }
 
-module.exports = { activateCardProfile };
+// التأكد من تصدير الدالة بالاسم الذي يستدعيه ملف mikrotikService.js
+module.exports = { activateCardProfileViaScript };
