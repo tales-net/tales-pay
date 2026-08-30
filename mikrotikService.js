@@ -1,8 +1,5 @@
 const { RouterOSClient } = require("routeros-client");
 
-/**
- * جلب إعدادات السيرفر من متغيرات البيئة ENV بدعم الفروع المتعددة
- */
 const BRANCH_ROUTERS = {
   main: {
     host: process.env.MIKROTIK_HOST || "192.168.1.1",
@@ -24,14 +21,11 @@ const BRANCH_ROUTERS = {
   }
 };
 
-/**
- * تحديد بادئة الكارت، اسم البروفايل، واسم الباقة بناءً على المبلغ المدفوع
- */
 function getCardPrefixAndType(amount) {
   const numAmount = Number(amount);
   switch (numAmount) {
     case 5:
-      return { prefix: "01", profile: "Bronze (البرونزي)", packageName: "الباقة البرونزية", isCustom: false };
+      return { prefix: "01", profile: "Bronze", packageName: "الباقة البرونزية", isCustom: false };
     case 15:
       return { prefix: "02", profile: "Silver", packageName: "الباقة الفضية", isCustom: false };
     case 30:
@@ -45,9 +39,6 @@ function getCardPrefixAndType(amount) {
   }
 }
 
-/**
- * توليد كود كارت عشوائي (أرقام فقط) يبدأ بالبادئة المحددة
- */
 function generateCardCode(prefix, randomLength = 6) {
   const chars = "0123456789";
   let result = prefix;
@@ -57,9 +48,6 @@ function generateCardCode(prefix, randomLength = 6) {
   return result;
 }
 
-/**
- * الدالة الرئيسية لمعالجة الدفع وإنشاء وتفعيل الكارت في نظام User-Manager
- */
 async function processPaymentAndCreateCard(amount, branchKey = "main", transactionId = "") {
   const cardInfo = getCardPrefixAndType(amount);
 
@@ -68,14 +56,12 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       success: true,
       isCustomAmount: true,
       amount: amount,
-      message: "🌸 بالتوفيق لكم وبارك الله فيكم! نشكركم جزيل الشكر على دعمكم الكريم."
+      message: "🌸 بالتوفيق لكم وبارك الله فيكم!"
     };
   }
 
   const targetBranch = BRANCH_ROUTERS[branchKey] ? branchKey : "main";
   const routerConfig = BRANCH_ROUTERS[targetBranch];
-
-  console.log(`🌐 [MikroTik v5.26] جاري الاتصال بالفرع: [ ${targetBranch.toUpperCase()} ] على العنوان: ${routerConfig.host}`);
 
   const client = new RouterOSClient({
     host: routerConfig.host,
@@ -98,7 +84,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       cardCode = generateCardCode(cardInfo.prefix);
 
       try {
-        console.log(`👤 [User-Manager] (${targetBranch}) جاري إضافة المستخدم: ${cardCode}`);
+        console.log(`👤 [User-Manager API] جاري إضافة المستخدم: ${cardCode}`);
         
         // 1. تنفيذ أمر إضافة المستخدم
         await api.menu("/tool/user-manager/user").add({
@@ -107,10 +93,11 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
           customer: "admin"
         });
 
-        console.log(`⚡ [User-Manager] جاري تفعيل البروفايل (${cardInfo.profile}) للمستخدم: ${cardCode}`);
+        console.log(`⚡ [User-Manager API] جاري تفعيل بروفايل (${cardInfo.profile}) للمستخدم: ${cardCode}`);
         
-        // 2. تنفيذ أمر تفعيل البروفايل (نفس الأوامر اليدوية الناجحة)
+        // 2. تنفيذ أمر تفعيل البروفايل مباشرة
         await api.menu("/tool/user-manager/user").add({
+          ".proplist": "",
           "create-and-activate-profile": "",
           "user": cardCode,
           "profile": cardInfo.profile,
@@ -120,11 +107,11 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
         isCreated = true;
       } catch (addError) {
         if (addError.message && (addError.message.includes("already exists") || addError.message.includes("already"))) {
-          console.warn(`⚠️ [${targetBranch}] الكود ${cardCode} موجود مسبقاً، جاري إعادة المحاولة...`);
+          console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، جاري إعادة المحاولة...`);
+          continue;
         } else {
-          // خطة بديلة (Fallback) عبر الهوت سبوت العادي في حال حدثت مشكلة في اليوزر مانجر
+          // محاولة احتياطية أخيرة عبر الهوت سبوت التقليدي
           try {
-            console.log(`🔄 [Hotspot Regular] محاولة إضافة احتياطية عبر Hotspot: ${cardCode}`);
             await api.menu("/ip/hotspot/user").add({
               name: cardCode,
               password: cardCode,
@@ -133,7 +120,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
             });
             isCreated = true;
           } catch (hotspotError) {
-            throw addError; // إعادة رمي الخطأ الأصلي لو فشل الاتجاهين
+            throw addError;
           }
         }
       }
@@ -156,12 +143,11 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
     };
 
   } catch (error) {
-    console.error(`❌ خطأ في الاتصال بميكروتيك الفرع (${targetBranch}):`, error.message);
     if (client) await client.close().catch(() => {});
-
+    console.error(`❌ خطأ في الاتصال بالميكروتيك:`, error.message);
     return {
       success: false,
-      error: `تعذر توليد الكارت تلقائياً من نظام شبكة (${targetBranch}): ${error.message}`
+      error: `تعذر توليد الكارت: ${error.message}`
     };
   }
 }
