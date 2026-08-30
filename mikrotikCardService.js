@@ -121,7 +121,7 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
       success = true;
       return true;
 
-    }.catch (error) {
+    } catch (error) {
       lastError = error;
       console.error(`❌ [خطأ في المحاولة ${attempt}] فشل تفعيل الكارت "${cardCode}" مع البروفايل "${profileName}":`, error.message || error);
       
