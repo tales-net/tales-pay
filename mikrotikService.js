@@ -1,6 +1,7 @@
 const { createCardOnly } = require("./mikrotikCardService");
 const { activateCardProfileViaScript } = require("./mikrotikProfileService");
 
+// 🌐 تعريف الفروع وربطها بمتغيرات البيئة في Render بدقة
 const BRANCH_ROUTERS = {
   main: {
     host: process.env.MIKROTIK_HOST || "192.168.1.1",
@@ -9,13 +10,13 @@ const BRANCH_ROUTERS = {
     port: parseInt(process.env.MIKROTIK_PORT || "8728")
   },
   branch2: {
-    host: process.env.MIKROTIK_HOST_BRANCH2 || "192.168.2.1",
+    host: process.env.MIKROTIK_HOST_BRANCH2 || process.env.MIKROTIK_HOST || "192.168.2.1",
     user: process.env.MIKROTIK_USER || "admin",
     password: process.env.MIKROTIK_PASSWORD || "",
     port: parseInt(process.env.MIKROTIK_PORT || "8728")
   },
   branch3: {
-    host: process.env.MIKROTIK_HOST_BRANCH3 || "192.168.3.1",
+    host: process.env.MIKROTIK_HOST_BRANCH3 || process.env.MIKROTIK_HOST || "192.168.3.1",
     user: process.env.MIKROTIK_USER || "admin",
     password: process.env.MIKROTIK_PASSWORD || "",
     port: parseInt(process.env.MIKROTIK_PORT || "8728")
@@ -52,17 +53,17 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
     };
   }
 
+  // التأكد من اختيار الفرع الصحيح أو الرجوع للرئيسي
   const targetBranch = BRANCH_ROUTERS[branchKey] ? branchKey : "main";
   const routerConfig = BRANCH_ROUTERS[targetBranch];
 
-  // 🔍 طباعة تفاصيل الاتصال للتأكد من الدومين المستخدم في السجلات
-  console.log(`🌐 [Branch Check] جاري الاتصال بفرع (${targetBranch}) عبر العنوان: ${routerConfig.host}:${routerConfig.port}`);
+  console.log(`🌐 [Mikrotik Service] جاري إرسال طلب الكارت إلى الفرع: [${targetBranch}] على العنوان: ${routerConfig.host}:${routerConfig.port}`);
 
   try {
-    // 1. إنشاء الكارت فقط أولاً
+    // 1. إنشاء الكارت في الميكروتيك
     const cardCode = await createCardOnly(routerConfig, cardInfo.prefix, transactionId);
 
-    // 2. تشغيل سكريبت الميكروتيك لتفعيل البروفايل
+    // 2. تفعيل البروفايل عبر السكريبت
     await activateCardProfileViaScript(routerConfig, cardCode, cardInfo.profile, 10);
 
     return {
@@ -76,11 +77,8 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
     };
 
   } catch (error) {
-    console.error(`❌ خطأ في الاتصال بالفرع ${targetBranch} عبر (${routerConfig.host}):`, error.message);
-    return {
-      success: false,
-      error: `تعذر توليد الكارت وتفعيل الباقة (${targetBranch}): ${error.message}`
-    };
+    console.error(`❌ خطأ في معالجة الميكروتيك للفرع ${targetBranch} (${routerConfig.host}):`, error.message);
+    throw new Error(`تعذر توليد الكارت وتفعيل الباقة (${targetBranch}): ${error.message}`);
   }
 }
 
