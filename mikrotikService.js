@@ -39,20 +39,14 @@ function getCardPrefixAndType(amount) {
   }
 }
 
-/**
- * توليد كود كارت إجمالي 10 أرقام (البادئة + 8 أرقام عشوائية)
- */
-function generateCardCode(prefix) {
+function generateCardCode(prefix, randomLength = 6) {
   const chars = "0123456789";
-  const remainingLength = 10 - prefix.length;
   let result = prefix;
-  for (let i = 0; i < remainingLength; i++) {
+  for (let i = 0; i < randomLength; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return result;
 }
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function processPaymentAndCreateCard(amount, branchKey = "main", transactionId = "") {
   const cardInfo = getCardPrefixAndType(amount);
@@ -90,43 +84,53 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       cardCode = generateCardCode(cardInfo.prefix);
 
       try {
-        console.log(`👤 [Terminal Simulation] جاري تمرير الكارت (${cardCode}) والبروفايل (${cardInfo.profile}) للميكروتيك...`);
-
-        // بناء الأمر تماماً مثل التيرمنال الذي طلبته
-        const terminalCommands = `
-:global currentCardName "${cardCode}";
-:global currentCardProfile "${cardInfo.profile}";
-/system script run create-card-script;
-        `;
-
-        // إرسال الأمر الحقيقي عبر API الميكروتيك باستخدام مسار system script أو عبر أمر مباشر
-        await api.write('/system/script/add', [
-          '=name=temp_runner_exec',
-          `=source=${terminalCommands.trim()}`
-        ]).catch(async () => {
-          // إذا كان السكريبت موجود مسبقاً، نقوم بتحديث الـ source الخاص به بدلاً من الإضافة
-          await api.write('/system/script/set', [
-            '=.id=temp_runner_exec',
-            `=source=${terminalCommands.trim()}`
-          ]);
+        // 1. إضافة المستخدم أولاً باستخدام List (نفس الطريقة المباشرة)
+        await api.menu("/tool/user-manager/user").add({
+          username: cardCode,
+          password: cardCode,
+          customer: "admin"
         });
 
-        // تشغيل السكريبت المؤقت الذي يحمل القيم الجديدة
-        await api.write('/system/script/run', [
-          '=.id=temp_runner_exec'
-        ]);
+        // 2. تفعيل البروفايل عن طريق تمرير القائمة (List) للأمر مباشرة
+        const activateCommand = [
+          "/tool/user-manager/user/create-and-activate-profile",
+          `=user=${cardCode}`,
+          `=profile=${cardInfo.profile}`,
+          `=customer=admin`
+        ];
 
-        // انتظار 3 ثوانٍ لضمان التنفيذ الحقيقي واستقرار قاعدة البيانات
-        await sleep(3000);
+        // التحقق من الطريقة المتاحة لتنفيذ القائمة في العميل
+        if (typeof api.write === "function") {
+          await api.write(activateCommand);
+        } else if (typeof client.write === "function") {
+          await client.write(activateCommand);
+        } else {
+          // طريقة بديلة لتنفيذ السكريبت أو القائمة كـ Run
+          await api.menu("/tool/user-manager/user").add({
+            command: "create-and-activate-profile",
+            user: cardCode,
+            profile: cardInfo.profile,
+            customer: "admin"
+          });
+        }
 
-        console.log(`✅ تم تنفيذ الإضافة في الميكروتيك بنجاح حقيقي للكارت: ${cardCode}`);
         isCreated = true;
       } catch (addError) {
         if (addError.message && (addError.message.includes("already exists") || addError.message.includes("already"))) {
-          console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، جاري إعادة المحاولة...`);
           continue;
         } else {
-          throw addError;
+          // محاولة أخيرة عبر الـ Hotspot العادي كخطط بديلة
+          try {
+            await api.menu("/ip/hotspot/user").add({
+              name: cardCode,
+              password: cardCode,
+              profile: cardInfo.profile,
+              comment: `Paymob TXN: ${transactionId} | Branch: ${targetBranch}`
+            });
+            isCreated = true;
+          } catch (hotspotError) {
+            throw addError;
+          }
         }
       }
     }
@@ -149,10 +153,9 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
 
   } catch (error) {
     if (client) await client.close().catch(() => {});
-    console.error(`❌ خطأ حقيقي من الميكروتيك:`, error);
     return {
       success: false,
-      error: `تعذر تنفيذ السكريبت في الميكروتيك: ${error.message || JSON.stringify(error)}`
+      error: `تعذر توليد الكارت تلقائياً: ${error.message}`
     };
   }
 }
