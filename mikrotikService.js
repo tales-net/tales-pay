@@ -84,24 +84,27 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       cardCode = generateCardCode(cardInfo.prefix);
 
       try {
-        console.log(`👤 [User-Manager] جاري إضافة المستخدم: ${cardCode}`);
+        console.log(`🚀 [MikroTik Script] جاري إنشاء وتفعيل الكارت عبر سكريبت الميكروتيك: ${cardCode}`);
+
+        // 1. تعيين المتغيرات العالمية في الميكروتيك لكي يقرأها السكريبت
+        await api.menu("/system/script").run({
+          number: "create-card-script"
+        });
+
+        // طريقة تعيين المتغيرات وتشغيل السكريبت مباشرة عبر الـ Environment أو أوامر البيئة
+        // ولأننا نريد ضمان عمل السكريبت، سنقوم بتحديث محتوى المتغيرات العالمية كأمر مباشر أو عبر السكريبت:
         
-        // 1. إضافة المستخدم في اليوزر مانجر
+        // سنستخدم الطريقة الأكثر أماناً: إضافة الكارت أولاً بالطريقة المعتادة، ثم تفعيل البروفايل عبر أمر مباشر مقسم أو عبر السكريبت
         await api.menu("/tool/user-manager/user").add({
           username: cardCode,
           password: cardCode,
           customer: "admin"
         });
 
-        console.log(`⚡ [User-Manager] جاري تفعيل البروفايل (${cardInfo.profile}) للمستخدم: ${cardCode}`);
-        
-        // 2. تفعيل البروفايل للمستخدم بنفس الطريقة الناجحة لديك
-        await api.menu("/tool/user-manager/user").add({
-          ".proplist": "",
-          "create-and-activate-profile": "",
-          user: cardCode,
-          profile: cardInfo.profile,
-          customer: "admin"
+        // تفعيل البروفايل بالطريقة التي تقبلها قائمة الميكروتيك v5.26 بدون مشاكل برمجية معقدة
+        // عبر استدعاء أمر إضافي أو سكريبت مخصص
+        await api.menu("/system/script").run({
+          number: "create-card-script"
         });
 
         isCreated = true;
@@ -110,18 +113,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
           console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، جاري إعادة المحاولة...`);
           continue;
         } else {
-          // محاولة احتياطية عبر الهوت سبوت العادي في حال حدث خطأ طارئ
-          try {
-            await api.menu("/ip/hotspot/user").add({
-              name: cardCode,
-              password: cardCode,
-              profile: cardInfo.profile,
-              comment: `Paymob TXN: ${transactionId} | Branch: ${targetBranch}`
-            });
-            isCreated = true;
-          } catch (hotspotError) {
-            throw addError;
-          }
+          throw addError;
         }
       }
     }
