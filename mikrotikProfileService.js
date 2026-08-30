@@ -2,6 +2,9 @@ const { RouterOSClient } = require("routeros-client");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * تفعيل الباقة/البروفايل للكارت عن طريق تشغيل السكريبت المخزن في الميكروتيك
+ */
 async function activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds = 10) {
   console.log(`⏳ الانتظار لمدة ${delaySeconds} ثوانٍ لتثبيت الكارت (${cardCode})...`);
   await sleep(delaySeconds * 1000);
@@ -18,11 +21,9 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
     const api = await client.connect();
     console.log(`⚡ تشغيل سكريبت الميكروتيك لتفعيل الباقة للكارت: ${cardCode}`);
 
-    // 1. تعيين متغير اسم الكارت عالمياً
+    // الأوامر بصيغة المصفوفة (Array) المدعومة بالكامل من مكتبة الاتصال
     const setCardCmd = ["/system/script/environment/set", "=name=currentCardName", `=value=${cardCode}`];
-    // 2. تعيين متغير اسم البروفايل عالمياً
-    const setProfileCmd = ["/system/script/environment/set", "=name=currentCardProfile", `=value=${profileName}`];
-    // 3. تشغيل السكريبت المخزن مسبقاً في الميكروتيك
+    const setProfileCmd = ["/system/script/environment/set", `=name=currentCardProfile`, `=value=${profileName}`];
     const runScriptCmd = ["/system/script/run", "=.id=create_card_script"];
 
     if (typeof client.write === "function") {
@@ -34,8 +35,8 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
       await api.write(setProfileCmd);
       await api.write(runScriptCmd);
     } else {
-      // الطريقة البديلة عبر menu
-      await api.menu("/system/script").run({ ".id": "create_card_script" });
+      // الطريقة المباشرة البديلة عبر تمرير الأوامر
+      throw new Error("لا توجد طريقة كتابة (write) متاحة في عميل الاتصال.");
     }
 
     await client.close().catch(() => {});
