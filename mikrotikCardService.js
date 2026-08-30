@@ -27,7 +27,7 @@ async function createCardOnly(routerConfig, prefix, transactionId = "") {
       user: routerConfig.user,
       password: routerConfig.password,
       port: routerConfig.port,
-      timeout: 10
+      timeout: 25
     });
 
     try {
