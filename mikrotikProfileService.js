@@ -2,11 +2,8 @@ const { RouterOSClient } = require("routeros-client");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * تفعيل الباقة مباشرة باستخدام أمر create-and-activate-profile للميكروتيك
- */
 async function activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds = 10) {
-  console.log(`⏳ الانتظار لمدة ${delaySeconds} ثوانٍ لضمان استقرار الكارت (${cardCode}) في السيرفر...`);
+  console.log(`⏳ الانتظار لمدة ${delaySeconds} ثوانٍ قبل تشغيل سكريبت تفعيل الباقة للكارت (${cardCode})...`);
   await sleep(delaySeconds * 1000);
 
   const client = new RouterOSClient({
@@ -19,39 +16,38 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
 
   try {
     const api = await client.connect();
-    console.log(`⚡ [User-Manager] تنفيذ أمر تفعيل البروفايل (${profileName}) للكارت: ${cardCode}`);
+    console.log(`⚡ تمرير المتغيرات وتشغيل سكريبت البروفايل في الميكروتيك...`);
 
-    // إرسال الأمر مباشرة كقائمة مطابقة تماماً للـ Terminal
-    const commandArray = [
-      "/tool/user-manager/user/create-and-activate-profile",
-      `=user=${cardCode}`,
-      `=profile=${profileName}`,
-      `=customer=admin`
-    ];
+    // 1. تعيين اسم الكارت في البيئة العالمية للميكروتيك
+    const setCardCmd = ["/system/script/environment/set", "=name=currentCardName", `=value=${cardCode}`];
+    
+    // 2. تعيين اسم الباقة/البروفايل في البيئة العالمية للميكروتيك
+    const setProfileCmd = ["/system/script/environment/set", "=name=currentCardProfile", `=value=${profileName}`];
+    
+    // 3. تشغيل السكريبت المخصص لتفعيل البروفايل
+    const runScriptCmd = ["/system/script/run", "=.id=activate_profile_script"];
 
     if (typeof client.write === "function") {
-      await client.write(commandArray);
+      await client.write(setCardCmd);
+      await client.write(setProfileCmd);
+      await client.write(runScriptCmd);
     } else if (typeof api.write === "function") {
-      await api.write(commandArray);
+      await api.write(setCardCmd);
+      await client.write(setProfileCmd);
+      await client.write(runScriptCmd);
     } else {
-      await api.menu("/tool/user-manager/user").add({
-        command: "create-and-activate-profile",
-        user: cardCode,
-        profile: profileName,
-        customer: "admin"
-      });
+      await api.menu("/system/script").run({ ".id": "activate_profile_script" });
     }
 
     await client.close().catch(() => {});
-    console.log(`✅ تم تفعيل الباقة بنجاح تام للكارت: ${cardCode}`);
+    console.log(`✅ تم تنفيذ سكريبت البروفايل بنجاح تام للكارت: ${cardCode}`);
     return true;
 
   } catch (error) {
     if (client) await client.close().catch(() => {});
-    console.error(`❌ خطأ أثناء تفعيل الباقة: ${error.message}`);
-    throw new Error(`فشل تفعيل البروفايل: ${error.message}`);
+    console.error(`❌ خطأ أثناء تشغيل سكريبت البروفايل: ${error.message}`);
+    throw new Error(`فشل تشغيل سكريبت البروفايل: ${error.message}`);
   }
 }
 
-// التأكد من تصدير الدالة بالاسم الذي يستدعيه ملف mikrotikService.js
 module.exports = { activateCardProfileViaScript };
