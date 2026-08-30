@@ -39,21 +39,14 @@ function getCardPrefixAndType(amount) {
   }
 }
 
-/**
- * توليد كود كارت إجمالي 10 أرقام (البادئة + 8 أرقام عشوائية)
- */
-function generateCardCode(prefix) {
+function generateCardCode(prefix, randomLength = 6) {
   const chars = "0123456789";
-  const remainingLength = 10 - prefix.length; // البادئة رقمين، يتبقى 8 أرقام
   let result = prefix;
-  for (let i = 0; i < remainingLength; i++) {
+  for (let i = 0; i < randomLength; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return result;
 }
-
-// دالة مساعدة لعمل مهلة زمنية (Delay) بالثواني
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function processPaymentAndCreateCard(amount, branchKey = "main", transactionId = "") {
   const cardInfo = getCardPrefixAndType(amount);
@@ -91,28 +84,38 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       cardCode = generateCardCode(cardInfo.prefix);
 
       try {
-        console.log(`👤 [User-Manager] جاري إضافة المستخدم (10 أرقام): ${cardCode}`);
-        
-        // 1. إضافة المستخدم في اليوزر مانجر أولاً
+        console.log(`👤 [User-Manager v5.26] جاري إنشاء الكارت: ${cardCode} بروفايل: ${cardInfo.profile}`);
+
+        // 1. تنفيذ أمر إضافة المستخدم (نفس الأمر الناجح لديك)
         await api.menu("/tool/user-manager/user").add({
           username: cardCode,
           password: cardCode,
           customer: "admin"
         });
 
-        // 2. الانتظار لمدة 5 ثوانٍ لضمان استقرار السيرفر وتسجيل المستخدم بقاعدة بيانات اليوزر مانجر
-        console.log(`⏳ [Wait] انتظار 5 ثوانٍ لتثبيت الكارت في قاعدة البيانات...`);
-        await sleep(5000);
-
-        console.log(`⚡ [User-Manager] جاري تفعيل البروفايل (${cardInfo.profile}) للمستخدم: ${cardCode}`);
-        
-        // 3. تفعيل البروفايل عبر الأمر المستقل المخصص لإصدار 5.26
-        await api.menu("/tool/user-manager/user").add({
-          command: "create-and-activate-profile",
-          user: cardCode,
-          profile: cardInfo.profile,
-          customer: "admin"
-        });
+        // 2. تنفيذ أمر تفعيل البروفايل (نفس الأمر الناجح لديك)
+        // نقوم بتمريره بالطريقة التي تدعمها مكتبة القوائم
+        try {
+          await api.menu("/tool/user-manager/user").add({
+            ".proplist": "",
+            "create-and-activate-profile": "",
+            "user": cardCode,
+            "profile": cardInfo.profile,
+            "customer": "admin"
+          });
+        } catch (subErr) {
+          // بديل مباشر في حال تطلب هيكل مختلف
+          const userMenu = api.menu("/tool/user-manager/user");
+          if (typeof userMenu.action === "function") {
+            await userMenu.action("create-and-activate-profile", {
+              user: cardCode,
+              profile: cardInfo.profile,
+              customer: "admin"
+            });
+          } else {
+            throw subErr;
+          }
+        }
 
         isCreated = true;
       } catch (addError) {
@@ -120,19 +123,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
           console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، جاري إعادة المحاولة...`);
           continue;
         } else {
-          // محاولة احتياطية عبر الهوت سبوت العادي في حال فشل اليوزر مانجر
-          try {
-            console.log(`🔄 [Hotspot Fallback] جاري إضافته عبر الهوت سبوت التقليدي...`);
-            await api.menu("/ip/hotspot/user").add({
-              name: cardCode,
-              password: cardCode,
-              profile: cardInfo.profile,
-              comment: `Paymob TXN: ${transactionId} | Branch: ${targetBranch}`
-            });
-            isCreated = true;
-          } catch (hotspotError) {
-            throw addError;
-          }
+          throw addError;
         }
       }
     }
@@ -155,7 +146,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
 
   } catch (error) {
     if (client) await client.close().catch(() => {});
-    console.error(`❌ خطأ في النظام:`, error.message);
+    console.error(`❌ خطأ أثناء إنشاء الكارت:`, error.message);
     return {
       success: false,
       error: `تعذر توليد الكارت: ${error.message}`
