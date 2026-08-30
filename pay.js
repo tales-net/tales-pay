@@ -1,6 +1,6 @@
 const axios = require('axios');
+const path = require('path');
 const { getCheckoutPage } = require('./checkout');
-const { getAuthToken, createOrder, getPaymentKey } = require('./paymob');
 
 const BRANCH_NAMES = {
   main: 'حكايات نت رئيسي',
@@ -8,16 +8,132 @@ const BRANCH_NAMES = {
   branch3: 'حكايات نت فرع ثالث'
 };
 
-async function createPaymobPayment(phone, amount, method = 'wallet', branch = 'branch2') {
+/**
+ * 1. المصادقة والحصول على Authentication Token من Paymob
+ */
+async function getAuthToken() {
+  try {
+    const response = await axios.post("https://accept.paymob.com/api/auth/tokens", {
+      api_key: process.env.PAYMOB_API_KEY
+    });
+    return response.data.token;
+  } catch (err) {
+    console.error("❌ Paymob Auth Error Details:", JSON.stringify(err.response?.data || err.message, null, 2));
+    throw new Error("فشل الحصول على توكن المصادقة من Paymob");
+  }
+}
+
+/**
+ * 2. إنشاء طلب دفع (Order Registration) مع ربط بيانات الفرع
+ */
+async function createOrder(authToken, amountCents, branchData = {}) {
+  try {
+    const branchKey = branchData.branch || 'main';
+    const branchName = branchData.branch_name || 'حكايات نت رئيسي';
+
+    const payload = {
+      auth_token: authToken,
+      delivery_needed: "false",
+      amount_cents: Math.round(Number(amountCents)),
+      currency: "EGP",
+      merchant_order_id: `TALES-${branchKey.toUpperCase()}-${Date.now()}`,
+      items: [],
+      merchant_extra: {
+        branch: branchKey,
+        branch_name: branchName
+      }
+    };
+
+    const response = await axios.post("https://accept.paymob.com/api/ecommerce/orders", payload);
+    return response.data.id;
+  } catch (err) {
+    console.error("❌ Paymob Create Order Error Details:", JSON.stringify(err.response?.data || err.message, null, 2));
+    throw new Error("فشل إنشاء الطلب في Paymob");
+  }
+}
+
+/**
+ * 3. توليد مفتاح الدفع (Payment Key Request) مع تضمين الفرع
+ */
+async function getPaymentKey(authToken, orderId, amountCents, integrationId, phone = "01000000000", branchData = {}) {
+  try {
+    let sanitizedPhone = String(phone).replace(/\D/g, "");
+    if (!sanitizedPhone || sanitizedPhone.length < 11) {
+      sanitizedPhone = "01000000000";
+    }
+
+    const branchKey = branchData.branch || 'main';
+    const branchName = branchData.branchName || 'حكايات نت رئيسي';
+
+    const payload = {
+      auth_token: authToken,
+      amount_cents: Math.round(Number(amountCents)),
+      expiration: 3600,
+      order_id: Number(orderId),
+      billing_data: {
+        apartment: "NA",
+        email: "customer@tales-net.com",
+        floor: "NA",
+        first_name: "Tales",
+        street: branchName,
+        building: "NA",
+        phone_number: sanitizedPhone,
+        shipping_method: branchKey,
+        postal_code: "NA",
+        city: "Cairo",
+        country: "EG",
+        last_name: "Customer",
+        state: "NA"
+      },
+      currency: "EGP",
+      integration_id: Number(integrationId),
+      lock_order_when_paid: "true",
+      extra: {
+        branch: branchKey,
+        branch_name: branchName
+      }
+    };
+
+    const response = await axios.post("https://accept.paymob.com/api/acceptance/payment_keys", payload);
+    return response.data.token;
+  } catch (err) {
+    console.error("❌ Paymob Payment Key Error Details:", JSON.stringify(err.response?.data || err.message, null, 2));
+    throw new Error("فشل توليد مفتاح الدفع من Paymob");
+  }
+}
+
+/**
+ * 4. الدالة الرئيسية لمعالجة الدفع وإنشاء الرابط أو التوجيه مع فحص الفرع بصرامة
+ */
+async function createPaymobPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
   try {
     const amountCents = Math.round(parseFloat(amount) * 100).toString();
     const cleanMethod = (method || 'wallet').toLowerCase();
     
-    // تصحيح الفرع: إذا لم يُرسل أو لم يكن موجوداً، نعتمد الفرع الثاني افتراضياً بدلاً من الرئيسي لعدم التعارض
-    const selectedBranch = (branch && BRANCH_NAMES[branch]) ? branch : 'branch2';
+    let rawBranch = String(branch || '').toLowerCase().trim();
+
+    if (!rawBranch && req) {
+      rawBranch = String(req.body?.branch || req.query?.branch || '').toLowerCase().trim();
+    }
+
+    // التحقق الصارم من الفرع: إذا كان مفقوداً أو غير صالح، يتم التوقف وعرض صفحة التحذير
+    if (!rawBranch || !BRANCH_NAMES[rawBranch]) {
+      console.warn(`⚠️ [Pay.js] رفض معاملة لدفع بفرع غير صالح أو مفقود: [${rawBranch}]`);
+      
+      if (res) {
+        if (req?.headers?.['content-type']?.includes('application/json')) {
+          return res.status(400).json({ success: false, error: "يجب اختيار فرع صحيح للشبكة قبل إتمام الدفع." });
+        }
+        return res.status(400).sendFile(path.join(__dirname, 'public', 'warning.html'));
+      }
+      
+      throw new Error(`يجب اختيار فرع صحيح للشبكة. الفرع المحدد غير مدعوم: [${rawBranch}]`);
+    }
+
+    const selectedBranch = rawBranch;
     const branchDisplayName = BRANCH_NAMES[selectedBranch];
 
-    console.log(`💳 [Pay.js] إنشاء معاملة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amount} | الوسيلة: ${cleanMethod}`);
+    console.log(`💳 [Pay.js] إنشاء معاملة مؤكدة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amount} | الوسيلة: ${cleanMethod}`);
 
     let integrationId;
     switch (cleanMethod) {
@@ -36,7 +152,6 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = 'b
 
     const token = await getAuthToken();
     
-    // تمرير بيانات الفرع بوضوح في الـ Extra Data لضمان وصولها للـ Webhook
     const orderId = await createOrder(token, amountCents, {
       branch: selectedBranch,
       branch_name: branchDisplayName
@@ -92,5 +207,8 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = 'b
 module.exports = { 
   createPaymobPayment, 
   processPayment: createPaymobPayment,
+  getAuthToken,
+  createOrder,
+  getPaymentKey,
   BRANCH_NAMES
 };
