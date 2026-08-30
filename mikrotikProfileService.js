@@ -16,27 +16,28 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
 
   try {
     const api = await client.connect();
-    console.log(`⚡ تمرير المتغيرات وتشغيل سكريبت البروفايل في الميكروتيك...`);
+    console.log(`⚡ تعيين المتغيرات وتشغيل سكريبت البروفايل في الميكروتيك...`);
 
-    // 1. تعيين اسم الكارت في البيئة العالمية للميكروتيك
+    // 1. تعيين اسم الكارت في المتغيرات العالمية
     const setCardCmd = ["/system/script/environment/set", "=name=currentCardName", `=value=${cardCode}`];
     
-    // 2. تعيين اسم الباقة/البروفايل في البيئة العالمية للميكروتيك
+    // 2. تعيين اسم الباقة/البروفايل في المتغيرات العالمية
     const setProfileCmd = ["/system/script/environment/set", "=name=currentCardProfile", `=value=${profileName}`];
     
-    // 3. تشغيل السكريبت المخصص لتفعيل البروفايل
+    // 3. تشغيل السكريبت المخزن مسبقاً في الميكروتيك باسم activate_profile_script
     const runScriptCmd = ["/system/script/run", "=.id=activate_profile_script"];
 
+    // إرسال الأوامر بالترتيب بالطريقة المدعومة تماماً في المكتبة
     if (typeof client.write === "function") {
       await client.write(setCardCmd);
       await client.write(setProfileCmd);
       await client.write(runScriptCmd);
     } else if (typeof api.write === "function") {
       await api.write(setCardCmd);
-      await client.write(setProfileCmd);
-      await client.write(runScriptCmd);
+      await api.write(setProfileCmd);
+      await api.write(runScriptCmd);
     } else {
-      await api.menu("/system/script").run({ ".id": "activate_profile_script" });
+      throw new Error("لا توجد دالة كتابة (write) صالحة في اتصال RouterOSClient");
     }
 
     await client.close().catch(() => {});
