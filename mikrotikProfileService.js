@@ -1,9 +1,12 @@
-const { RouterOSClient } = require("routeros-client");
+const { RouterOSClient } = require('routeros-client');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * تفعيل الباقة عبر تحديث وتشغيل السكريبت في الميكروتيك بطريقة احترافية
+ */
 async function activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds = 10, maxRetries = 3) {
-  console.log(`⏳ [الانتظار] الانتظار لمدة ${delaySeconds} ثوانٍ لتثبيت الكارت (${cardCode}) للباقة (${profileName})...`);
+  console.log(`⏳ [الانتظار] الانتظار لمدة ${delaySeconds} ثوانٍ لضمان استقرار الكارت (${cardCode}) للباقة (${profileName})...`);
   await sleep(delaySeconds * 1000);
 
   let attempt = 0;
@@ -12,6 +15,7 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
 
   while (attempt < maxRetries && !success) {
     attempt++;
+    
     const client = new RouterOSClient({
       host: routerConfig.host,
       user: routerConfig.user,
@@ -21,31 +25,39 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
     });
 
     try {
-      console.log(`🔄 [محاولة ${attempt}/${maxRetries}] جاري الاتصال بالميكروتيك لتفعيل الكارت: ${cardCode} بالبروفايل: ${profileName}`);
-      const conn = await client.connect();
+      console.log(`🔄 [محاولة ${attempt}/${maxRetries}] الاتصال بالسيرفر (${routerConfig.host}) لتفعيل الكارت: ${cardCode} بالبروفايل: ${profileName}`);
+      const api = await client.connect();
+      console.log(`✅ [MikroTik] تم الاتصال بالسيرفر بنجاح`);
 
-      // طريقة آمنة لتنفيذ الأوامر تعتمد على menu الخاص بالمكتبة
-      const scriptMenu = conn.menu("/system/script");
+      const scriptMenu = api.menu('/system/script');
 
-      // 1. تعيين المتغيرات العالمية عبر تنفيذ أوامر مباشرة لضمان وصول رقم الكارت والبروفايل
-      // نقوم بتشغيل أمر تعيين المتغيرات مباشرة في الميكروتيك
-      if (typeof conn.write === "function") {
-        await conn.write(["/system/script/environment/set", "=name=currentCardName", `=value=${cardCode}`]);
-        await conn.write(["/system/script/environment/set", "=name=currentCardProfile", `=value=${profileName}`]);
-        await conn.write(["/system/script/run", "=.id=activate_profile_script"]);
-      } else {
-        // إذا لم تكن conn.write متاحة، نستخدم الطريقة البديلة المدعومة في الـ menu
-        await scriptMenu.run({ ".id": "activate_profile_script" });
-      }
+      // تصميم محتوى السكريبت ديناميكياً وتمرير رقم الكارت والبروفايل بداخله
+      const updatedSource = `:local cardName "${cardCode}";\n` +
+                            `:local cardProfile "${profileName}";\n` +
+                            `\n` +
+                            `# تنفيذ أمر التفعيل في اليوزر مانجر\n` +
+                            `/tool user-manager user create-and-activate-profile user=$cardName profile=$cardProfile customer=admin;\n` +
+                            `\n` +
+                            `:log warning ("تم بنجاح تفعيل الباقة (" . $cardProfile . ") للكارت: " . $cardName);`;
+
+      // 1. تحديث محتوى السكريبت الموجود في الميكروتيك بالقيم الجديدة
+      await scriptMenu.where('name', 'activate_profile_script').set({
+        source: updatedSource
+      });
+      console.log(`📝 [MikroTik] تم تحديث السكريبت بالكارت: ${cardCode} والبروفايل: ${profileName}`);
+
+      // 2. تشغيل السكريبت
+      await scriptMenu.exec('run', { number: 'activate_profile_script' });
+      console.log(`🚀 [MikroTik] تم تشغيل السكريبت بنجاح للكارت: ${cardCode}`);
 
       await client.close().catch(() => {});
-      console.log(`🎉 [نجاح] تم تشغيل سكريبت تفعيل الباقة (${profileName}) للكارت: ${cardCode} في المحاولة ${attempt}!`);
+      console.log(`🎉 [نجاح تام] تم تفعيل البروفايل (${profileName}) للكارت (${cardCode}) في المحاولة ${attempt}!`);
       success = true;
       return true;
 
     } catch (error) {
       lastError = error;
-      console.error(`❌ [خطأ في المحاولة ${attempt}] فشل تفعيل الكارت "${cardCode}" مع البروفايل "${profileName}". السبب: ${error.message}`);
+      console.error(`❌ [خطأ في المحاولة ${attempt}] فشل تفعيل الكارت "${cardCode}" مع البروفايل "${profileName}":`, error.message || error);
       
       try {
         await client.close();
@@ -53,13 +65,12 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
 
       if (attempt < maxRetries) {
         const waitTime = attempt * 3;
-        console.log(`⏳ الانتظار لمدة ${waitTime} ثوانٍ قبل إعادة محاولة إرسال الكارت والبروفايل...`);
+        console.log(`⏳ الانتظار لمدة ${waitTime} ثوانٍ قبل إعادة المحاولة...`);
         await sleep(waitTime * 1000);
       }
     }
   }
 
-  // طباعة تفاصيل الخطأ النهائي بوضوح شديد لمعرفة المشكلة فوراً
   console.error(`🚨 [فشل نهائي] الكارت: ${cardCode} | البروفايل المطلوب: ${profileName} | الخطأ الأخير: ${lastError ? lastError.message : "غير معروف"}`);
 
   throw new Error(
