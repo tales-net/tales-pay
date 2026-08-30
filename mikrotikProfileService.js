@@ -2,11 +2,8 @@ const { RouterOSClient } = require("routeros-client");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * تمرير المتغيرات وتشغيل سكريبت الميكروتيك لتفعيل البروفايل مع محاولات ذكية
- */
 async function activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds = 10, maxRetries = 3) {
-  console.log(`⏳ الانتظار لمدة ${delaySeconds} ثوانٍ لضمان استقرار الكارت (${cardCode}) في السيرفر...`);
+  console.log(`⏳ [الانتظار] الانتظار لمدة ${delaySeconds} ثوانٍ لتثبيت الكارت (${cardCode}) للباقة (${profileName})...`);
   await sleep(delaySeconds * 1000);
 
   let attempt = 0;
@@ -24,40 +21,31 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
     });
 
     try {
-      console.log(`🔄 [محاولة ${attempt}/${maxRetries}] تمرير الكارت (${cardCode}) والبروفايل (${profileName}) للـ Script...`);
+      console.log(`🔄 [محاولة ${attempt}/${maxRetries}] جاري الاتصال بالميكروتيك لتفعيل الكارت: ${cardCode} بالبروفايل: ${profileName}`);
       const conn = await client.connect();
 
-      // الأوامر التي سيتم إرسالها للميكروتيك بالتسلسل تماماً مثل الـ Terminal
-      // 1. تعيين متغير اسم الكارت عالمياً
-      const setCardCmd = ["/system/script/environment/set", "=name=currentCardName", `=value=${cardCode}`];
-      
-      // 2. تعيين متغير اسم البروفايل عالمياً
-      const setProfileCmd = ["/system/script/environment/set", "=name=currentCardProfile", `=value=${profileName}`];
-      
-      // 3. تشغيل السكريبت المخزن
-      const runScriptCmd = ["/system/script/run", "=.id=activate_profile_script"];
+      // طريقة آمنة لتنفيذ الأوامر تعتمد على menu الخاص بالمكتبة
+      const scriptMenu = conn.menu("/system/script");
 
-      // إرسال الأوامر بالترتيب باستخدام دالة conn.write المعتمدة في المكتبة
+      // 1. تعيين المتغيرات العالمية عبر تنفيذ أوامر مباشرة لضمان وصول رقم الكارت والبروفايل
+      // نقوم بتشغيل أمر تعيين المتغيرات مباشرة في الميكروتيك
       if (typeof conn.write === "function") {
-        await conn.write(setCardCmd);
-        await conn.write(setProfileCmd);
-        await conn.write(runScriptCmd);
-      } else if (typeof client.write === "function") {
-        await client.write(setCardCmd);
-        await client.write(setProfileCmd);
-        await client.write(runScriptCmd);
+        await conn.write(["/system/script/environment/set", "=name=currentCardName", `=value=${cardCode}`]);
+        await conn.write(["/system/script/environment/set", "=name=currentCardProfile", `=value=${profileName}`]);
+        await conn.write(["/system/script/run", "=.id=activate_profile_script"]);
       } else {
-        throw new Error("لا توجد دالة كتابة (write) صالحة في اتصال RouterOSClient");
+        // إذا لم تكن conn.write متاحة، نستخدم الطريقة البديلة المدعومة في الـ menu
+        await scriptMenu.run({ ".id": "activate_profile_script" });
       }
 
       await client.close().catch(() => {});
-      console.log(`🎉 تم تشغيل سكريبت تفعيل الباقة بنجاح تام للكارت: ${cardCode} في المحاولة ${attempt}!`);
+      console.log(`🎉 [نجاح] تم تشغيل سكريبت تفعيل الباقة (${profileName}) للكارت: ${cardCode} في المحاولة ${attempt}!`);
       success = true;
       return true;
 
     } catch (error) {
       lastError = error;
-      console.warn(`⚠️ فشل المحاولة رقم ${attempt} لتشغيل السكريبت: ${error.message}`);
+      console.error(`❌ [خطأ في المحاولة ${attempt}] فشل تفعيل الكارت "${cardCode}" مع البروفايل "${profileName}". السبب: ${error.message}`);
       
       try {
         await client.close();
@@ -65,14 +53,17 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
 
       if (attempt < maxRetries) {
         const waitTime = attempt * 3;
-        console.log(`⏳ الانتظار لمدة ${waitTime} ثوانٍ قبل إعادة المحاولة...`);
+        console.log(`⏳ الانتظار لمدة ${waitTime} ثوانٍ قبل إعادة محاولة إرسال الكارت والبروفايل...`);
         await sleep(waitTime * 1000);
       }
     }
   }
 
+  // طباعة تفاصيل الخطأ النهائي بوضوح شديد لمعرفة المشكلة فوراً
+  console.error(`🚨 [فشل نهائي] الكارت: ${cardCode} | البروفايل المطلوب: ${profileName} | الخطأ الأخير: ${lastError ? lastError.message : "غير معروف"}`);
+
   throw new Error(
-    `فشل تشغيل سكريبت البروفايل بعد ${maxRetries} محاولات للمستخدم ${cardCode}. السبب الأخير: ${lastError ? lastError.message : "خطأ غير معروف"}`
+    `فشل تشغيل سكريبت البروفايل للكارت (${cardCode}) بروفايل (${profileName}) بعد ${maxRetries} محاولات. السبب: ${lastError ? lastError.message : "خطأ غير معروف"}`
   );
 }
 
