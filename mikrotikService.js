@@ -39,7 +39,7 @@ function getCardPrefixAndType(amount) {
   }
 }
 
-function generateCardCode(prefix, randomLength = 8) {
+function generateCardCode(prefix, randomLength = 6) {
   const chars = "0123456789";
   let result = prefix;
   for (let i = 0; i < randomLength; i++) {
@@ -87,28 +87,26 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
         const api = await client.connect();
 
         // -------------------------------------------------------------
-        // الخطوة 1: إضافة الكارت باستخدام مصفوفة الأوامر المباشرة
+        // الخطوة 1: إضافة الكارت باستخدام دالة add التي أثبتت نجاحها
         // -------------------------------------------------------------
         console.log(`👤 [User-Manager] (${targetBranch}) محاولة إضافة الكارت: ${cardCode}`);
         
-        const addUserCommand = [
-          "/tool/user-manager/user/add",
-          `=username=${cardCode}`,
-          `=password=${cardCode}`,
-          `=customer=admin`
-        ];
+        await api.menu("/tool/user-manager/user").add({
+          username: cardCode,
+          password: cardCode,
+          customer: "admin"
+        });
 
-        await client.write(addUserCommand);
         await client.close().catch(() => {});
 
         // -------------------------------------------------------------
-        // الانتظار لمدة 10 ثوانٍ لضمان استقرار وتثبيت الكارت في السيرفر
+        // الانتظار لمدة 10 ثوانٍ لضمان استقرار الكارت في قاعدة البيانات
         // -------------------------------------------------------------
         console.log(`⏳ تم إضافة الكارت بنجاح، الانتظار 10 ثوانٍ قبل تفعيل الباقة...`);
         await sleep(10000);
 
         // -------------------------------------------------------------
-        // الخطوة 2: تفعيل البروفايل باستخدام مصفوفة الأوامر تماماً كالـ Terminal
+        // الخطوة 2: تفعيل البروفايل عن طريق إرسال الأمر كـ add داخل قائمة اليوزر مانجر أو عبر دالة الـ write المتاحة في api
         // -------------------------------------------------------------
         console.log(`⚡ [User-Manager] جاري تفعيل الباقة (${cardInfo.profile}) للكارت: ${cardCode}`);
         
@@ -120,18 +118,34 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
           timeout: 10
         });
 
-        await client2.connect();
+        const api2 = await client2.connect();
 
-        const activateCommand = [
-          "/tool/user-manager/user/create-and-activate-profile",
-          `=user=${cardCode}`,
-          `=profile=${cardInfo.profile}`,
-          `=customer=admin`
-        ];
+        // محاولة تنفيذ الأمر بالطريقة التي تدعمها واجهة الـ API للتحكم بالكلمات المركبة
+        if (typeof api2.write === "function") {
+          await api2.write([
+            "/tool/user-manager/user/create-and-activate-profile",
+            `=user=${cardCode}`,
+            `=profile=${cardInfo.profile}`,
+            `=customer=admin`
+          ]);
+        } else if (typeof api2.send === "function") {
+          await api2.send([
+            "/tool/user-manager/user/create-and-activate-profile",
+            `=user=${cardCode}`,
+            `=profile=${cardInfo.profile}`,
+            `=customer=admin`
+          ]);
+        } else {
+          // طريقة بديلة لتمرير الأوامر الخاصة عبر الـ menu
+          await api2.menu("/tool/user-manager/user").add({
+            ".id": cardCode,
+            "create-and-activate-profile": "",
+            profile: cardInfo.profile,
+            customer: "admin"
+          });
+        }
 
-        await client2.write(activateCommand);
         await client2.close().catch(() => {});
-
         isCreated = true; // تم إنشاء وتفعيل الكارت والباقة بنجاح تام!
 
       } catch (stepError) {
@@ -140,7 +154,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
         const errStr = stepError.message || "";
         if (errStr.includes("already exists") || errStr.includes("such username already exists")) {
           console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، سيتم توليد رقم كارت جديد وإعادة المحاولة...`);
-          continue; // الاستمرار لتوليد رقم كارت جديد
+          continue; // الاستمرار لتوليد رقم جديد
         } else {
           throw stepError;
         }
