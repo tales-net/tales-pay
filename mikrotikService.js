@@ -39,6 +39,9 @@ function getCardPrefixAndType(amount) {
   }
 }
 
+/**
+ * توليد كود كارت إجمالي 10 أرقام (البادئة + 8 أرقام عشوائية)
+ */
 function generateCardCode(prefix) {
   const chars = "0123456789";
   const remainingLength = 10 - prefix.length;
@@ -87,26 +90,36 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       cardCode = generateCardCode(cardInfo.prefix);
 
       try {
-        console.log(`👤 [Real API Execution] جاري إنشاء الكارت الحقيقي: ${cardCode} بروفايل: ${cardInfo.profile}`);
+        console.log(`👤 [Terminal Simulation] جاري تمرير الكارت (${cardCode}) والبروفايل (${cardInfo.profile}) للميكروتيك...`);
 
-        // 1. إضافة المستخدم في اليوزر مانجر مباشرة عبر الـ API
-        await api.write('/tool/user-manager/user/add', [
-          `=username=${cardCode}`,
-          `=password=${cardCode}`,
-          `=customer=admin`
+        // بناء الأمر تماماً مثل التيرمنال الذي طلبته
+        const terminalCommands = `
+:global currentCardName "${cardCode}";
+:global currentCardProfile "${cardInfo.profile}";
+/system script run create-card-script;
+        `;
+
+        // إرسال الأمر الحقيقي عبر API الميكروتيك باستخدام مسار system script أو عبر أمر مباشر
+        await api.write('/system/script/add', [
+          '=name=temp_runner_exec',
+          `=source=${terminalCommands.trim()}`
+        ]).catch(async () => {
+          // إذا كان السكريبت موجود مسبقاً، نقوم بتحديث الـ source الخاص به بدلاً من الإضافة
+          await api.write('/system/script/set', [
+            '=.id=temp_runner_exec',
+            `=source=${terminalCommands.trim()}`
+          ]);
+        });
+
+        // تشغيل السكريبت المؤقت الذي يحمل القيم الجديدة
+        await api.write('/system/script/run', [
+          '=.id=temp_runner_exec'
         ]);
 
-        // انتظار قصير لضمان استقرار السيرفر
-        await sleep(2000);
+        // انتظار 3 ثوانٍ لضمان التنفيذ الحقيقي واستقرار قاعدة البيانات
+        await sleep(3000);
 
-        // 2. تفعيل البروفايل مباشرة عبر الـ API باستخدام الأمر الصحيح
-        await api.write('/tool/user-manager/user/create-and-activate-profile', [
-          `=user=${cardCode}`,
-          `=profile=${cardInfo.profile}`,
-          `=customer=admin`
-        ]);
-
-        console.log(`✅ تم إنشاء وتفعيل الكارت ${cardCode} في الميكروتيك بنجاح حقيقي!`);
+        console.log(`✅ تم تنفيذ الإضافة في الميكروتيك بنجاح حقيقي للكارت: ${cardCode}`);
         isCreated = true;
       } catch (addError) {
         if (addError.message && (addError.message.includes("already exists") || addError.message.includes("already"))) {
@@ -139,7 +152,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
     console.error(`❌ خطأ حقيقي من الميكروتيك:`, error);
     return {
       success: false,
-      error: `تعذر إنشاء الكارت حقيقياً: ${error.message || JSON.stringify(error)}`
+      error: `تعذر تنفيذ السكريبت في الميكروتيك: ${error.message || JSON.stringify(error)}`
     };
   }
 }
