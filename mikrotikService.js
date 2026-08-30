@@ -12,7 +12,7 @@ const BRANCH_ROUTERS = {
     host: process.env.MIKROTIK_HOST_BRANCH2 || "192.168.2.1",
     user: process.env.MIKROTIK_USER || "admin",
     password: process.env.MIKROTIK_PASSWORD || "",
-    port: parseInt(process.env.MIKROTIK_PORT || "2222")
+    port: parseInt(process.env.MIKROTIK_PORT || "8728")
   },
   branch3: {
     host: process.env.MIKROTIK_HOST_BRANCH3 || "192.168.3.1",
