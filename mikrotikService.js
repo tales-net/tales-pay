@@ -56,11 +56,16 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
   const routerConfig = BRANCH_ROUTERS[targetBranch];
 
   try {
-    // 1. إنشاء الكارت فقط أولاً
+    console.log(`--- [1/2] بدء عملية إنشاء الكارت النظيف للفرع: ${targetBranch} ---`);
+    
+    // الخطوة الأولى: إنشاء الكارت النظيف حصرياً والتأكد من عدم وجود تشابه
     const cardCode = await createCardOnly(routerConfig, cardInfo.prefix, transactionId);
+    console.log(`✅ تم إنشاء الكارت النظيف بنجاح برقم: ${cardCode}`);
 
-    // 2. تشغيل سكريبت الميكروتيك لتفعيل البروفايل بعد الانتظار
-    await activateCardProfileViaScript(routerConfig, cardCode, cardInfo.profile, 10);
+    console.log(`--- [2/2] بدء تفعيل البروفايل (${cardInfo.profile}) على الكارت الجديد ---`);
+    
+    // الخطوة الثانية: إضافة الباقة والبروفايل على الكارت الذي تم إنشاؤه نظيفاً
+    await activateCardProfileViaScript(routerConfig, cardCode, cardInfo.profile, 5);
 
     return {
       success: true,
@@ -73,6 +78,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
     };
 
   } catch (error) {
+    console.error(`❌ خطأ في عملية معالجة الدفع وإنشاء الكارت: ${error.message}`);
     return {
       success: false,
       error: `تعذر توليد الكارت وتفعيل الباقة: ${error.message}`
@@ -83,5 +89,5 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
 module.exports = {
   processPaymentAndCreateCard,
   getCardPrefixAndType,
-  BRANCH_ROUTERS
+  BRANCH_ROTRUS: BRANCH_ROUTERS
 };
