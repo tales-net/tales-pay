@@ -2,6 +2,16 @@ const { RouterOSClient } = require("routeros-client");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// ذاكرة مؤقتة لتخزين المعاملات التي تمت معالجتها لمنع التكرار نهائياً
+const processedTransactions = new Set();
+
+// تنظيف دوري للذاكرة كل ساعة لمنع تراكم البيانات
+setInterval(() => {
+  if (processedTransactions.size > 5000) {
+    processedTransactions.clear();
+  }
+}, 60 * 60 * 1000);
+
 function generateCardCode(prefix, randomLength = 8) {
   const chars = "0123456789";
   let result = prefix;
@@ -145,9 +155,19 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
 }
 
 /**
- * 3. دالة رئيسية شاملة تُنفذ بعد الدفع مباشرة: تنشئ الكارت أولاً ثم تفعل البروفايل الخاص به
+ * 3. دالة رئيسية شاملة تُنفذ بعد الدفع مباشرة مع الحماية التامة ضد تكرار المعاملات
  */
 async function processPaymentAndCreateCard(routerConfig, prefix, profileName, transactionId = "", delaySeconds = 10) {
+  if (!transactionId || transactionId === "undefined" || transactionId === "null") {
+    console.warn("⚠️ تحذير: تم استدعاء دالة إنشاء الكارت بدون رقم معاملة حقيقي (transactionId).");
+  } else {
+    // التحقق مما إذا كانت المعاملة قد عולجت مسبقاً
+    if (processedTransactions.has(String(transactionId))) {
+      console.warn(`🛑 [حماية التكرار] المعاملة برقم (${transactionId}) تمت معالجتها مسبقاً وتم إصدار كارت لها. تم منع إصدار كارت مكرر.`);
+      throw new Error(`Duplicate transaction prevented: ${transactionId}`);
+    }
+  }
+
   try {
     console.log(`🚀 بدء عملية إصدار الكارت وتفعيله بعد الدفع للمعاملة: ${transactionId}`);
     
@@ -156,6 +176,11 @@ async function processPaymentAndCreateCard(routerConfig, prefix, profileName, tr
 
     // الخطوة الثانية: تمرير الكارت وتفعيله بالبروفايل المطلوب عبر السكريبت
     await activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds);
+
+    // تسجيل المعاملة كتمت بنجاح لعدم السماح بتكرارها نهائياً
+    if (transactionId) {
+      processedTransactions.add(String(transactionId));
+    }
 
     console.log(`✨ تمت العملية بنجاح كامل للكارت: ${cardCode} بالبروفايل: ${profileName}`);
     return {
