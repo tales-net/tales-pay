@@ -26,17 +26,17 @@ function getCardPrefixAndType(amount) {
   const numAmount = Number(amount);
   switch (numAmount) {
     case 5:
-      return { prefix: "01", profileId: "4", packageName: "الباقة البرونزية", isCustom: false };   // Bronze ID = 4
+      return { prefix: "01", profile: "Bronze", packageName: "الباقة البرونزية", isCustom: false };
     case 15:
-      return { prefix: "02", profileId: "5", packageName: "الباقة الفضية", isCustom: false };    // Silver ID = 5
+      return { prefix: "02", profile: "Silver", packageName: "الباقة الفضية", isCustom: false };
     case 30:
-      return { prefix: "05", profileId: "6", packageName: "الباقة الذهبية", isCustom: false };    // Gold ID = 6
+      return { prefix: "05", profile: "Gold", packageName: "الباقة الذهبية", isCustom: false };
     case 50:
-      return { prefix: "10", profileId: "7", packageName: "الباقة البلاتينية", isCustom: false }; // Platinum ID = 7
+      return { prefix: "10", profile: "Platinum", packageName: "الباقة البلاتينية", isCustom: false };
     case 100:
-      return { prefix: "25", profileId: "8", packageName: "الباقة الماسية", isCustom: false };   // Diamond ID = 8
+      return { prefix: "25", profile: "Diamond", packageName: "الباقة الماسية", isCustom: false };
     default:
-      return { prefix: "", profileId: "", packageName: "", isCustom: true };
+      return { prefix: "", profile: "", packageName: "", isCustom: true };
   }
 }
 
@@ -56,16 +56,11 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
   const routerConfig = BRANCH_ROUTERS[targetBranch];
 
   try {
-    console.log(`--- [1/2] بدء عملية إنشاء الكارت النظيف للفرع: ${targetBranch} ---`);
-    
-    // الخطوة الأولى: إنشاء الكارت النظيف حصرياً والتأكد من عدم وجود تشابه
+    // 1. إنشاء الكارت فقط أولاً
     const cardCode = await createCardOnly(routerConfig, cardInfo.prefix, transactionId);
-    console.log(`✅ تم إنشاء الكارت النظيف بنجاح برقم: ${cardCode}`);
 
-    console.log(`--- [2/2] بدء تفعيل البروفايل (${cardInfo.profile}) على الكارت الجديد ---`);
-    
-    // الخطوة الثانية: إضافة الباقة والبروفايل على الكارت الذي تم إنشاؤه نظيفاً
-    await activateCardProfileViaScript(routerConfig, cardCode, cardInfo.profile, 5);
+    // 2. تشغيل سكريبت الميكروتيك لتفعيل البروفايل بعد الانتظار
+    await activateCardProfileViaScript(routerConfig, cardCode, cardInfo.profile, 10);
 
     return {
       success: true,
@@ -78,7 +73,6 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
     };
 
   } catch (error) {
-    console.error(`❌ خطأ في عملية معالجة الدفع وإنشاء الكارت: ${error.message}`);
     return {
       success: false,
       error: `تعذر توليد الكارت وتفعيل الباقة: ${error.message}`
@@ -89,5 +83,5 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
 module.exports = {
   processPaymentAndCreateCard,
   getCardPrefixAndType,
-  BRANCH_ROTRUS: BRANCH_ROUTERS
+  BRANCH_ROUTERS
 };
