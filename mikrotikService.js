@@ -5,21 +5,21 @@ const { activateCardProfileViaScript } = require("./mikrotikProfileService");
 const BRANCH_ROUTERS = {
   main: {
     host: process.env.MIKROTIK_HOST,
-    user: process.env.MIKROTIK_USER || "admin",
-    password: process.env.MIKROTIK_PASSWORD || "",
-    port: parseInt(process.env.MIKROTIK_PORT || "8728")
+    user: process.env.MIKROTIK_USER,
+    password: process.env.MIKROTIK_PASSWORD,
+    port: parseInt(process.env.MIKROTIK_PORT)
   },
   branch2: {
     host: process.env.MIKROTIK_HOST_BRANCH2,
-    user: process.env.MIKROTIK_USER || "admin",
-    password: process.env.MIKROTIK_PASSWORD || "",
-    port: parseInt(process.env.MIKROTIK_PORT || "8728")
+    user: process.env.MIKROTIK_USER,
+    password: process.env.MIKROTIK_PASSWORD,
+    port: parseInt(process.env.MIKROTIK_PORT)
   },
   branch3: {
     host: process.env.MIKROTIK_HOST_BRANCH3,
-    user: process.env.MIKROTIK_USER || "admin",
-    password: process.env.MIKROTIK_PASSWORD || "",
-    port: parseInt(process.env.MIKROTIK_PORT || "8728")
+    user: process.env.MIKROTIK_USER,
+    password: process.env.MIKROTIK_PASSWORD,
+    port: parseInt(process.env.MIKROTIK_PORT)
   }
 };
 
