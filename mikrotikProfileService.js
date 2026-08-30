@@ -38,7 +38,7 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
                             `# Activate user profile in User Manager\n` +
                             `/tool user-manager user create-and-activate-profile user=$cardName profile=$cardProfile customer=admin;\n` +
                             `\n` +
-                            `:log warning ("Successfully activated profile (" . $cardProfile . ") for card: " . $cardName);`;
+                            `:log warning ("activated profile (" . $cardProfile . ") for card: " . $cardName);`;
 
       // 1. تحديث محتوى السكريبت الموجود في الميكروتيك بالقيم الجديدة
       await scriptMenu.where('name', 'activate_profile_script').set({
