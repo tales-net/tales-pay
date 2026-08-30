@@ -24,7 +24,7 @@ const BRANCH_NAMES = {
 // خريطة عالمية لحفظ الكروت مؤقتاً
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
-// 🧹 تنظيف الكروت المحفوظة مؤقتاً التي مر عليها أكثر أكثر من ساعة لتفريغ الذاكرة تلقائياً
+// 🧹 تنظيف الكروت المحفوظة مؤقتاً التي مر عليها أكثر من ساعة لتفريغ الذاكرة تلقائياً
 setInterval(() => {
   const oneHourAgo = Date.now() - (60 * 60 * 1000);
   for (let [key, value] of global.generatedCardsMap.entries()) {
@@ -136,7 +136,7 @@ app.get("/api/test-create-card", async (req, res) => {
   
   // 🔒 التحقق من المفتاح السري قبل تنفيذ أي شيء
   if (!secretKey || secretKey !== process.env.TEST_SECRET_KEY) {
-    console.warn(`🚨 محاولة وصول غير مصرح بها للرابط التجريبي من IP: ${req.ip}`);
+    console.warn(`🚨 محاولة وصول غير مصرح بها للرابط التجريبي من IP: ${getClientPublicIP(req)}`);
     return res.status(403).json({ 
       success: false, 
       message: "⚠️ غير مسموح لك بالوصول لهذا الرابط التجريبي. مفتاح الحماية غير صحيح أو مفقود." 
@@ -145,12 +145,12 @@ app.get("/api/test-create-card", async (req, res) => {
 
   try {
     const amount = req.query.amount || "5";
-    const branch = req.query.branch || "main";
+    const targetBranch = req.query.branch || req.query.branch_key || "main";
     const testTxId = "TEST_" + Date.now();
 
-    console.log(`🧪 [TEST] بدء اختبار إنشاء كارت بمبلغ ${amount} جنيه لفرع ${branch}...`);
+    console.log(`🧪 [TEST] طلب اختبار جديد من IP: ${getClientPublicIP(req)} | مبلغ: ${amount} | فرع الهدف: [${targetBranch}]`);
 
-    const result = await processPaymentAndCreateCard(amount, branch, testTxId);
+    const result = await processPaymentAndCreateCard(amount, targetBranch, testTxId);
 
     if (result.success && !result.isCustomAmount) {
       const cardPayload = {
@@ -167,9 +167,9 @@ app.get("/api/test-create-card", async (req, res) => {
 
       return res.json({
         success: true,
-        message: "✅ تم إضافة الكارت إلى الميكروتيك بنجاح وتوليده تحت الحماية!",
+        message: `✅ تم إضافة الكارت إلى الميكروتيك بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
         data: result,
-        successPageLink: `/success?merchant_order_id=${testTxId}&branch=${branch}`
+        successPageLink: `/success?merchant_order_id=${testTxId}&branch=${result.branchKey}`
       });
     } else {
       return res.json({
