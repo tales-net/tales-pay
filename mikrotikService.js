@@ -1,5 +1,4 @@
-const { createCardOnly } = require("./mikrotikCardService");
-const { activateCardProfileViaScript } = require("./mikrotikProfileService");
+const { createCardOnly, activateCardProfileViaScript } = require("./mikrotikCardService");
 
 // 🌐 تعريف الفروع ببيانات مستقلة تماماً وموحدة في البورت والباسورد واليوزر
 const BRANCH_ROUTERS = {
@@ -76,10 +75,10 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
   }
 
   try {
-    // 1. إنشاء الكارت في الميكروتيك للفرع المحدد حصرياً
+    // 1. إنشاء الكارت في الميكروتيك للفرع المحدد حصرياً مع فحص التكرار
     const cardCode = await createCardOnly(routerConfig, cardInfo.prefix, transactionId);
 
-    // 2. تفعيل البروفايل عبر السكريبت
+    // 2. تفعيل البروفايل عبر السكريبت بعد الدفع
     await activateCardProfileViaScript(routerConfig, cardCode, cardInfo.profile, 10);
 
     return {
