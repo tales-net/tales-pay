@@ -3,10 +3,10 @@ const { RouterOSClient } = require("routeros-client");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * تفعيل الباقة وإضافتها كبروفايل للمستخدم في اليوزر مانجر
+ * تفعيل الباقة وإنشاء الكارت مباشرة بالطريقة المدعومة في واجهة و API اليوزر مانجر
  */
-async function activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds = 10) {
-  console.log(`⏳ الانتظار لمدة ${delaySeconds} ثوانٍ لتثبيت الكارت (${cardCode})...`);
+async function activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds = 5) {
+  console.log(`⏳ الانتظار لمدة ${delaySeconds} ثوانٍ لتثبيت البيانات...`);
   await sleep(delaySeconds * 1000);
 
   const client = new RouterOSClient({
@@ -19,31 +19,35 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
 
   try {
     const conn = await client.connect();
-    console.log(`⚡ ربط وتفعيل البروفايل (${profileName}) للكارت: ${cardCode}`);
+    console.log(`⚡ إنشاء وتفعيل الكارت: ${cardCode} بالبروفايل: ${profileName}`);
 
-    // الطريقة الصحيحة لربط البروفايل بالمستخدم في User-Manager عبر الـ API
+    // الخطوة 1: إنشاء المستخدم أولاً في اليوزر مانجر
+    try {
+      await conn.menu("/tool/user-manager/user").add({
+        username: cardCode,
+        password: cardCode,
+        customer: "admin"
+      });
+    } catch (e) {
+      // نتجاهل الخطأ لو كان موجوداً مسبقاً
+    }
+
+    // الخطوة 2: تفعيل البروفايل وربطه بالكارت ليظهر في قائمة اليوزر مانجر بالبروفايل الخاص به
     await conn.menu("/tool/user-manager/user").add({
       command: "create-and-activate-profile",
       user: cardCode,
       profile: profileName,
       customer: "admin"
-    }).catch(async () => {
-      // طريقة بديلة مباشرة في حال لم يقبل الأمر المتقدم، عن طريق إضافة البروفايل للمستخدم مباشرة
-      await conn.menu("/tool/user-manager/user/profile").add({
-        user: cardCode,
-        profile: profileName,
-        customer: "admin"
-      });
     });
 
     await client.close().catch(() => {});
-    console.log(`✅ تم تفعيل البروفايل بنجاح تام للكارت: ${cardCode}`);
+    console.log(`✅ تم إنشاء وتفعيل الكارت بالبروفايل بنجاح تام: ${cardCode} -> ${profileName}`);
     return true;
 
   } catch (error) {
     if (client) await client.close().catch(() => {});
     console.error(`❌ خطأ أثناء تفعيل البروفايل: ${error.message}`);
-    throw new Error(`فشل تفعيل البروفايل: ${error.message}`);
+    throw new Error(`فشل تفعيل البروفايل في الميكروتيك: ${error.message}`);
   }
 }
 
