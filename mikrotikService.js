@@ -39,9 +39,6 @@ function getCardPrefixAndType(amount) {
   }
 }
 
-/**
- * توليد كود كارت إجمالي 10 أرقام (البادئة + 8 أرقام عشوائية)
- */
 function generateCardCode(prefix) {
   const chars = "0123456789";
   const remainingLength = 10 - prefix.length;
@@ -52,7 +49,6 @@ function generateCardCode(prefix) {
   return result;
 }
 
-// دالة مهلة زمنية (Delay) بالثواني
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function processPaymentAndCreateCard(amount, branchKey = "main", transactionId = "") {
@@ -91,33 +87,26 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       cardCode = generateCardCode(cardInfo.prefix);
 
       try {
-        console.log(`👤 [MikroTik Script Execution] جاري توليد الكارت (10 أرقام): ${cardCode} بروفايل: ${cardInfo.profile}`);
+        console.log(`👤 [Real API Execution] جاري إنشاء الكارت الحقيقي: ${cardCode} بروفايل: ${cardInfo.profile}`);
 
-        // طريقة التنفيذ المباشر عبر إرسال السكريبت النصي كأمر مخصص للروتر
-        const rawScript = `:global currentCardName "${cardCode}"; :global currentCardProfile "${cardInfo.profile}"; /system script run create-card-script;`;
+        // 1. إضافة المستخدم في اليوزر مانجر مباشرة عبر الـ API
+        await api.write('/tool/user-manager/user/add', [
+          `=username=${cardCode}`,
+          `=password=${cardCode}`,
+          `=customer=admin`
+        ]);
 
-        // إرسال النص المباشر لتنفيذه في الميكروتيك
-        if (typeof api.write === "function") {
-          await api.write(["/system/script/run", `=number=create-card-script`]); // كبديل لو أردت تمرير مباشر
-        }
+        // انتظار قصير لضمان استقرار السيرفر
+        await sleep(2000);
 
-        // الطريقة الأضمن: إنشاء سكريبت مؤقت وتكتيك التشغيل الفوري
-        await api.menu("/system/script").add({
-          name: "temp_exec_card",
-          source: rawScript
-        }).catch(() => {});
+        // 2. تفعيل البروفايل مباشرة عبر الـ API باستخدام الأمر الصحيح
+        await api.write('/tool/user-manager/user/create-and-activate-profile', [
+          `=user=${cardCode}`,
+          `=profile=${cardInfo.profile}`,
+          `=customer=admin`
+        ]);
 
-        // تشغيل السكريبت المؤقت الذي يحمل الكود والبروفايل معاً
-        try {
-          await api.menu("/system/script").run({ number: "temp_exec_card" });
-        } catch (runErr) {
-          // طريقة بديلة للتنفيذ لو دالة run تطلبت مساراً مختلفاً
-        }
-
-        // الانتظار لمدة 5 ثوانٍ لضمان إتمام إنشاء الكارت وتفعيل البروفايل بالكامل داخل الميكروتيك
-        console.log(`⏳ [Wait] انتظار 5 ثوانٍ للتأكد من تفعيل الكارت والبروفايل...`);
-        await sleep(5000);
-
+        console.log(`✅ تم إنشاء وتفعيل الكارت ${cardCode} في الميكروتيك بنجاح حقيقي!`);
         isCreated = true;
       } catch (addError) {
         if (addError.message && (addError.message.includes("already exists") || addError.message.includes("already"))) {
@@ -147,10 +136,10 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
 
   } catch (error) {
     if (client) await client.close().catch(() => {});
-    console.error(`❌ خطأ أثناء تنفيذ السكريبت:`, error.message);
+    console.error(`❌ خطأ حقيقي من الميكروتيك:`, error);
     return {
       success: false,
-      error: `تعذر توليد الكارت من الميكروتيك: ${error.message}`
+      error: `تعذر إنشاء الكارت حقيقياً: ${error.message || JSON.stringify(error)}`
     };
   }
 }
