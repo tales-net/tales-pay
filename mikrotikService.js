@@ -39,7 +39,7 @@ function getCardPrefixAndType(amount) {
   }
 }
 
-function generateCardCode(prefix, randomLength = 6) {
+function generateCardCode(prefix, randomLength = 8) {
   const chars = "0123456789";
   let result = prefix;
   for (let i = 0; i < randomLength; i++) {
