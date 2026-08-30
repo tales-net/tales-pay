@@ -17,26 +17,37 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
     timeout: 10
   });
 
+  let conn;
   try {
-    const api = await client.connect();
+    conn = await client.connect();
     console.log(`⚡ تشغيل سكريبت الميكروتيك لتفعيل الباقة للكارت: ${cardCode}`);
 
-    // الأوامر بصيغة المصفوفة (Array) المدعومة بالكامل من مكتبة الاتصال
-    const setCardCmd = ["/system/script/environment/set", "=name=currentCardName", `=value=${cardCode}`];
-    const setProfileCmd = ["/system/script/environment/set", `=name=currentCardProfile`, `=value=${profileName}`];
-    const runScriptCmd = ["/system/script/run", "=.id=create_card_script"];
+    // الطريقة القياسية المعتمدة في routeros-client لتنفيذ الأوامر
+    // 1. تعيين اسم الكارت في المتغير العالمي
+    await conn.menu("/system/script/environment").add({
+      name: "currentCardName",
+      value: cardCode
+    }).catch(async () => {
+      // لو المتغير موجود مسبقاً نقوم بتحديثه
+      await conn.write(["/system/script/environment/set", `=name=currentCardName`, `=value=${cardCode}`]);
+    });
 
-    if (typeof client.write === "function") {
-      await client.write(setCardCmd);
-      await client.write(setProfileCmd);
-      await client.write(runScriptCmd);
-    } else if (typeof api.write === "function") {
-      await api.write(setCardCmd);
-      await api.write(setProfileCmd);
-      await api.write(runScriptCmd);
+    // 2. تعيين اسم البروفايل في المتغير العالمي
+    await conn.menu("/system/script/environment").add({
+      name: "currentCardProfile",
+      value: profileName
+    }).catch(async () => {
+      await conn.write(["/system/script/environment/set", `=name=currentCardProfile`, `=value=${profileName}`]);
+    });
+
+    // 3. تشغيل السكريبت المخزن
+    if (typeof conn.write === "function") {
+      await conn.write(["/system/script/run", `=.id=create_card_script`]);
     } else {
-      // الطريقة المباشرة البديلة عبر تمرير الأوامر
-      throw new Error("لا توجد طريقة كتابة (write) متاحة في عميل الاتصال.");
+      // طريقة بديلة لتنفيذ الأوامر المباشرة
+      const channel = await client.openChannel();
+      await channel.write(["/system/script/run", `=.id=create_card_script`]);
+      await channel.close();
     }
 
     await client.close().catch(() => {});
