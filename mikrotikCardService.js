@@ -1,69 +1,42 @@
 const { RouterOSClient } = require("routeros-client");
 
-function generateCardCode(prefix, randomLength = 8) {
-  const chars = "0123456789";
-  let result = prefix;
-  for (let i = 0; i < randomLength; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+function generateRandomCode() {
+  const chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"; // تجنب الحروف المتشابهة لتسهيل القراءة
+  let code = "";
+  for (let i = 0; i < 8; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  return result;
+  return code;
 }
 
-/**
- * إضافة الكارت في اليوزر مانجر مع فحص التشابه والتكرار لجميع الفروع
- */
-async function createCardOnly(routerConfig, prefix, transactionId = "") {
-  let cardCode = "";
-  let isCreated = false;
-  let attempts = 0;
-  const maxAttempts = 10;
+async function createCardOnly(routerConfig, prefix = "HIK") {
+  const client = new RouterOSClient({
+    host: routerConfig.host,
+    user: routerConfig.user,
+    password: routerConfig.password,
+    port: routerConfig.port,
+    timeout: 10 // مهلة أقصاها 10 ثوانٍ لمنع الـ Hang
+  });
 
-  while (!isCreated && attempts < maxAttempts) {
-    attempts++;
-    cardCode = generateCardCode(prefix);
+  try {
+    await client.connect();
+    const code = `${prefix}_${generateRandomCode()}`;
 
-    const client = new RouterOSClient({
-      host: routerConfig.host,
-      user: routerConfig.user,
-      password: routerConfig.password,
-      port: routerConfig.port,
-      timeout: 25
+    // إضافة الكارت في نظام Hotspot Users كمثال افتراضي (أو User-Manager حسب إعداداتك)
+    const result = await client.menu("/ip/hotspot/user").add({
+      name: code,
+      password: code,
+      profile: "default",
+      comment: "Hikayat-Auto-Generated"
     });
 
-    try {
-      const conn = await client.connect();
-      console.log(`👤 [User-Manager] محاولة إنشاء كارت جديد (محاولة ${attempts}): ${cardCode} على السيرفر: ${routerConfig.host}`);
-
-      // إضافة المستخدم في اليوزر مانجر
-      await conn.menu("/tool/user-manager/user").add({
-        username: cardCode,
-        password: cardCode,
-        customer: "admin"
-      });
-
-      await client.close().catch(() => {});
-      isCreated = true;
-      console.log(`✅ تم إنشاء الكارت بنظافة ودون تشابه: ${cardCode}`);
-
-    } catch (error) {
-      if (client) await client.close().catch(() => {});
-      const errStr = error.message || "";
-      
-      // إذا كان الكارت مكرراً أو موجوداً مسبقاً، نتجاهله ونولد رقماً جديداً نظيفاً
-      if (errStr.includes("already exists") || errStr.includes("such username already exists")) {
-        console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، جاري توليد رقم جديد تفادياً لأي تكرار...`);
-        continue;
-      } else {
-        throw error;
-      }
-    }
+    await client.close();
+    return { success: true, code: code };
+  } catch (err) {
+    try { await client.close(); } catch (e) {}
+    console.error(`❌ خطأ في إنشاء كارت الميكروتيك (${routerConfig.host}):`, err.message);
+    return { success: false, error: err.message };
   }
-
-  if (!isCreated) {
-    throw new Error("فشل توليد كود فريد وغير مكرر بعد عدة محاولات.");
-  }
-
-  return cardCode;
 }
 
-module.exports = { createCardOnly, generateCardCode };
+module.exports = { createCardOnly };
