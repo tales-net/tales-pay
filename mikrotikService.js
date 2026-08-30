@@ -1,5 +1,5 @@
 const { createCardOnly } = require("./mikrotikCardService");
-const { activateCardProfile } = require("./mikrotikProfileService");
+const { activateCardProfileViaScript } = require("./mikrotikProfileService");
 
 const BRANCH_ROUTERS = {
   main: {
@@ -56,11 +56,11 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
   const routerConfig = BRANCH_ROUTERS[targetBranch];
 
   try {
-    // 1. استدعاء ملف إضافة الكارت فقط
+    // 1. إنشاء الكارت فقط أولاً
     const cardCode = await createCardOnly(routerConfig, cardInfo.prefix, transactionId);
 
-    // 2. استدعاء ملف تفعيل الباقة بعد الانتظار 10 ثوانٍ
-    await activateCardProfile(routerConfig, cardCode, cardInfo.profile, 10);
+    // 2. تشغيل سكريبت الميكروتيك لتفعيل البروفايل بعد الانتظار
+    await activateCardProfileViaScript(routerConfig, cardCode, cardInfo.profile, 10);
 
     return {
       success: true,
