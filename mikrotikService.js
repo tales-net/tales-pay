@@ -91,30 +91,28 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
       cardCode = generateCardCode(cardInfo.prefix);
 
       try {
-        console.log(`👤 [MikroTik Script] جاري إرسال الكارت (10 أرقام): ${cardCode} بروفايل: ${cardInfo.profile}`);
+        console.log(`👤 [User-Manager API] جاري إضافة المستخدم (10 أرقام): ${cardCode}`);
 
-        // إرسال الأمر المباشر لتعيين المتغيرات وتشغيل السكريبت بنفس الصيغة الناجحة يدويًا
-        const scriptCommand = `:global currentCardName "${cardCode}"; :global currentCardProfile "${cardInfo.profile}"; /system script run create-card-script;`;
+        // 1. إضافة المستخدم في اليوزر مانجر مباشرة
+        await api.menu("/tool/user-manager/user").add({
+          username: cardCode,
+          password: cardCode,
+          customer: "admin"
+        });
 
-        await api.menu("/system/script").add({
-          name: "temp_runner",
-          source: scriptCommand
-        }).catch(() => {});
-
-        // تشغيل السكريبت المؤقت الذي يحتوي على المتغيرات والأمر معا
-        try {
-          await api.menu("/system/script").run({ number: "temp_runner" });
-        } catch (err) {
-          // طريقة بديلة للتنفيذ المباشر لو دالة run لم تتجاوب
-          const systemMenu = api.menu("/system/script");
-          if (typeof systemMenu.action === "function") {
-            await systemMenu.action("run", { number: "temp_runner" });
-          }
-        }
-
-        // الانتظار لمدة 5 ثوانٍ لضمان اكتمال تنفيذ السكريبت وحفظه في قاعدة البيانات
-        console.log(`⏳ [Wait] انتظار 5 ثوانٍ لتأكيد تفعيل البروفايل...`);
+        // 2. الانتظار لمدة 5 ثوانٍ لضمان استقرار السيرفر وتسجيل المستخدم بقاعدة بيانات اليوزر مانجر
+        console.log(`⏳ [Wait] انتظار 5 ثوانٍ لتثبيت الكارت في قاعدة البيانات...`);
         await sleep(5000);
+
+        console.log(`⚡ [User-Manager API] جاري تفعيل البروفايل (${cardInfo.profile}) للمستخدم: ${cardCode}`);
+
+        // 3. تفعيل البروفايل باستخدام الأمر المباشر الذي يعمل معك
+        await api.menu("/tool/user-manager/user").add({
+          command: "create-and-activate-profile",
+          user: cardCode,
+          profile: cardInfo.profile,
+          customer: "admin"
+        });
 
         isCreated = true;
       } catch (addError) {
@@ -122,7 +120,19 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
           console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، جاري إعادة المحاولة...`);
           continue;
         } else {
-          throw addError;
+          // محاولة احتياطية ثانية عبر الهوت سبوت التقليدي في حال حدث أي طارئ
+          try {
+            console.log(`🔄 [Hotspot Fallback] جاري إضافته عبر الهوت سبوت التقليدي...`);
+            await api.menu("/ip/hotspot/user").add({
+              name: cardCode,
+              password: cardCode,
+              profile: cardInfo.profile,
+              comment: `Paymob TXN: ${transactionId} | Branch: ${targetBranch}`
+            });
+            isCreated = true;
+          } catch (hotspotError) {
+            throw addError;
+          }
         }
       }
     }
@@ -145,10 +155,10 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
 
   } catch (error) {
     if (client) await client.close().catch(() => {});
-    console.error(`❌ خطأ أثناء تنفيذ السكريبت:`, error.message);
+    console.error(`❌ خطأ حقيقي في الاتصال أو التنفيذ بالميكروتيك:`, error.message);
     return {
       success: false,
-      error: `تعذر توليد الكارت عبر السكريبت: ${error.message}`
+      error: `تعذر توليد الكارت من الميكروتيك: ${error.message}`
     };
   }
 }
