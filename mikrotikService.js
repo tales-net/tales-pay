@@ -23,6 +23,13 @@ const BRANCH_ROUTERS = {
   }
 };
 
+// 📌 دالة جلب إعدادات الفرع مع رسالة توضيحية في اللوج
+function getRouterConfig(branchName) {
+  const branch = BRANCH_ROUTERS[branchName] || BRANCH_ROUTERS.main;
+  console.log(`📌 جاري الاتصال بالراوتر للفرع: [${branchName}] على العنوان: ${branch.host || 'غير محدد'}:${branch.port}`);
+  return branch;
+}
+
 function getCardPrefixAndType(amount) {
   const numAmount = Number(amount);
   switch (numAmount) {
@@ -53,11 +60,9 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
     };
   }
 
-  // 1. تحديد الفرع بدقة والتأكد من وجوده
+  // 1. تحديد الفرع بدقة واستدعاء الإعدادات الخاصة به
   const targetBranch = BRANCH_ROUTERS[branchKey] ? branchKey : "main";
-  const routerConfig = BRANCH_ROUTERS[targetBranch];
-
-  console.log(`🌐 [Mikrotik Service] جاري إرسال طلب الكارت إلى الفرع: [${targetBranch}] على العنوان: ${routerConfig.host || 'غير محدد'}:${routerConfig.port}`);
+  const routerConfig = getRouterConfig(targetBranch);
 
   // 2. التحقق من وجود Host حقيقي للفرع المطلوب
   if (!routerConfig.host) {
@@ -90,5 +95,6 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
 module.exports = {
   processPaymentAndCreateCard,
   getCardPrefixAndType,
-  BRANCH_ROUTERS
+  BRANCH_ROUTERS,
+  getRouterConfig
 };
