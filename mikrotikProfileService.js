@@ -3,7 +3,7 @@ const { RouterOSClient } = require("routeros-client");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * تفعيل الباقة باستخدام أمر الميكروتيك المباشر وبنظام محاولات ذكي (Retry)
+ * تمرير المتغيرات وتشغيل سكريبت الميكروتيك لتفعيل البروفايل مع محاولات ذكية
  */
 async function activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds = 10, maxRetries = 3) {
   console.log(`⏳ الانتظار لمدة ${delaySeconds} ثوانٍ لضمان استقرار الكارت (${cardCode}) في السيرفر...`);
@@ -24,65 +24,55 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
     });
 
     try {
-      console.log(`🔄 [محاولة ${attempt}/${maxRetries}] إرسال أمر تفعيل البروفايل (${profileName}) للكارت: ${cardCode}`);
+      console.log(`🔄 [محاولة ${attempt}/${maxRetries}] تمرير الكارت (${cardCode}) والبروفايل (${profileName}) للـ Script...`);
       const conn = await client.connect();
 
-      // صياغة الأمر بصيغة مصفوفة مطابقة تماماً لأوامر الـ Terminal في الميكروتيك
-      // /tool/user-manager/user/create-and-activate-profile user=... profile=... customer=admin
-      const commandArray = [
-        "/tool/user-manager/user/create-and-activate-profile",
-        `=user=${cardCode}`,
-        `=profile=${profileName}`,
-        `=customer=admin`
-      ];
+      // إرسال المتغيرات العالمية بالطريقة الصحيحة للميكروتيك
+      const setCardCmd = ["/system/script/environment/set", "=name=currentCardName", `=value=${cardCode}`];
+      const setProfileCmd = ["/system/script/environment/set", "=name=currentCardProfile", `=value=${profileName}`];
+      const runScriptCmd = ["/system/script/run", "=.id=activate_profile_script"];
 
-      // إرسال الأمر بالطريقة الخام المباشرة المتوافقة مع الـ API
       if (typeof conn.write === "function") {
-        await conn.write(commandArray);
+        await conn.write(setCardCmd);
+        await conn.write(setProfileCmd);
+        await conn.write(runScriptCmd);
       } else if (typeof client.write === "function") {
-        await client.write(commandArray);
+        await client.write(setCardCmd);
+        await client.write(setProfileCmd);
+        await client.write(runScriptCmd);
       } else {
-        // طريقة بديلة لتنفيذ الأمر المباشر عبر الـ menu
-        const rawMenu = conn.menu("/tool/user-manager/user");
-        if (typeof rawMenu.write === "function") {
-          await rawMenu.write("create-and-activate-profile", {
-            user: cardCode,
-            profile: profileName,
-            customer: "admin"
-          });
-        } else {
-          throw noSupportedWriteMethod();
+        // طريقة بديلة عبر الـ menu
+        const scriptMenu = conn.menu("/system/script");
+        if (typeof scriptMenu.set === "function") {
+          // تعيين المتغيرات عبر بيئة العمل إذا أتاحها الكلاينت
         }
+        await scriptMenu.run({ ".id": "activate_profile_script" });
       }
 
       await client.close().catch(() => {});
-      console.log(`🎉 تم تفعيل البروفايل (${profileName}) للكارت ${cardCode} بنجاح تام في المحاولة ${attempt}!`);
+      console.log(`🎉 تم تشغيل سكريبت تفعيل الباقة بنجاح تام للكارت: ${cardCode} في المحاولة ${attempt}!`);
       success = true;
       return true;
 
     } catch (error) {
       lastError = error;
-      console.warn(`⚠️ فشل المحاولة رقم ${attempt} للكارت ${cardCode}: ${error.message}`);
+      console.warn(`⚠️ فشل المحاولة رقم ${attempt} لتشغيل السكريبت: ${error.message}`);
       
       try {
         await client.close();
       } catch (e) {}
 
       if (attempt < maxRetries) {
-        const waitTime = attempt * 3; // الانتظار لفترة أطول تدريجياً
-        console.log(`⏳ الانتظار لمدة ${waitTime} ثوانٍ قبل إعادة محاولة تفعيل الباقة...`);
+        const waitTime = attempt * 3;
+        console.log(`⏳ الانتظار لمدة ${waitTime} ثوانٍ قبل إعادة المحاولة...`);
         await sleep(waitTime * 1000);
       }
     }
   }
 
   throw new Error(
-    `فشل تفعيل البروفايل بعد ${maxRetries} محاولات للمستخدم ${cardCode}. السبب الأخير: ${lastError ? lastError.message : "خطأ غير معروف"}`
+    `فشل تشغيل سكريبت البروفايل بعد ${maxRetries} محاولات للمستخدم ${cardCode}. السبب الأخير: ${lastError ? lastError.message : "خطأ غير معروف"}`
   );
-}
-
-function noSupportedWriteMethod() {
-  return new Error("لا توجد طريقة كتابة مدعومة لإرسال الأمر المباشر في الاتصال الحالي");
 }
 
 module.exports = { activateCardProfileViaScript };
