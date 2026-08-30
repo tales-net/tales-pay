@@ -23,10 +23,13 @@ const BRANCH_ROUTERS = {
   }
 };
 
-// 📌 دالة جلب إعدادات الفرع مع رسالة توضيحية في اللوج
+// 📌 دالة جلب إعدادات الفرع بدقة بدون أي تراجع افتراضي
 function getRouterConfig(branchName) {
-  const branch = BRANCH_ROUTERS[branchName] || BRANCH_ROUTERS.branch2;
-  console.log(`📌 جاري الاتصال بالراوتر للفرع: [${branchName}] على العنوان: ${branch.host || 'غير محدد'}:${branch.port}`);
+  const branch = BRANCH_ROUTERS[branchName];
+  if (!branch) {
+    throw new Error(`اسم الفرع غير معروف أو غير معتمد: [${branchName}]`);
+  }
+  console.log(`📌 جاري الاتصال بالراوتر للفرع المختار: [${branchName}] على العنوان: ${branch.host || 'غير محدد'}:${branch.port}`);
   return branch;
 }
 
@@ -48,20 +51,7 @@ function getCardPrefixAndType(amount) {
   }
 }
 
-// 🛡️ دالة ذكية لتنظيف وتصحيح مفتاح الفرع القادم من أي مكان (سواء حروف كبيرة أو رموز)
-function normalizeBranchKey(branchKey) {
-  if (!branchKey) return "branch2"; // الافتراضي الآمن
-  
-  const clean = String(branchKey).toLowerCase().trim().replace(/[-_\s]/g, "");
-  
-  if (clean.includes("branch3") || clean.includes("3") || clean.includes("ثالث")) return "branch3";
-  if (clean.includes("branch2") || clean.includes("2") || clean.includes("ثاني")) return "branch2";
-  if (clean.includes("main") || clean.includes("رئيسي") || clean.includes("1")) return "main";
-  
-  return "branch2"; // القيمة الافتراضية في حال عدم المطابقة
-}
-
-async function processPaymentAndCreateCard(amount, branchKey = "branch2", transactionId = "") {
+async function processPaymentAndCreateCard(amount, branchKey = "main", transactionId = "") {
   const cardInfo = getCardPrefixAndType(amount);
 
   if (cardInfo.isCustom) {
@@ -73,20 +63,23 @@ async function processPaymentAndCreateCard(amount, branchKey = "branch2", transa
     };
   }
 
-  // 1. التطبيع الآكي لاسم الفرع لضمان عدم الوقوع في فخ الفروع الخاطئة
-  const targetBranch = normalizeBranchKey(branchKey);
-  const routerConfig = getRouterConfig(targetBranch);
+  // التأكد من أن الفرع المرسل موجود فعلياً في خريطة الراوترات، وإلا إيقاف العملية وإظهار خطأ
+  if (!BRANCH_ROUTERS[branchKey]) {
+    throw new Error(`الفرع المطلوب (${branchKey}) غير مسجل في النظام!`);
+  }
 
-  // 2. التحقق من وجود Host حقيقي للفرع المطلوب
+  const routerConfig = getRouterConfig(branchKey);
+
+  // التحقق من وجود Host حقيقي للفرع المطلوبة
   if (!routerConfig.host) {
-    throw new Error(`عنوان الـ IP أو الدومين الخاص بالفرع (${targetBranch}) غير معرّف في متغيرات البيئة في Render!`);
+    throw new Error(`عنوان الـ IP أو الدومين الخاص بالفرع المختار (${branchKey}) غير معرّف في متغيرات البيئة في Render!`);
   }
 
   try {
-    // 3. إنشاء الكارت في الميكروتيك للفرع المستهدف
+    // 1. إنشاء الكارت في الميكروتيك للفرع المحدد حصرياً
     const cardCode = await createCardOnly(routerConfig, cardInfo.prefix, transactionId);
 
-    // 4. تفعيل البروفايل عبر السكريبت
+    // 2. تفعيل البروفايل عبر السكريبت
     await activateCardProfileViaScript(routerConfig, cardCode, cardInfo.profile, 10);
 
     return {
@@ -96,12 +89,12 @@ async function processPaymentAndCreateCard(amount, branchKey = "branch2", transa
       amount: amount,
       packageName: cardInfo.packageName,
       profile: cardInfo.profile,
-      branchKey: targetBranch
+      branchKey: branchKey
     };
 
   } catch (error) {
-    console.error(`❌ خطأ في معالجة الميكروتيك للفرع ${targetBranch} (${routerConfig.host}):`, error.message);
-    throw new Error(`تعذر توليد الكارت وتفعيل الباقة للفرع (${targetBranch}): ${error.message}`);
+    console.error(`❌ خطأ في معالجة الميكروتيك للفرع المحدد ${branchKey} (${routerConfig.host}):`, error.message);
+    throw new Error(`تعذر توليد الكارت وتفعيل الباقة للفرع (${branchKey}): ${error.message}`);
   }
 }
 
@@ -109,6 +102,5 @@ module.exports = {
   processPaymentAndCreateCard,
   getCardPrefixAndType,
   BRANCH_ROUTERS,
-  getRouterConfig,
-  normalizeBranchKey
+  getRouterConfig
 };
