@@ -3,10 +3,10 @@ const { RouterOSClient } = require("routeros-client");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * تفعيل الباقة وإنشاء الكارت مباشرة بالطريقة المدعومة في واجهة و API اليوزر مانجر
+ * تفعيل البروفايل والباقة للكارت النظيف بعد الانتظار لجميع الفروع
  */
-async function activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds = 5) {
-  console.log(`⏳ الانتظار لمدة ${delaySeconds} ثوانٍ لتثبيت البيانات...`);
+async function activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds = 10) {
+  console.log(`⏳ الانتظار لمدة ${delaySeconds} ثوانٍ لتثبيت الكارت النظيف (${cardCode})...`);
   await sleep(delaySeconds * 1000);
 
   const client = new RouterOSClient({
@@ -19,20 +19,9 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
 
   try {
     const conn = await client.connect();
-    console.log(`⚡ إنشاء وتفعيل الكارت: ${cardCode} بالبروفايل: ${profileName}`);
+    console.log(`⚡ تفعيل الباقة (${profileName}) للكارت: ${cardCode} على السيرفر: ${routerConfig.host}`);
 
-    // الخطوة 1: إنشاء المستخدم أولاً في اليوزر مانجر
-    try {
-      await conn.menu("/tool/user-manager/user").add({
-        username: cardCode,
-        password: cardCode,
-        customer: "admin"
-      });
-    } catch (e) {
-      // نتجاهل الخطأ لو كان موجوداً مسبقاً
-    }
-
-    // الخطوة 2: تفعيل البروفايل وربطه بالكارت ليظهر في قائمة اليوزر مانجر بالبروفايل الخاص به
+    // تفعيل البروفايل وربطه بالكارت في اليوزر مانجر
     await conn.menu("/tool/user-manager/user").add({
       command: "create-and-activate-profile",
       user: cardCode,
@@ -41,13 +30,13 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
     });
 
     await client.close().catch(() => {});
-    console.log(`✅ تم إنشاء وتفعيل الكارت بالبروفايل بنجاح تام: ${cardCode} -> ${profileName}`);
+    console.log(`✅ تم تفعيل الباقة والبروفايل بنجاح تام للكارت: ${cardCode}`);
     return true;
 
   } catch (error) {
     if (client) await client.close().catch(() => {});
     console.error(`❌ خطأ أثناء تفعيل البروفايل: ${error.message}`);
-    throw new Error(`فشل تفعيل البروفايل في الميكروتيك: ${error.message}`);
+    throw new Error(`فشل تفعيل البروفايل: ${error.message}`);
   }
 }
 
