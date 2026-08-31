@@ -2,10 +2,9 @@ const { RouterOSClient } = require("routeros-client");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// ذاكرة مؤقتة لتخزين المعاملات التي تمت معالجتها لمنع التكرار نهائياً
+// ذاكرة مؤقتة لمنع تكرار المعاملات المكتملة حديثاً
 const processedTransactions = new Set();
 
-// تنظيف دوري للذاكرة كل ساعة لمنع تراكم البيانات
 setInterval(() => {
   if (processedTransactions.size > 5000) {
     processedTransactions.clear();
@@ -21,9 +20,6 @@ function generateCardCode(prefix, randomLength = 8) {
   return result;
 }
 
-/**
- * 1. إنشاء الكارت في اليوزر مانجر مع فحص التشابه والتكرار
- */
 async function createCardOnly(routerConfig, prefix, transactionId = "") {
   let cardCode = "";
   let isCreated = false;
@@ -46,7 +42,6 @@ async function createCardOnly(routerConfig, prefix, transactionId = "") {
       const conn = await client.connect();
       console.log(`👤 [User-Manager] محاولة إنشاء كارت جديد (محاولة ${attempts}): ${cardCode} على السيرفر: ${routerConfig.host} (معاملة: ${transactionId})`);
 
-      // إضافة المستخدم في اليوزر مانجر
       await conn.menu("/tool/user-manager/user").add({
         username: cardCode,
         password: cardCode,
@@ -61,7 +56,6 @@ async function createCardOnly(routerConfig, prefix, transactionId = "") {
       if (client) await client.close().catch(() => {});
       const errStr = error.message || "";
       
-      // إذا كان الكارت مكرراً أو موجوداً مسبقاً، نتجاهله ونولد رقماً جديداً نظيفاً
       if (errStr.includes("already exists") || errStr.includes("such username already exists")) {
         console.warn(`⚠️ الكود ${cardCode} موجود مسبقاً، جاري توليد رقم جديد تفادياً لأي تكرار...`);
         continue;
@@ -78,9 +72,6 @@ async function createCardOnly(routerConfig, prefix, transactionId = "") {
   return cardCode;
 }
 
-/**
- * 2. تفعيل الباقة (البروفايل) عبر تحديث وتشغيل السكريبت في الميكروتيك
- */
 async function activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds = 10, maxRetries = 3) {
   console.log(`⏳ [الانتظار] الانتظار لمدة ${delaySeconds} ثوانٍ لضمان استقرار الكارت (${cardCode}) للباقة (${profileName})...`);
   await sleep(delaySeconds * 1000);
@@ -107,7 +98,6 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
 
       const scriptMenu = api.menu('/system/script');
 
-      // تصميم محتوى السكريبت ديناميكياً وتمرير رقم الكارت والبروفايل بداخله
       const updatedSource = `:local cardName "${cardCode}";\n` +
                             `:local cardProfile "${profileName}";\n` +
                             `\n` +
@@ -116,13 +106,11 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
                             `\n` +
                             `:log warning ("activated profile (" . $cardProfile . ") for card: " . $cardName);`;
 
-      // أ. تحديث محتوى السكريبت الموجود في الميكروتيك بالقيم الجديدة
       await scriptMenu.where('name', 'activate_profile_script').set({
         source: updatedSource
       });
       console.log(`📝 [MikroTik] تم تحديث السكريبت بالكارت: ${cardCode} والبروفايل: ${profileName}`);
 
-      // ب. تشغيل السكريبت
       await scriptMenu.exec('run', { number: 'activate_profile_script' });
       console.log(`🚀 [MikroTik] تم تشغيل السكريبت بنجاح للكارت: ${cardCode}`);
 
@@ -154,30 +142,18 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
   );
 }
 
-/**
- * 3. دالة رئيسية شاملة تُنفذ بعد الدفع مباشرة مع الحماية التامة ضد تكرار المعاملات
- */
 async function processPaymentAndCreateCard(routerConfig, prefix, profileName, transactionId = "", delaySeconds = 10) {
-  if (!transactionId || transactionId === "undefined" || transactionId === "null") {
-    console.warn("⚠️ تحذير: تم استدعاء دالة إنشاء الكارت بدون رقم معاملة حقيقي (transactionId).");
-  } else {
-    // التحقق مما إذا كانت المعاملة قد عולجت مسبقاً
-    if (processedTransactions.has(String(transactionId))) {
-      console.warn(`🛑 [حماية التكرار] المعاملة برقم (${transactionId}) تمت معالجتها مسبقاً وتم إصدار كارت لها. تم منع إصدار كارت مكرر.`);
-      throw new Error(`Duplicate transaction prevented: ${transactionId}`);
-    }
+  if (transactionId && processedTransactions.has(String(transactionId))) {
+    console.warn(`🛑 [حماية التكرار] المعاملة برقم (${transactionId}) عולجت مسبقاً. تم منع إصدار كارت مكرر.`);
+    throw new Error(`Duplicate transaction prevented: ${transactionId}`);
   }
 
   try {
     console.log(`🚀 بدء عملية إصدار الكارت وتفعيله بعد الدفع للمعاملة: ${transactionId}`);
     
-    // الخطوة الأولى: إنشاء الكارت في اليوزر مانجر مع فحص التكرار
     const cardCode = await createCardOnly(routerConfig, prefix, transactionId);
-
-    // الخطوة الثانية: تمرير الكارت وتفعيله بالبروفايل المطلوب عبر السكريبت
     await activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds);
 
-    // تسجيل المعاملة كتمت بنجاح لعدم السماح بتكرارها نهائياً
     if (transactionId) {
       processedTransactions.add(String(transactionId));
     }
