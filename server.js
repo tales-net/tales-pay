@@ -9,6 +9,7 @@ const { sendTelegramMessage } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
+const { generateContributionHtmlPage } = require('./contributionMessages');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -180,6 +181,14 @@ app.get("/api/test-create-card", async (req, res) => {
     console.error("❌ [TEST ERROR]:", error.message);
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// 🌟 مسار عرض صفحة المساهمة الاحترافية المدمجة
+app.get("/contribution-success", (req, res) => {
+  const amount = req.query.amount || req.query.price || 150;
+  const transactionId = req.query.tx || req.query.id || req.query.order || 'TRX-DEFAULT';
+  const htmlContent = generateContributionHtmlPage(amount, transactionId);
+  res.send(htmlContent);
 });
 
 app.get("/api/check-voucher/:txId", (req, res) => {
