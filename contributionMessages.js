@@ -18,7 +18,7 @@ function getRandomBlessingMessage(amount) {
     title: "✨ مساهمة مباركة ودعم كريم ✨",
     message: contributionBlessings[randomIndex],
     amountText: `مبلغ المساهمة: ${amount} جنيه`,
-    footerNote: "دمتم سباقين للخير،، شبكة حكايات نت"
+    footerNote: "دمتم سباقين للخير،، لا تنسي الدعاء لوالدي"
   };
 }
 
