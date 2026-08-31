@@ -1,6 +1,5 @@
-const { createCardOnly, activateCardProfileViaScript } = require("./mikrotikCardService");
+const { processPaymentAndCreateCard: executeCardProcess } = require("./mikrotikCardService");
 
-// 🌐 تعريف الفروع ببيانات مستقلة تماماً وموحدة في البورت والباسورد واليوزر
 const BRANCH_ROUTERS = {
   main: {
     host: process.env.MIKROTIK_HOST,
@@ -22,7 +21,6 @@ const BRANCH_ROUTERS = {
   }
 };
 
-// 📌 دالة جلب إعدادات الفرع بدقة بدون أي تراجع افتراضي
 function getRouterConfig(branchName) {
   const branch = BRANCH_ROUTERS[branchName];
   if (!branch) {
@@ -62,33 +60,35 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
     };
   }
 
-  // التأكد من أن الفرع المرسل موجود فعلياً في خريطة الراوترات، وإلا إيقاف العملية وإظهار خطأ
   if (!BRANCH_ROUTERS[branchKey]) {
     throw new Error(`الفرع المطلوب (${branchKey}) غير مسجل في النظام!`);
   }
 
   const routerConfig = getRouterConfig(branchKey);
 
-  // التحقق من وجود Host حقيقي للفرع المطلوبة
   if (!routerConfig.host) {
     throw new Error(`عنوان الـ IP أو الدومين الخاص بالفرع المختار (${branchKey}) غير معرّف في متغيرات البيئة في Render!`);
   }
 
   try {
-    // 1. إنشاء الكارت في الميكروتيك للفرع المحدد حصرياً مع فحص التكرار
-    const cardCode = await createCardOnly(routerConfig, cardInfo.prefix, transactionId);
-
-    // 2. تفعيل البروفايل عبر السكريبت بعد الدفع
-    await activateCardProfileViaScript(routerConfig, cardCode, cardInfo.profile, 10);
+    // 🛡️ استدعاء الدالة الموحدة لمنع التكرار وربط كارت واحد برقم العملية حصرياً
+    const result = await executeCardProcess(
+      routerConfig, 
+      cardInfo.prefix, 
+      cardInfo.profile, 
+      transactionId, 
+      10
+    );
 
     return {
       success: true,
       isCustomAmount: false,
-      cardCode: cardCode,
+      cardCode: result.cardCode,
       amount: amount,
       packageName: cardInfo.packageName,
       profile: cardInfo.profile,
-      branchKey: branchKey
+      branchKey: branchKey,
+      transactionId: transactionId
     };
 
   } catch (error) {
