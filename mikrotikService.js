@@ -12,13 +12,13 @@ const BRANCH_ROUTERS = {
     host: process.env.MIKROTIK_HOST_BRANCH2,
     user: process.env.MIKROTIK_USER,
     password: process.env.MIKROTIK_PASSWORD,
-    port: parseInt(process.env.MIKROTIK_PORT)
+    port: parseInt(process.env.MIKROTIK_BRANCH_PORT)
   },
   branch3: {
     host: process.env.MIKROTIK_HOST_BRANCH3,
     user: process.env.MIKROTIK_USER,
     password: process.env.MIKROTIK_PASSWORD,
-    port: parseInt(process.env.MIKROTIK_PORT)
+    port: parseInt(process.env.MIKROTIK_BRANCH_PORT)
   }
 };
 
