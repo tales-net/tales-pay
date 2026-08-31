@@ -1,7 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const { getBranch2Config, testBranch2Connection } = require('./mikrotikService_branch2');
-const { processPaymentAndCreateCardBranch2 } = require('./mikrotikCardService_branch2');
+
+// استيراد كافة الدوال والإعدادات من ملف الخدمة الموحد للفرع الثاني
+const { 
+  getBranch2Config, 
+  testBranch2Connection, 
+  processPaymentAndCreateCardBranch2 
+} = require('./mikrotikCardService_branch2');
 
 /**
  * 1. مسار لاختبار الاتصال بسيرفر الفرع الثاني مباشرة من المتصفح أو البوستمان
