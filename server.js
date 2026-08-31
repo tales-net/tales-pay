@@ -10,6 +10,9 @@ const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 
+// استيراد مسارات الفرع الثاني المستقلة
+const branch2Routes = require('./branch2Routes');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
@@ -37,6 +40,9 @@ app.use(express.json());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
+
+// ربط مسارات الفرع الثاني بالرابط الأساسي
+app.use('/branch2', branch2Routes);
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
