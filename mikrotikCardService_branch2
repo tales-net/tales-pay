@@ -2,6 +2,47 @@ const { RouterOSClient } = require("routeros-client");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// ==========================================
+// 1. إعدادات الاتصال والاتصال بالفرع الثاني
+// ==========================================
+const branch2RouterConfig = {
+  host: process.env.MIKROTIK_BRANCH2_HOST || "YOUR_BRANCH_2_ROUTER_IP", // آيبي راوتر الفرع الثاني
+  user: process.env.MIKROTIK_BRANCH2_USER || "admin",                     // اسم المستخدم
+  password: process.env.MIKROTIK_BRANCH2_PASSWORD || "YOUR_PASSWORD",    // كلمة المرور
+  port: parseInt(process.env.MIKROTIK_BRANCH2_PORT || "8728", 10),        // البورت (8728 أو 8729 لـ SSL)
+  timeout: 25
+};
+
+/**
+ * دالة لاختبار الاتصال بسيرفر ميكروتيك الفرع الثاني للتأكد من صحة البيانات
+ */
+async function testBranch2Connection() {
+  const client = new RouterOSClient(branch2RouterConfig);
+  try {
+    console.log(`🔌 [فرع 2] جاري الاتصال بسيرفر الفرع الثاني على العنوان: ${branch2RouterConfig.host}:${branch2RouterConfig.port}...`);
+    const conn = await client.connect();
+    console.log(`✅ [فرع 2] تم الاتصال بنجاح بسيرفر الفرع الثاني.`);
+    await client.close().catch(() => {});
+    return { success: true, message: "Connected to Branch 2 successfully" };
+  } catch (error) {
+    if (client) await client.close().catch(() => {});
+    console.error(`❌ [فرع 2] فشل الاتصال بسيرفر الفرع الثاني:`, error.message || error);
+    return { success: false, error: error.message || error };
+  }
+}
+
+/**
+ * دالة جلب إعدادات الراوتر للفرع الثاني
+ */
+function getBranch2Config() {
+  return branch2RouterConfig;
+}
+
+
+// ==========================================
+// 2. إدارة وتوليد الكروت ومنع التكرار
+// ==========================================
+
 // ذاكرة مؤقتة خاصة بمعاملات الفرع الثاني لمنع التكرار
 const processedTransactionsBranch2 = new Set();
 
@@ -22,7 +63,7 @@ function generateCardCode(prefix, randomLength = 8) {
 }
 
 /**
- * 1. إنشاء الكارت في اليوزر مانجر (الفرع الثاني) مع فحص التشابه والتكرار
+ * إنشاء الكارت في اليوزر مانجر (الفرع الثاني) مع فحص التشابه والتكرار
  */
 async function createCardOnlyBranch2(routerConfig, prefix, transactionId = "") {
   let cardCode = "";
@@ -79,7 +120,7 @@ async function createCardOnlyBranch2(routerConfig, prefix, transactionId = "") {
 }
 
 /**
- * 2. تفعيل الباقة (البروفايل) عبر تحديث وتشغيل السكريبت في ميكروتيك الفرع الثاني
+ * تفعيل الباقة (البروفايل) عبر تحديث وتشغيل السكريبت في ميكروتيك الفرع الثاني
  */
 async function activateCardProfileViaScriptBranch2(routerConfig, cardCode, profileName, delaySeconds = 10, maxRetries = 3) {
   console.log(`⏳ [فرع 2 - انتظار] الانتظار لمدة ${delaySeconds} ثوانٍ لضمان استقرار الكارت (${cardCode}) للباقة (${profileName})...`);
@@ -155,7 +196,7 @@ async function activateCardProfileViaScriptBranch2(routerConfig, cardCode, profi
 }
 
 /**
- * 3. الدالة الرئيسية للفرع الثاني مع الحماية التامة ضد التكرار لكل رقم معاملة دفع
+ * الدالة الرئيسية للفرع الثاني مع الحماية التامة ضد التكرار لكل رقم معاملة دفع
  */
 async function processPaymentAndCreateCardBranch2(routerConfig, prefix, profileName, transactionId = "", delaySeconds = 10) {
   if (!transactionId || transactionId === "undefined" || transactionId === "null") {
@@ -195,7 +236,11 @@ async function processPaymentAndCreateCardBranch2(routerConfig, prefix, profileN
   }
 }
 
+// تصدير جميع الدوال والإعدادات للاستخدام في ملفات الـ Routes
 module.exports = {
+  branch2RouterConfig,
+  testBranch2Connection,
+  getBranch2Config,
   generateCardCode,
   createCardOnlyBranch2,
   activateCardProfileViaScriptBranch2,
