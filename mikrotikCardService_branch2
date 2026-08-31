@@ -6,10 +6,10 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // 1. إعدادات الاتصال والاتصال بالفرع الثاني
 // ==========================================
 const branch2RouterConfig = {
-  host: process.env.MIKROTIK_BRANCH2_HOST || "YOUR_BRANCH_2_ROUTER_IP", // آيبي راوتر الفرع الثاني
-  user: process.env.MIKROTIK_BRANCH2_USER || "admin",                     // اسم المستخدم
-  password: process.env.MIKROTIK_BRANCH2_PASSWORD || "YOUR_PASSWORD",    // كلمة المرور
-  port: parseInt(process.env.MIKROTIK_BRANCH2_PORT || "8728", 10),        // البورت (8728 أو 8729 لـ SSL)
+  host: process.env.MIKROTIK_HOST_BRANCH2 || "YOUR_BRANCH_2_ROUTER_IP", // آيبي راوتر الفرع الثاني
+  user: process.env.MIKROTIK_USER || "admin",                     // اسم المستخدم
+  password: process.env.MIKROTIK_PASSWORD || "YOUR_PASSWORD",    // كلمة المرور
+  port: parseInt(process.env.MIKROTIK_BRANCH_PORT || "8728", 10),        // البورت (8728 أو 8729 لـ SSL)
   timeout: 25
 };
 
