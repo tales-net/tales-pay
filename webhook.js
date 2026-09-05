@@ -9,10 +9,10 @@ const { sendTelegramMessage, sendVoucherWithCardImage } = require("./telegram");
 // خريطة عالمية لحفظ بيانات وكروت المعاملات مؤقتاً لصفحة النجاح
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
-// 🧹 تنظيف الذاكرة المؤقتة كل 15 دقيقة لحذف الكروت التي مر عليها أكثر من ساعة
+// 🧹 تنظيف الذاكرة المؤقتة كل 15 دقيقة
 setInterval(() => {
   const ONE_HOUR = 60 * 60 * 1000;
-  const now = new Date().getTime();
+  const now = Date.now();
   for (const [key, value] of global.generatedCardsMap.entries()) {
     if (value.createdAt && (now - new Date(value.createdAt).getTime() > ONE_HOUR)) {
       global.generatedCardsMap.delete(key);
@@ -26,9 +26,9 @@ const BRANCH_NAMES = {
   branch3: "حكايات نت فرع ثالث"
 };
 
-// 🔄 معالجة طلبات GET الخاصة بـ Paymob لمنع خطأ Cannot GET أثناء التحقق من الرابط
+// 🔄 معالجة طلبات GET لـ Paymob
 router.get("/paymob-webhook", (req, res) => {
-  console.log("🔔 [Webhook GET Check] تم استلام طلب GET للتحقق من رابط الويب هوك من Paymob");
+  console.log("🔔 [Webhook GET Check] تم استلام طلب GET للتحقق من رابط الويب هوك");
   return res.status(200).send("Paymob Webhook Endpoint Active & ready for POST requests.");
 });
 
@@ -45,7 +45,6 @@ function verifyPaymobHmac(req) {
   const obj = req.body.obj || req.body;
   if (!obj) return false;
 
-  // الترتيب الأبجدي الدقيق للحقول وفقاً لمستندات Paymob الرسمية
   const lexicalKeys = [
     "amount_cents",
     "created_at",
@@ -78,7 +77,14 @@ function verifyPaymobHmac(req) {
     } else {
       val = obj[key];
     }
-    if (val === undefined || val === null) val = "";
+    
+    // تحويل القيمة البولينية والأرقام إلى نصوص دقيقة مطابقة لتوثيق Paymob
+    if (val === undefined || val === null) {
+      val = "";
+    } else if (typeof val === "boolean") {
+      val = val ? "true" : "false";
+    }
+    
     concatenatedValues += String(val);
   }
 
@@ -91,7 +97,7 @@ function verifyPaymobHmac(req) {
 }
 
 /**
- * دالة دقيقة لاستخراج الفرع من حمولة Paymob
+ * استخراج الفرع من حمولة Paymob
  */
 function extractBranchKey(obj) {
   const directBranch = 
@@ -131,7 +137,7 @@ router.post("/paymob-webhook", async (req, res) => {
       return res.status(200).send("Invalid payload acknowledged");
     }
 
-    const isSuccess = obj.success === true || obj.success === "true";
+    const isSuccess = String(obj.success) === "true";
     const transactionId = String(obj.id);
     const orderId = obj.order?.id ? String(obj.order.id) : null;
     const merchantOrderId = obj.order?.merchant_order_id ? String(obj.order.merchant_order_id) : null;
@@ -143,8 +149,7 @@ router.post("/paymob-webhook", async (req, res) => {
     }
 
     const amountCents = obj.amount_cents || obj.order?.amount_cents || 0;
-    const amountEgp = (amountCents / 100).toFixed(2);
-    const numericAmount = parseFloat(amountEgp);
+    const numericAmount = parseFloat((amountCents / 100).toFixed(2));
 
     const branchKey = extractBranchKey(obj);
     const branchDisplayName = BRANCH_NAMES[branchKey] || BRANCH_NAMES.main;
@@ -158,17 +163,16 @@ router.post("/paymob-webhook", async (req, res) => {
     if (isSuccess) {
       console.log(`💳 [Webhook Debug] معاملة ناجحة: ${transactionId} | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ: ${numericAmount}ج`);
 
-      // تحديد اسم الباقة عبر ملف profiles.js
       let packageName = "باقة إنترنت شبكة حكايات";
       if (typeof profiles.getPackageName === "function") {
         packageName = profiles.getPackageName(numericAmount);
       } else if (typeof profiles === "function") {
         packageName = profiles(numericAmount);
       } else if (typeof profiles === "object" && profiles !== null) {
-        packageName = profiles[numericAmount] || profiles[amountEgp] || "باقة إنترنت شبكة حكايات";
+        packageName = profiles[numericAmount] || profiles[String(numericAmount)] || "باقة إنترنت شبكة حكايات";
       }
 
-      // 🚀 توليد الكارت الحقيقي تلقائياً في راوتر الميكروتيك الخاص بالفرع
+      // 🚀 توليد الكارت الحقيقي تلقائياً في راوتر الميكروتيك
       const cardResult = await processPaymentAndCreateCard(numericAmount, branchKey, transactionId);
 
       let cardImageBuffer = null;
@@ -181,7 +185,7 @@ router.post("/paymob-webhook", async (req, res) => {
           cardCode = cardResult.cardCode;
           packageName = cardResult.packageName || packageName;
 
-          // توليد صورة الكارت الاحترافية
+          // توليد صورة الكارت
           cardImageBuffer = await generateCardImage(cardCode, packageName, numericAmount, transactionId, branchDisplayName);
 
           const cardPayload = {
@@ -204,17 +208,14 @@ router.post("/paymob-webhook", async (req, res) => {
         console.error(`🚨 [Webhook Error] فشل إنشاء الكارت للمبلغ ${numericAmount}ج:`, cardResult.error);
       }
 
-      // تحديث كائن البيانات لإرساله عبر التليجرام
       obj.voucher_code = cardCode || "⚠️ تعذر الإصدار الآلي";
       obj.package_info = packageName;
       obj.phone = phone;
       obj.branch = branchKey;
       obj.branchName = branchDisplayName;
 
-      // 1. إرسال إشعار التليجرام النصي للعملية
       await sendTelegramMessage(obj, false);
 
-      // 2. إرسال صورة الكارت والتفاصيل لتليجرام الإدارة
       if (cardImageBuffer) {
         await sendVoucherWithCardImage(
           {
@@ -231,10 +232,9 @@ router.post("/paymob-webhook", async (req, res) => {
         );
       }
 
-      console.log(`✅ [Webhook SUCCESS Completed] تم معالجة المعاملة: ${transactionId} للكارت: ${cardCode || 'مبلغ مخصص'}`);
+      console.log(`✅ [Webhook SUCCESS Completed] تم معالجة المعاملة: ${transactionId}`);
 
     } else {
-      // 🎯 طباعة تفاصيل سبب رفض المعاملة من Paymob
       const failureReason = 
         obj.data?.message || 
         obj.data_message || 
@@ -242,14 +242,12 @@ router.post("/paymob-webhook", async (req, res) => {
         obj.data?.txn_response_code || 
         "سبب غير محدد من البوابة";
 
-      console.error(`❌ [Webhook FAILED] معاملة فاشلة: ${transactionId}`);
-      console.error(`📋 [Paymob Decline Details] السبب: [${failureReason}]`);
-      console.error(`🔍 [Raw Response Data]:`, JSON.stringify(obj.data || {}, null, 2));
+      console.error(`❌ [Webhook FAILED] معاملة فاشلة: ${transactionId} | السبب: [${failureReason}]`);
 
       obj.phone = phone;
       obj.branch = branchKey;
       obj.branchName = branchDisplayName;
-      obj.failure_reason = failureReason; // إضافة السبب لرسالة التليجرام
+      obj.failure_reason = failureReason;
 
       await sendTelegramMessage(obj, false);
     }
