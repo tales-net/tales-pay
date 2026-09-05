@@ -1,18 +1,88 @@
 const express = require("express");
+const crypto = require("crypto");
 const router = express.Router();
 const profiles = require("./profiles");
-const { processPaymentAndCreateCard } = require("./mikrotikService"); // استدعاء خدمة الميكروتيك الجديدة
+const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateCardImage } = require("./cardGenerator");
 const { sendTelegramMessage, sendVoucherWithCardImage } = require("./telegram");
 
 // خريطة عالمية لحفظ بيانات وكروت المعاملات مؤقتاً لصفحة النجاح
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
+// 🧹 تنظيف الذاكرة المؤقتة كل 15 دقيقة لحذف الكروت التي مر عليها أكثر من ساعة
+setInterval(() => {
+  const ONE_HOUR = 60 * 60 * 1000;
+  const now = new Date().getTime();
+  for (const [key, value] of global.generatedCardsMap.entries()) {
+    if (value.createdAt && (now - new Date(value.createdAt).getTime() > ONE_HOUR)) {
+      global.generatedCardsMap.delete(key);
+    }
+  }
+}, 15 * 60 * 1000);
+
 const BRANCH_NAMES = {
   main: "حكايات نت رئيسي",
   branch2: "حكايات نت فرع ثاني",
   branch3: "حكايات نت فرع ثالث"
 };
+
+/**
+ * 🔒 دالة التحقق من التوقيع الرقمي HMAC القادم من Paymob
+ */
+function verifyPaymobHmac(req) {
+  const hmacSecret = process.env.PAYMOB_HMAC;
+  if (!hmacSecret) return true; // تجاوز الفحص إذا لم يتم ضبط المتغير في البيئة
+
+  const receivedHmac = req.query.hmac;
+  if (!receivedHmac) return false;
+
+  const obj = req.body.obj || req.body;
+  if (!obj) return false;
+
+  // الترتيب الأبجدي الدقيق للحقول وفقاً لمستندات Paymob الرسمية
+  const lexicalKeys = [
+    "amount_cents",
+    "created_at",
+    "currency",
+    "error_occured",
+    "has_parent_transaction",
+    "id",
+    "integration_id",
+    "is_3d_secure",
+    "is_auth",
+    "is_capture",
+    "is_refunded",
+    "is_standalone_payment",
+    "is_voided",
+    "order.id",
+    "owner",
+    "pending",
+    "source_data.pan",
+    "source_data.sub_type",
+    "source_data.type",
+    "success"
+  ];
+
+  let concatenatedValues = "";
+  for (const key of lexicalKeys) {
+    let val = "";
+    if (key.includes(".")) {
+      const parts = key.split(".");
+      val = obj[parts[0]] ? obj[parts[0]][parts[1]] : "";
+    } else {
+      val = obj[key];
+    }
+    if (val === undefined || val === null) val = "";
+    concatenatedValues += String(val);
+  }
+
+  const calculatedHmac = crypto
+    .createHmac("sha512", hmacSecret)
+    .update(concatenatedValues)
+    .digest("hex");
+
+  return calculatedHmac.toLowerCase() === receivedHmac.toLowerCase();
+}
 
 /**
  * دالة دقيقة لاستخراج الفرع من حمولة Paymob
@@ -41,6 +111,12 @@ function extractBranchKey(obj) {
 
 router.post("/paymob-webhook", async (req, res) => {
   try {
+    // 1. التحقق من التوقيع الرقمي HMAC
+    if (!verifyPaymobHmac(req)) {
+      console.error("⛔ [Webhook Unauthorized] فشل التحقق من HMAC إشارة غير موثوقة");
+      return res.status(401).send("Unauthorized payload HMAC failed");
+    }
+
     const data = req.body;
     const obj = data.obj || data;
 
@@ -53,6 +129,12 @@ router.post("/paymob-webhook", async (req, res) => {
     const transactionId = String(obj.id);
     const orderId = obj.order?.id ? String(obj.order.id) : null;
     const merchantOrderId = obj.order?.merchant_order_id ? String(obj.order.merchant_order_id) : null;
+
+    // 2. حماية ضد التكرار (Idempotency Check)
+    if (global.generatedCardsMap.has(transactionId)) {
+      console.log(`ℹ️ [Webhook Duplicate] المعاملة ${transactionId} معالجة بالفعل سلفاً.`);
+      return res.status(200).send("Transaction already processed");
+    }
 
     const amountCents = obj.amount_cents || obj.order?.amount_cents || 0;
     const amountEgp = (amountCents / 100).toFixed(2);
@@ -88,7 +170,6 @@ router.post("/paymob-webhook", async (req, res) => {
 
       if (cardResult.success) {
         if (cardResult.isCustomAmount) {
-          // التعامل مع المبالغ المختلفة / التبرعات
           console.log(`🌸 [Custom Amount] تم استقبال مساهمة بقيمة ${numericAmount}ج`);
         } else {
           cardCode = cardResult.cardCode;
