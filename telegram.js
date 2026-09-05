@@ -61,7 +61,7 @@ function getFormattedDateTime() {
 }
 
 /**
- * 1. إرسال الرسائل النصية والإشعارات مع أزرار التحكم اليدوي لجروب التليجرام
+ * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام
  */
 async function sendTelegramMessage(data, isInitial = true) {
   try {
@@ -84,15 +84,12 @@ async function sendTelegramMessage(data, isInitial = true) {
     const dateTimeStr = getFormattedDateTime();
 
     const branchName = data.branchName || data.branch_name || "حكايات نت رئيسي";
-    const branchKey = data.branch || data.branchKey || "main";
     const userPhone = data.phone || 
                         data.billing_data?.phone_number || 
                         data.customer?.phone_number || 
                         "غير محدد";
-    const txId = data.transactionId || data.id || data.order?.id || data.clientID || "غير متوفر";
 
     let message = "";
-    let replyMarkup = null;
 
     if (isInitial) {
       const clientID = data.clientID || data.clientId || "غير متوفر";
@@ -117,7 +114,6 @@ async function sendTelegramMessage(data, isInitial = true) {
       const lang = data.lang || "غير متوفر";
 
       message = `⏳ <b>جاري عملية الدفع...</b>\n\n` +
-                `🆔 رقم العملية: <code>${txId}</code>\n` +
                 `🏢 الفرع: <b>${branchName}</b>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المطلوب: <b>${amountEGP} جنيه</b>\n`;
@@ -149,31 +145,15 @@ async function sendTelegramMessage(data, isInitial = true) {
                  `⏰ <b>المنطقة الزمنية:</b> <code>${userTimeZone}</code>\n` +
                  `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
 
-      // 🌟 تفعيل الأزرار لجميع الفروع في الرسالة الأولية
-      message += `\n\n<b>⚠️ رجاءً قم بالفحص ثم اضغط أحد الأزرار أدناه:</b>`;
-      replyMarkup = {
-        inline_keyboard: [
-          [
-            {
-              text: "✅ تأكيد وإصدار الكارت",
-              callback_data: `APPROVE|${txId}|${amountEGP}|${branchKey}`
-            },
-            {
-              text: "❌ رفض الطلب",
-              callback_data: `REJECT|${txId}`
-            }
-          ]
-        ]
-      };
-
     } else {
+      const txnId = data.id || data.transactionId || data.order?.id || "غير متوفر";
       const voucher = data.voucher_code || data.cardCode || "غير متوفر";
       const packageInfo = data.package_info || data.packageName || "باقة إنترنت شبكة حكايات";
       const customerName = data.card_data?.name || data.billing_data?.first_name || "عميل شبكة حكايات";
 
       message = `✅ <b>تمت عملية الدفع وتوليد الكارت بنجاح!</b>\n\n` +
                 `🏢 الفرع: <b>${branchName}</b>\n` +
-                `🆔 رقم العملية: <code>${txId}</code>\n` +
+                `🆔 رقم العملية: <code>${txnId}</code>\n` +
                 `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n` +
                 `👤 اسم العميل / البطاقة: <b>${customerName}</b>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
@@ -184,17 +164,11 @@ async function sendTelegramMessage(data, isInitial = true) {
                 `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
     }
 
-    const payloadToSend = {
+    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       chat_id: CHAT_ID,
       text: message,
       parse_mode: "HTML"
-    };
-
-    if (replyMarkup) {
-      payloadToSend.reply_markup = replyMarkup;
-    }
-
-    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, payloadToSend);
+    });
 
   } catch (err) {
     console.error("❌ [Telegram Error]:", err.response?.data || err.message);
@@ -202,7 +176,7 @@ async function sendTelegramMessage(data, isInitial = true) {
 }
 
 /**
- * 2. إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام
+ * 2. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام
  */
 async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   try {
@@ -252,7 +226,45 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   }
 }
 
+/**
+ * 3. 💬 إرسال رسائل وسائط شات الدعم المباشر من العميل للتليجرام
+ */
+async function sendSupportChatMessage({ text, file, txId }) {
+  try {
+    if (!BOT_TOKEN || !CHAT_ID) {
+      console.warn("⚠️ [Telegram Error] BOT_TOKEN أو CHAT_ID مفقود!");
+      return;
+    }
+
+    if (file) {
+      const form = new FormData();
+      form.append("chat_id", CHAT_ID);
+      form.append("photo", file.buffer, {
+        filename: file.originalname || "user_upload.png",
+        contentType: file.mimetype || "image/png"
+      });
+      const caption = `💬 <b>رسالة دعم عميل (صورة إيصال)</b>\n🆔 رقم العملية/المعاملة: <code>${txId || 'عام'}</code>\n📝 النص المُرفق: ${text || 'بدون نص'}`;
+      form.append("caption", caption);
+      form.append("parse_mode", "HTML");
+
+      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
+        headers: { ...form.getHeaders() }
+      });
+    } else if (text) {
+      const message = `💬 <b>رسالة دعم جديدة من العميل:</b>\n🆔 رقم العملية/المعاملة: <code>${txId || 'عام'}</code>\n\n📝 الرسالة:\n${text}`;
+      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        chat_id: CHAT_ID,
+        text: message,
+        parse_mode: "HTML"
+      });
+    }
+  } catch (err) {
+    console.error("❌ [Support Chat Telegram Error]:", err.response?.data || err.message);
+  }
+}
+
 module.exports = {
   sendTelegramMessage,
-  sendVoucherWithCardImage
+  sendVoucherWithCardImage,
+  sendSupportChatMessage
 };
