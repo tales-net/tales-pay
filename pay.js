@@ -153,7 +153,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     // تنظيف رقم المحفظة وتحويله للنمط المحلي (01xxxxxxxxx)
     const formattedWalletPhone = normalizeLocalPhone(phone);
 
-    console.log(`💳 [Pay.js] إنشاء معاملة مؤكدة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amount} | الوسيلة: ${cleanMethod} | الهاتف المحيط: ${formattedWalletPhone}`);
+    console.log(`💳 [Pay.js] إنشاء معاملة مؤكدة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amount} | الوسيلة: ${cleanMethod} | الهاتف: ${formattedWalletPhone}`);
 
     let integrationId;
     switch (cleanMethod) {
@@ -187,26 +187,15 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     );
 
     if (cleanMethod === 'wallet') {
-      const walletRes = await axios.post('https://accept.paymob.com/api/acceptance/payments/pay', {
-        source: {
-          identifier: formattedWalletPhone, // 👈 التنسيق المحلي 11 رقماً بدون +20
-          subtype: "WALLET"
-        },
-        payment_token: paymentKey
-      });
+      // 🚀 توجيه العميل مباشرة إلى Iframe Paymob لتفادي رفض فودافون كاش للسحب الآلي المباشر
+      const iframeId = process.env.PAYMOB_IFRAME_ID;
 
-      // استخراج رابط التوجيه المتاح من Paymob
-      const redirectUrl = 
-        walletRes.data.redirect_url || 
-        walletRes.data.iframe_redirection_url || 
-        walletRes.data.redirection_url;
-
-      if (!redirectUrl) {
-        console.error("❌ [Pay.js Wallet Pay Error]:", walletRes.data);
-        throw new Error("لم يتم استرجاع رابط إعادة توجيه المحفظة من Paymob");
+      if (!iframeId) {
+        throw new Error("Missing PAYMOB_IFRAME_ID in environment variables");
       }
 
-      return { type: 'redirect', url: redirectUrl };
+      const iframeUrl = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymentKey}`;
+      return { type: 'redirect', url: iframeUrl };
     } else {
       const iframeId = cleanMethod === 'card' 
         ? (process.env.CARD_IFRAME_ID || process.env.PAYMOB_IFRAME_ID) 
