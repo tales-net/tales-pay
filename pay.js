@@ -9,6 +9,26 @@ const BRANCH_NAMES = {
 };
 
 /**
+ * دالة مساعدة لتنسيق رقم الهاتف المصري محلياً (11 رقماً يبدأ بـ 0)
+ */
+function normalizeLocalPhone(phoneStr) {
+  if (!phoneStr) return "01000000000";
+  let cleaned = String(phoneStr).replace(/\D/g, ""); // إزالة أي رموز مثل + أو مسافات
+  
+  // تحويل الصيغ الدولية (201xxxxxxxxx أو +201xxxxxxxxx) إلى صيغة محليّة (01xxxxxxxxx)
+  if (cleaned.startsWith("20") && cleaned.length === 12) {
+    cleaned = "0" + cleaned.substring(2);
+  }
+  
+  // التأكد من أن الرقم يمتلك 11 رقماً
+  if (cleaned.length < 11) {
+    cleaned = "01000000000";
+  }
+  
+  return cleaned;
+}
+
+/**
  * 1. المصادقة والحصول على Authentication Token من Paymob
  */
 async function getAuthToken() {
@@ -57,10 +77,7 @@ async function createOrder(authToken, amountCents, branchData = {}) {
  */
 async function getPaymentKey(authToken, orderId, amountCents, integrationId, phone = "01000000000", branchData = {}) {
   try {
-    let sanitizedPhone = String(phone).replace(/\D/g, "");
-    if (!sanitizedPhone || sanitizedPhone.length < 11) {
-      sanitizedPhone = "01000000000";
-    }
+    const sanitizedPhone = normalizeLocalPhone(phone);
 
     const branchKey = branchData.branch || 'main';
     const branchName = branchData.branchName || 'حكايات نت رئيسي';
@@ -133,7 +150,10 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     const selectedBranch = rawBranch;
     const branchDisplayName = BRANCH_NAMES[selectedBranch];
 
-    console.log(`💳 [Pay.js] إنشاء معاملة مؤكدة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amount} | الوسيلة: ${cleanMethod}`);
+    // تنظيف رقم المحفظة وتحويله للنمط المحلي (01xxxxxxxxx)
+    const formattedWalletPhone = normalizeLocalPhone(phone);
+
+    console.log(`💳 [Pay.js] إنشاء معاملة مؤكدة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amount} | الوسيلة: ${cleanMethod} | الهاتف المحيط: ${formattedWalletPhone}`);
 
     let integrationId;
     switch (cleanMethod) {
@@ -162,23 +182,30 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       orderId, 
       amountCents, 
       integrationId, 
-      phone || '01000000000',
+      formattedWalletPhone,
       { branch: selectedBranch, branchName: branchDisplayName }
     );
 
     if (cleanMethod === 'wallet') {
       const walletRes = await axios.post('https://accept.paymob.com/api/acceptance/payments/pay', {
         source: {
-          identifier: phone,
+          identifier: formattedWalletPhone, // 👈 التنسيق المحلي 11 رقماً بدون +20
           subtype: "WALLET"
         },
         payment_token: paymentKey
       });
 
-      const redirectUrl = walletRes.data.iframe_redirection_url || walletRes.data.redirection_url;
+      // استخراج رابط التوجيه المتاح من Paymob
+      const redirectUrl = 
+        walletRes.data.redirect_url || 
+        walletRes.data.iframe_redirection_url || 
+        walletRes.data.redirection_url;
+
       if (!redirectUrl) {
+        console.error("❌ [Pay.js Wallet Pay Error]:", walletRes.data);
         throw new Error("لم يتم استرجاع رابط إعادة توجيه المحفظة من Paymob");
       }
+
       return { type: 'redirect', url: redirectUrl };
     } else {
       const iframeId = cleanMethod === 'card' 
