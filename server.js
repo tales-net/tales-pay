@@ -16,7 +16,7 @@ const PORT = process.env.PORT || 3000;
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
 
 const BRANCH_NAMES = {
-  waitPage: "صفحة الانتظار والتأكيد", // 👈 إضافة الفرع الافتراضي الجديد هنا
+  waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك", // 👈 إضافة الفرع الافتراضي الجديد هنا
   main: "حكايات نت رئيسي",
   branch2: "حكايات نت فرع ثاني",
   branch3: "حكايات نت فرع ثالث"
