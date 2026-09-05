@@ -228,11 +228,24 @@ router.post("/paymob-webhook", async (req, res) => {
       console.log(`✅ [Webhook SUCCESS Completed] تم معالجة المعاملة: ${transactionId} للكارت: ${cardCode || 'مبلغ مخصص'}`);
 
     } else {
+      // 🎯 طباعة تفاصيل سبب رفض المعاملة من Paymob
+      const failureReason = 
+        obj.data?.message || 
+        obj.data_message || 
+        obj.txn_response_code || 
+        obj.data?.txn_response_code || 
+        "سبب غير محدد من البوابة";
+
+      console.error(`❌ [Webhook FAILED] معاملة فاشلة: ${transactionId}`);
+      console.error(`📋 [Paymob Decline Details] السبب: [${failureReason}]`);
+      console.error(`🔍 [Raw Response Data]:`, JSON.stringify(obj.data || {}, null, 2));
+
       obj.phone = phone;
       obj.branch = branchKey;
       obj.branchName = branchDisplayName;
+      obj.failure_reason = failureReason; // إضافة السبب لرسالة التليجرام
+
       await sendTelegramMessage(obj, false);
-      console.log(`❌ [Webhook FAILED] معاملة فاشلة: ${transactionId}`);
     }
 
     return res.status(200).send("OK");
