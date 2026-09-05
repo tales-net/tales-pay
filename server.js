@@ -16,6 +16,7 @@ const PORT = process.env.PORT || 3000;
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
 
 const BRANCH_NAMES = {
+  waitPage: "صفحة الانتظار والتأكيد", // 👈 إضافة الفرع الافتراضي الجديد هنا
   main: "حكايات نت رئيسي",
   branch2: "حكايات نت فرع ثاني",
   branch3: "حكايات نت فرع ثالث"
@@ -234,14 +235,15 @@ app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "";
   const queryBranch = req.query.branch || "";
   
-  let inferredBranch = "branch2";
+  let inferredBranch = "waitPage"; // التعيين الافتراضي
   const upperTx = transactionId.toUpperCase();
   if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
   else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
   else if (upperTx.includes("MAIN")) inferredBranch = "main";
 
   const activeBranchKey = queryBranch || inferredBranch;
-  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.branch2;
+  // الآن تعمل القيمة الافتراضية بشكل صحيح وبدون أخطاء
+const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.waitPage;
 
   res.send(`
     <!DOCTYPE html>
