@@ -61,7 +61,7 @@ function getFormattedDateTime() {
 }
 
 /**
- * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام
+ * 1. إرسال الرسائل النصية والإشعارات مع أزرار التحكم اليدوي لجروب التليجرام
  */
 async function sendTelegramMessage(data, isInitial = true) {
   try {
@@ -84,12 +84,15 @@ async function sendTelegramMessage(data, isInitial = true) {
     const dateTimeStr = getFormattedDateTime();
 
     const branchName = data.branchName || data.branch_name || "حكايات نت رئيسي";
+    const branchKey = data.branch || "waitPage";
     const userPhone = data.phone || 
                         data.billing_data?.phone_number || 
                         data.customer?.phone_number || 
                         "غير محدد";
+    const txId = data.transactionId || data.id || data.order?.id || data.clientID || "غير متوفر";
 
     let message = "";
+    let replyMarkup = null;
 
     if (isInitial) {
       const clientID = data.clientID || data.clientId || "غير متوفر";
@@ -114,6 +117,7 @@ async function sendTelegramMessage(data, isInitial = true) {
       const lang = data.lang || "غير متوفر";
 
       message = `⏳ <b>جاري عملية الدفع...</b>\n\n` +
+                `🆔 رقم العملية: <code>${txId}</code>\n` +
                 `🏢 الفرع: <b>${branchName}</b>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المطلوب: <b>${amountEGP} جنيه</b>\n`;
@@ -145,15 +149,33 @@ async function sendTelegramMessage(data, isInitial = true) {
                  `⏰ <b>المنطقة الزمنية:</b> <code>${userTimeZone}</code>\n` +
                  `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
 
+      // 🌟 إضافة أزرار القبول والرفض اليدوي لفرع صفحة الانتظار
+      if (branchKey === "waitPage") {
+        message += `\n\n<b>⚠️ رجاءً قم بالفحص ثم اضغط أحد الأزرار أدناه:</b>`;
+        replyMarkup = {
+          inline_keyboard: [
+            [
+              {
+                text: "✅ تأكيد وإصدار الكارت",
+                callback_data: `APPROVE|${txId}|${amountEGP}|${branchKey}`
+              },
+              {
+                text: "❌ رفض الطلب",
+                callback_data: `REJECT|${txId}`
+              }
+            ]
+          ]
+        };
+      }
+
     } else {
-      const txnId = data.id || data.transactionId || data.order?.id || "غير متوفر";
       const voucher = data.voucher_code || data.cardCode || "غير متوفر";
       const packageInfo = data.package_info || data.packageName || "باقة إنترنت شبكة حكايات";
       const customerName = data.card_data?.name || data.billing_data?.first_name || "عميل شبكة حكايات";
 
       message = `✅ <b>تمت عملية الدفع وتوليد الكارت بنجاح!</b>\n\n` +
                 `🏢 الفرع: <b>${branchName}</b>\n` +
-                `🆔 رقم العملية: <code>${txnId}</code>\n` +
+                `🆔 رقم العملية: <code>${txId}</code>\n` +
                 `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n` +
                 `👤 اسم العميل / البطاقة: <b>${customerName}</b>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
@@ -164,11 +186,17 @@ async function sendTelegramMessage(data, isInitial = true) {
                 `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
     }
 
-    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    const payloadToSend = {
       chat_id: CHAT_ID,
       text: message,
       parse_mode: "HTML"
-    });
+    };
+
+    if (replyMarkup) {
+      payloadToSend.reply_markup = replyMarkup;
+    }
+
+    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, payloadToSend);
 
   } catch (err) {
     console.error("❌ [Telegram Error]:", err.response?.data || err.message);
@@ -176,7 +204,7 @@ async function sendTelegramMessage(data, isInitial = true) {
 }
 
 /**
- * 2. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام (مصلحة بالكامل)
+ * 2. إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام
  */
 async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   try {
@@ -193,7 +221,6 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     const form = new FormData();
     form.append("chat_id", CHAT_ID);
     
-    // إرفاق الصورة كـ Buffer مع تحديد اسم الملف ونوع الـ Content-Type بوضوح
     form.append("photo", imageBuffer, {
       filename: `card_${paymentDetails.transactionId || Date.now()}.png`,
       contentType: "image/png"
@@ -210,7 +237,6 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     form.append("caption", caption);
     form.append("parse_mode", "HTML");
 
-    // إرسال الطلب مع إضافة ترويسات الـ Form Data المناسبة
     const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
       headers: {
         ...form.getHeaders()
