@@ -24,7 +24,7 @@ const BRANCH_NAMES = {
 };
 
 global.generatedCardsMap = global.generatedCardsMap || new Map();
-global.manualOrdersMap = global.manualOrdersMap || new Map(); // خريطة متابعة حالة الأوامر اليدوية
+global.manualOrdersMap = global.manualOrdersMap || new Map();
 
 // تنظيف دوري للذاكرة المؤقتة كل نصف ساعة
 setInterval(() => {
@@ -75,13 +75,12 @@ async function handlePaymentRequest(req, res) {
       return res.redirect("/");
     }
 
-    // 🌟 استخراج رقم العملية الصريح الحقيقي
-    const transactionId = transaction_id || id || order || merchant_order_id || clientID || clientId || "TX_" + Date.now();
+    const transactionId = String(transaction_id || id || order || merchant_order_id || clientID || clientId || "TX_" + Date.now()).trim();
 
     const selectedMethod = payment_method || method || "wallet";
-    const rawBranch = branch || branch_key || "waitPage";
-    const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "waitPage";
-    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.waitPage;
+    const rawBranch = branch || branch_key || "main";
+    const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "main";
+    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.main;
 
     console.log(`🚨 [SERVER CHECK] رقم العملية: [${transactionId}] - الفرع: [${selectedBranch}] (${branchDisplayName})`);
 
@@ -89,7 +88,7 @@ async function handlePaymentRequest(req, res) {
     const payAmount = amount || "5";
 
     const paymentPayload = {
-      transactionId: transactionId, // تم ربط رقم العملية هنا صراحةً
+      transactionId: transactionId,
       phone: userPhone,
       amount_cents: parseFloat(payAmount) * 100,
       payment_method: selectedMethod,
@@ -144,7 +143,7 @@ async function handlePaymentRequest(req, res) {
 app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
 
-// 🌟 Webhook لاستقبال الضغط على أزرار التليجرام وتأكيد/رفض العملية برقم العملية
+// 🌟 Webhook استقبال أزرار التليجرام مع تحويل الـ waitPage تلقائياً لـ main
 app.post("/api/telegram-webhook", async (req, res) => {
   try {
     const { callback_query } = req.body;
@@ -155,18 +154,27 @@ app.post("/api/telegram-webhook", async (req, res) => {
     const messageId = callback_query.message.message_id;
 
     if (actionData.startsWith("APPROVE|")) {
-      // الرمز المقروء: APPROVE|txId|amount|branchKey
-      const [, txId, amount, branchKey] = actionData.split("|");
+      let [, txId, amount, branchKey] = actionData.split("|");
+      txId = String(txId).trim();
+
+      // 🛠️ معالجة اسم الفرع إذا كان waitPage ليصبح main
+      if (!branchKey || branchKey === "waitPage") {
+        branchKey = "main";
+      }
+
+      console.log(`📌 [Telegram Webhook] جاري التفعيل للفرع: ${branchKey} | رقم المعاملة: ${txId}`);
 
       const result = await processPaymentAndCreateCard(amount, branchKey, txId);
       
-      if (result.success) {
+      if (result && result.success) {
+        const finalCode = result.cardCode || result.code;
+
         global.generatedCardsMap.set(txId, {
-          code: result.cardCode,
-          packageName: result.packageName,
+          code: finalCode,
+          packageName: result.packageName || "باقة إنترنت شبكة حكايات",
           amount: parseFloat(amount),
-          branchKey: result.branchKey,
-          branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.waitPage,
+          branchKey: result.branchKey || branchKey,
+          branchName: BRANCH_NAMES[result.branchKey || branchKey] || BRANCH_NAMES.main,
           createdAt: new Date()
         });
 
@@ -175,20 +183,20 @@ app.post("/api/telegram-webhook", async (req, res) => {
         await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/editMessageText`, {
           chat_id: chatId,
           message_id: messageId,
-          text: `${callback_query.message.text}\n\n✅ *تم التأكيد يدويًا برقم العملية!*\n🎟️ *الكارت المصدر:* \`${result.cardCode}\``,
+          text: `${callback_query.message.text}\n\n✅ *تم التأكيد وإصدار الكارت بنجاح!*\n🎟️ *الكارت المصدر:* \`${finalCode}\``,
           parse_mode: "Markdown"
         });
       }
     } else if (actionData.startsWith("REJECT|")) {
-      // الرمز المقروء: REJECT|txId
       const [, txId] = actionData.split("|");
+      const cleanTxId = String(txId).trim();
       
-      global.manualOrdersMap.set(txId, { status: "REJECTED", createdAt: new Date() });
+      global.manualOrdersMap.set(cleanTxId, { status: "REJECTED", createdAt: new Date() });
 
       await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/editMessageText`, {
         chat_id: chatId,
         message_id: messageId,
-        text: `${callback_query.message.text}\n\n❌ *تم رفض الطلب يدويًا برقم العملية (${txId}).*`,
+        text: `${callback_query.message.text}\n\n❌ *تم رفض الطلب يدويًا برقم العملية (${cleanTxId}).*`,
         parse_mode: "Markdown"
       });
     }
@@ -214,7 +222,7 @@ app.get("/api/check-voucher/:txId", (req, res) => {
     return res.json({ success: false, message: "رقم المعاملة غير صالح" });
   }
 
-  // 1. التحقق إن كان رقم العملية تم رفضه من التليجرام
+  // 1. فحص إذا كانت العملية مرفوضة
   if (global.manualOrdersMap.has(txId) && global.manualOrdersMap.get(txId).status === "REJECTED") {
     return res.json({ 
       success: false, 
@@ -223,16 +231,19 @@ app.get("/api/check-voucher/:txId", (req, res) => {
     });
   }
 
-  // 2. التحقق إن كان تم الموافقة وتوليد الكارت برقم العملية
-  if (global.generatedCardsMap) {
-    if (global.generatedCardsMap.has(txId)) {
-      return res.json({ success: true, status: "APPROVED", data: global.generatedCardsMap.get(txId) });
-    }
-    
-    for (let [key, value] of global.generatedCardsMap.entries()) {
-      if (String(key).includes(txId) || txId.includes(String(key))) {
-        return res.json({ success: true, status: "APPROVED", data: value });
-      }
+  // 2. البحث الدقيق في خريطة الكروت المنشأة
+  if (global.generatedCardsMap && global.generatedCardsMap.has(txId)) {
+    return res.json({ 
+      success: true, 
+      status: "APPROVED", 
+      data: global.generatedCardsMap.get(txId) 
+    });
+  }
+
+  // 3. مطابقة جزئية احتياطية لرقم العملية
+  for (let [key, value] of global.generatedCardsMap.entries()) {
+    if (String(key).includes(txId) || txId.includes(String(key))) {
+      return res.json({ success: true, status: "APPROVED", data: value });
     }
   }
 
@@ -258,17 +269,16 @@ app.post("/api/disable-queue", async (req, res) => {
 });
 
 app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "";
+  const transactionId = String(req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "").trim();
   const queryBranch = req.query.branch || "";
   
-  let inferredBranch = "waitPage";
+  let inferredBranch = "main";
   const upperTx = transactionId.toUpperCase();
   if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
   else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
-  else if (upperTx.includes("MAIN")) inferredBranch = "main";
 
   const activeBranchKey = queryBranch || inferredBranch;
-  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.waitPage;
+  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.main;
 
   res.send(`
     <!DOCTYPE html>
@@ -287,7 +297,7 @@ app.get("/success", (req, res) => {
           .ticket-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px; margin-bottom: 15px; }
           .ticket-title { font-size: 16px; font-weight: bold; }
           .ticket-brand { font-size: 12px; background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 4px; }
-          .code-box { background: #ffffff; color: #01338D; text-align: center; padding: 12px; border-radius: 8px; margin: 15px 0; font-family: monospace; font-size: 24px; font-weight: bold; letter-spacing: 2px; min-height: 50px; display: flex; align-items: center; justify-content: center; }
+          .code-box { background: #ffffff; color: #01338D; text-align: center; padding: 12px; border-radius: 8px; margin: 15px 0; font-family: monospace; font-size: 24px; font-weight: bold; letter-spacing: 2px; min-height: 50px; display: flex; align-items: center; justify-content: center; word-break: break-all; }
           .info-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: #e0e0e0; }
           .info-row strong { color: #ffffff; }
           .btn-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px; }
@@ -333,9 +343,9 @@ app.get("/success", (req, res) => {
         </div>
         <script>
           const urlParams = new URLSearchParams(window.location.search);
-          const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
+          const txId = (urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}").trim();
           let attempts = 0;
-          const maxAttempts = 60; // 3 دقائق انتظار
+          const maxAttempts = 120; // زيادة وقت المراقبة إلى 6 دقائق
 
           async function pollVoucher() {
             if (!txId || txId === "غير محدد") {
