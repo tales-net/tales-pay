@@ -52,6 +52,32 @@ function getClientPublicIP(req) {
   );
 }
 
+/**
+ * 🔒 دالة لتنظيم وتثبيت كود مصر (+2) في الخفاء لمحافظ فودافون وباقي المحافظ
+ */
+function formatEgyptianPhoneNumber(phone) {
+  if (!phone || phone === "غير محدد") return phone;
+  
+  let cleaned = String(phone).replace(/\D/g, "");
+  
+  // لو الرقم يبدأ بـ 01 وطوله 11 رقم (مثل 01012345678)
+  if (cleaned.startsWith("01") && cleaned.length === 11) {
+    return "+2" + cleaned; // الناتج: +201012345678
+  }
+  
+  // لو الرقم مكتوب بدون الـ 0 في البداية وطوله 10 أرقام (مثل 1012345678)
+  if (cleaned.length === 10 && cleaned.startsWith("1")) {
+    return "+20" + cleaned; // الناتج: +201012345678
+  }
+  
+  // لو الرقم مكتوب مسبقاً بكود الدولة بدون علامة +
+  if (cleaned.startsWith("20") && cleaned.length === 12) {
+    return "+" + cleaned;
+  }
+  
+  return phone;
+}
+
 async function handlePaymentRequest(req, res) {
   try {
     const data = { ...req.query, ...req.body };
@@ -74,7 +100,12 @@ async function handlePaymentRequest(req, res) {
 
     console.log(`🚨 [SERVER CHECK] الفرع المستلم من الواجهة هو: [${selectedBranch}] (${branchDisplayName})`);
 
-    const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
+    const rawUserPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
+    
+    // 📱 تعديل رقم الهاتف وتثبيت (+2) في الخفاء لدعم فودافون كاش وباقي المحافظ
+    const userPhone = formatEgyptianPhoneNumber(rawUserPhone);
+    console.log(`📱 [PHONE FORMAT CHECK] الرقم الأصلي: [${rawUserPhone}] -> الرقم المعدل: [${userPhone}]`);
+
     const payAmount = amount || "5";
 
     const paymentPayload = {
