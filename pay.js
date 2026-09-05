@@ -2,35 +2,11 @@ const axios = require('axios');
 const path = require('path');
 const { getCheckoutPage } = require('./checkout');
 
-// أسماء الفروع المعتمدة في النظام
 const BRANCH_NAMES = {
   main: 'حكايات نت رئيسي',
   branch2: 'حكايات نت فرع ثاني',
   branch3: 'حكايات نت فرع ثالث'
 };
-
-/**
- * دالة مساعدة لتنظيف وتنسيق أرقام الهواتف المحمولة في مصر
- * تضمن إرجاع 11 رقم يبدأ بـ 01 (مثل محافظ فودافون، اتصالات، أورنج، وي)
- */
-function sanitizeEgyptianPhone(phone) {
-  if (!phone) return null;
-  
-  // إزالة أي رموز أو حروف أو مسافات
-  let cleaned = String(phone).replace(/\D/g, "");
-
-  // إذا كان الرقم مكتوباً بالرمز الدولي (مثل 2010... أو 002010...)
-  if (cleaned.startsWith("20") && cleaned.length === 13) {
-    cleaned = cleaned.substring(2);
-  }
-
-  // التأكد من أن الرقم يحتوي على 11 رقم ويبدأ بـ 01
-  if (cleaned.length === 11 && cleaned.startsWith("01")) {
-    return cleaned;
-  }
-
-  return null;
-}
 
 /**
  * 1. المصادقة والحصول على Authentication Token من Paymob
@@ -53,7 +29,7 @@ async function getAuthToken() {
 async function createOrder(authToken, amountCents, branchData = {}) {
   try {
     const branchKey = branchData.branch || 'main';
-    const branchName = branchData.branch_name || BRANCH_NAMES.main;
+    const branchName = branchData.branch_name || 'حكايات نت رئيسي';
 
     const payload = {
       auth_token: authToken,
@@ -77,12 +53,17 @@ async function createOrder(authToken, amountCents, branchData = {}) {
 }
 
 /**
- * 3. توليد مفتاح الدفع (Payment Key Request) مع تضمين الفرع ورقم الهاتف المنظف
+ * 3. توليد مفتاح الدفع (Payment Key Request) مع تضمين الفرع
  */
 async function getPaymentKey(authToken, orderId, amountCents, integrationId, phone = "01000000000", branchData = {}) {
   try {
+    let sanitizedPhone = String(phone).replace(/\D/g, "");
+    if (!sanitizedPhone || sanitizedPhone.length < 11) {
+      sanitizedPhone = "01000000000";
+    }
+
     const branchKey = branchData.branch || 'main';
-    const branchName = branchData.branchName || BRANCH_NAMES.main;
+    const branchName = branchData.branchName || 'حكايات نت رئيسي';
 
     const payload = {
       auth_token: authToken,
@@ -96,7 +77,7 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
         first_name: "Tales",
         street: branchName,
         building: "NA",
-        phone_number: phone,
+        phone_number: sanitizedPhone,
         shipping_method: branchKey,
         postal_code: "NA",
         city: "Cairo",
@@ -122,30 +103,20 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
 }
 
 /**
- * 4. الدالة الرئيسية لمعالجة الدفع وإنشاء الرابط أو التوجيه
+ * 4. الدالة الرئيسية لمعالجة الدفع وإنشاء الرابط أو التوجيه مع فحص الفرع بصرامة
  */
 async function createPaymobPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
   try {
     const amountCents = Math.round(parseFloat(amount) * 100).toString();
     const cleanMethod = (method || 'wallet').toLowerCase();
-
-    // ─── 1. تنظيف وفحص رقم المحفظة لضمان التفاعل مع فودافون كاش ───
-    const sanitizedPhone = sanitizeEgyptianPhone(phone);
-
-    if (cleanMethod === 'wallet' && !sanitizedPhone) {
-      console.warn(`⚠️ [Pay.js] تم رفض العملية: رقم المحفظة غير صحيح أو غير مصري [${phone}]`);
-      throw new Error("يرجى كتابة رقم محفظة فودافون كاش صحيح مكون من 11 رقم يبدأ بـ 01");
-    }
-
-    const finalPhone = sanitizedPhone || "01000000000";
-
-    // ─── 2. التحقق الصارم من الفرع ───
+    
     let rawBranch = String(branch || '').toLowerCase().trim();
 
     if (!rawBranch && req) {
       rawBranch = String(req.body?.branch || req.query?.branch || '').toLowerCase().trim();
     }
 
+    // التحقق الصارم من الفرع: إذا كان مفقوداً أو غير صالح، يتم التوقف وعرض صفحة التحذير
     if (!rawBranch || !BRANCH_NAMES[rawBranch]) {
       console.warn(`⚠️ [Pay.js] رفض معاملة لدفع بفرع غير صالح أو مفقود: [${rawBranch}]`);
       
@@ -162,9 +133,8 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     const selectedBranch = rawBranch;
     const branchDisplayName = BRANCH_NAMES[selectedBranch];
 
-    console.log(`💳 [Pay.js] إنشاء معاملة مؤكدة | الفرع: ${branchDisplayName} (${selectedBranch}) | الرقم: ${finalPhone} | المبلغ: ${amount} | الوسيلة: ${cleanMethod}`);
+    console.log(`💳 [Pay.js] إنشاء معاملة مؤكدة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amount} | الوسيلة: ${cleanMethod}`);
 
-    // ─── 3. تحديد Integration ID ───
     let integrationId;
     switch (cleanMethod) {
       case 'card':
@@ -180,7 +150,6 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       throw new Error(`Missing Integration ID for method: ${cleanMethod}`);
     }
 
-    // ─── 4. طلب التوكن والطلب ومفتاح الدفع ───
     const token = await getAuthToken();
     
     const orderId = await createOrder(token, amountCents, {
@@ -193,15 +162,14 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       orderId, 
       amountCents, 
       integrationId, 
-      finalPhone,
+      phone || '01000000000',
       { branch: selectedBranch, branchName: branchDisplayName }
     );
 
-    // ─── 5. تنفيذ طلب الخصم حسب الوسيلة ───
     if (cleanMethod === 'wallet') {
       const walletRes = await axios.post('https://accept.paymob.com/api/acceptance/payments/pay', {
         source: {
-          identifier: finalPhone, // ⚡ إرسال الرقم المنظف حصراً لإرسال إشعار الدفع بفودافون كاش
+          identifier: phone,
           subtype: "WALLET"
         },
         payment_token: paymentKey
@@ -242,6 +210,5 @@ module.exports = {
   getAuthToken,
   createOrder,
   getPaymentKey,
-  sanitizeEgyptianPhone,
   BRANCH_NAMES
 };
