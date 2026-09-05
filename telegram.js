@@ -1,8 +1,12 @@
 const axios = require("axios");
+const FormData = require("form-data");
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
+/**
+ * جلب بيانات الشبكة والموقع بناءً على IP
+ */
 async function fetchNetworkDetailsByIP(ip) {
   const result = {
     location: "غير معروف",
@@ -56,6 +60,9 @@ function getFormattedDateTime() {
   return `${formattedDate} - ${formattedTime}`;
 }
 
+/**
+ * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام
+ */
 async function sendTelegramMessage(data, isInitial = true) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) {
@@ -168,33 +175,56 @@ async function sendTelegramMessage(data, isInitial = true) {
   }
 }
 
+/**
+ * 2. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام (مصلحة بالكامل)
+ */
 async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   try {
-    if (!BOT_TOKEN || !CHAT_ID) return;
+    if (!BOT_TOKEN || !CHAT_ID) {
+      console.warn("⚠️ [Telegram Error] BOT_TOKEN أو CHAT_ID مفقود!");
+      return;
+    }
 
-    const formData = new axios.FormData ? new (require("form-data"))() : null;
-    const FormDataLib = require("form-data");
-    const form = new FormDataLib();
+    if (!imageBuffer) {
+      console.error("❌ [Telegram Error] Buffer الصورة فارغ!");
+      return;
+    }
 
+    const form = new FormData();
     form.append("chat_id", CHAT_ID);
-    form.append("photo", imageBuffer, { filename: `card_${paymentDetails.transactionId}.png` });
     
+    // إرفاق الصورة كـ Buffer مع تحديد اسم الملف ونوع الـ Content-Type بوضوح
+    form.append("photo", imageBuffer, {
+      filename: `card_${paymentDetails.transactionId || Date.now()}.png`,
+      contentType: "image/png"
+    });
+
     const caption = `🎟️ <b>صورة كارت الإنترنت المصدر آلياً</b>\n\n` +
                     `🏢 الفرع: <b>${paymentDetails.branchName || 'حكايات نت رئيسي'}</b>\n` +
-                    `📦 الباقة: <b>${paymentDetails.packageName}</b>\n` +
+                    `📦 الباقة: <b>${paymentDetails.packageName || 'باقة إنترنت'}</b>\n` +
                     `💰 المبلغ: <b>${paymentDetails.amount} جنيه</b>\n` +
-                    `🔑 الكارت: <code>${paymentDetails.card?.code || 'غير متوفر'}</code>\n` +
-                    `🆔 رقم العملية: <code>${paymentDetails.transactionId}</code>`;
+                    `🔑 الكارت: <code>${paymentDetails.card?.code || paymentDetails.code || 'غير متوفر'}</code>\n` +
+                    `📱 الهاتف: <code>${paymentDetails.phone || 'غير محدد'}</code>\n` +
+                    `🆔 رقم العملية: <code>${paymentDetails.transactionId || 'غير متوفر'}</code>`;
 
     form.append("caption", caption);
     form.append("parse_mode", "HTML");
 
-    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
-      headers: form.getHeaders()
+    // إرسال الطلب مع إضافة ترويسات الـ Form Data المناسبة
+    const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
+      headers: {
+        ...form.getHeaders()
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity
     });
 
+    if (response.data && response.data.ok) {
+      console.log(`📸 [Telegram Image SUCCESS] تم إرسال صورة الكارت بنجاح للمعاملة: ${paymentDetails.transactionId}`);
+    }
+
   } catch (err) {
-    console.error("❌ [Telegram Image Error]:", err.message);
+    console.error("❌ [Telegram Image Error Details]:", err.response?.data || err.message);
   }
 }
 
