@@ -186,29 +186,17 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     );
 
     if (cleanMethod === 'wallet') {
-      // إرسال طلب الدفع للمحفظة مع الرقم المنسق
-      const walletRes = await axios.post('https://accept.paymob.com/api/acceptance/payments/pay', {
-        source: {
-          identifier: formattedPhone,
-          subtype: "WALLET"
-        },
-        payment_token: paymentKey
-      });
+      // 🚀 التوجيه المباشر إلى واجهة Paymob لتفادي رفض فودافون كاش للشراء المباشر عبر API
+      const iframeId = process.env.PAYMOB_IFRAME_ID;
 
-      // 🔍 فحص واستخراج أي رابط توجيه متاح في رد Paymob (حيث تختلف المسميات لـ فودافون كاش)
-      const redirectUrl = 
-        walletRes.data.redirect_url || 
-        walletRes.data.iframe_redirection_url || 
-        walletRes.data.redirection_url ||
-        walletRes.data.pending_redirect_url;
-
-      if (!redirectUrl) {
-        console.error("❌ [Paymob Wallet Error Body]:", JSON.stringify(walletRes.data, null, 2));
-        throw new Error("لم يتم استرجاع رابط إعادة توجيه المحفظة من Paymob");
+      if (!iframeId) {
+        throw new Error("Missing PAYMOB_IFRAME_ID in environment variables");
       }
 
-      console.log(`🔗 [Wallet Redirect] تم التوجيه لرابط الدفع: ${redirectUrl}`);
-      return { type: 'redirect', url: redirectUrl };
+      const walletRedirectUrl = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymentKey}`;
+      
+      console.log(`🔗 [Wallet Redirect] توجيه العميل لصفحة Paymob للمحافظ: ${walletRedirectUrl}`);
+      return { type: 'redirect', url: walletRedirectUrl };
 
     } else {
       const iframeId = cleanMethod === 'card' 
