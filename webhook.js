@@ -26,6 +26,12 @@ const BRANCH_NAMES = {
   branch3: "حكايات نت فرع ثالث"
 };
 
+// 🔄 معالجة طلبات GET الخاصة بـ Paymob لمنع خطأ Cannot GET أثناء التحقق من الرابط
+router.get("/paymob-webhook", (req, res) => {
+  console.log("🔔 [Webhook GET Check] تم استلام طلب GET للتحقق من رابط الويب هوك من Paymob");
+  return res.status(200).send("Paymob Webhook Endpoint Active & ready for POST requests.");
+});
+
 /**
  * 🔒 دالة التحقق من التوقيع الرقمي HMAC القادم من Paymob
  */
