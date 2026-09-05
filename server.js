@@ -21,18 +21,6 @@ const BRANCH_NAMES = {
   branch3: "حكايات نت فرع ثالث"
 };
 
-global.generatedCardsMap = global.generatedCardsMap || new Map();
-
-// تنظيف دوري للذاكرة المؤقتة كل نصف ساعة
-setInterval(() => {
-  const oneHourAgo = Date.now() - (60 * 60 * 1000);
-  for (let [key, value] of global.generatedCardsMap.entries()) {
-    if (value.createdAt && new Date(value.createdAt).getTime() < oneHourAgo) {
-      global.generatedCardsMap.delete(key);
-    }
-  }
-}, 30 * 60 * 1000);
-
 app.use(cors());
 app.use(express.json());
 app.use(bodyParser.json());
@@ -52,29 +40,19 @@ function getClientPublicIP(req) {
   );
 }
 
-/**
- * 🔒 دالة لتنظيم وتثبيت كود مصر (+2) في الخفاء لمحافظ فودافون وباقي المحافظ
- */
 function formatEgyptianPhoneNumber(phone) {
   if (!phone || phone === "غير محدد") return phone;
-  
   let cleaned = String(phone).replace(/\D/g, "");
   
-  // لو الرقم يبدأ بـ 01 وطوله 11 رقم (مثل 01012345678)
   if (cleaned.startsWith("01") && cleaned.length === 11) {
-    return "+2" + cleaned; // الناتج: +201012345678
+    return "+2" + cleaned;
   }
-  
-  // لو الرقم مكتوب بدون الـ 0 في البداية وطوله 10 أرقام (مثل 1012345678)
   if (cleaned.length === 10 && cleaned.startsWith("1")) {
-    return "+20" + cleaned; // الناتج: +201012345678
+    return "+20" + cleaned;
   }
-  
-  // لو الرقم مكتوب مسبقاً بكود الدولة بدون علامة +
   if (cleaned.startsWith("20") && cleaned.length === 12) {
     return "+" + cleaned;
   }
-  
   return phone;
 }
 
@@ -98,13 +76,8 @@ async function handlePaymentRequest(req, res) {
     const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "branch2";
     const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.branch2;
 
-    console.log(`🚨 [SERVER CHECK] الفرع المستلم من الواجهة هو: [${selectedBranch}] (${branchDisplayName})`);
-
     const rawUserPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
-    
-    // 📱 تعديل رقم الهاتف وتثبيت (+2) في الخفاء لدعم فودافون كاش وباقي المحافظ
     const userPhone = formatEgyptianPhoneNumber(rawUserPhone);
-    console.log(`📱 [PHONE FORMAT CHECK] الرقم الأصلي: [${rawUserPhone}] -> الرقم المعدل: [${userPhone}]`);
 
     const payAmount = amount || "5";
 
@@ -167,10 +140,9 @@ app.get("/api/test-create-card", async (req, res) => {
   const secretKey = req.query.secret;
   
   if (!secretKey || secretKey !== process.env.TEST_SECRET_KEY) {
-    console.warn(`🚨 محاولة وصول غير مصرح بها للرابط التجريبي من IP: ${getClientPublicIP(req)}`);
     return res.status(403).json({ 
       success: false, 
-      message: "⚠️ غير مسموح لك بالوصول لهذا الرابط التجريبي. مفتاح الحماية غير صحيح أو مفقود." 
+      message: "⚠️ غير مسموح لك بالوصول لهذا الرابط التجريبي." 
     });
   }
 
@@ -197,7 +169,7 @@ app.get("/api/test-create-card", async (req, res) => {
 
       return res.json({
         success: true,
-        message: `✅ تم إضافة الكارت إلى الميكروتيك بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
+        message: `✅ تم إضافة الكارت إلى الميكروتيك بنجاح!`,
         data: result,
         successPageLink: `/success?merchant_order_id=${testTxId}&branch=${result.branchKey}`
       });
@@ -214,7 +186,6 @@ app.get("/api/test-create-card", async (req, res) => {
   }
 });
 
-// 🌟 مسار عرض صفحة المساهمة الاحترافية المدمجة
 app.get("/contribution-success", (req, res) => {
   const amount = req.query.amount || req.query.price || 150;
   const transactionId = req.query.tx || req.query.id || req.query.order || 'TRX-DEFAULT';
