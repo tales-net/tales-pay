@@ -84,7 +84,7 @@ async function sendTelegramMessage(data, isInitial = true) {
     const dateTimeStr = getFormattedDateTime();
 
     const branchName = data.branchName || data.branch_name || "حكايات نت رئيسي";
-    const branchKey = data.branch || "waitPage";
+    const branchKey = data.branch || data.branchKey || "main";
     const userPhone = data.phone || 
                         data.billing_data?.phone_number || 
                         data.customer?.phone_number || 
@@ -149,24 +149,22 @@ async function sendTelegramMessage(data, isInitial = true) {
                  `⏰ <b>المنطقة الزمنية:</b> <code>${userTimeZone}</code>\n` +
                  `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
 
-      // 🌟 إضافة أزرار القبول والرفض اليدوي لفرع صفحة الانتظار
-      if (branchKey === "waitPage") {
-        message += `\n\n<b>⚠️ رجاءً قم بالفحص ثم اضغط أحد الأزرار أدناه:</b>`;
-        replyMarkup = {
-          inline_keyboard: [
-            [
-              {
-                text: "✅ تأكيد وإصدار الكارت",
-                callback_data: `APPROVE|${txId}|${amountEGP}|${branchKey}`
-              },
-              {
-                text: "❌ رفض الطلب",
-                callback_data: `REJECT|${txId}`
-              }
-            ]
+      // 🌟 تفعيل الأزرار لجميع الفروع في الرسالة الأولية
+      message += `\n\n<b>⚠️ رجاءً قم بالفحص ثم اضغط أحد الأزرار أدناه:</b>`;
+      replyMarkup = {
+        inline_keyboard: [
+          [
+            {
+              text: "✅ تأكيد وإصدار الكارت",
+              callback_data: `APPROVE|${txId}|${amountEGP}|${branchKey}`
+            },
+            {
+              text: "❌ رفض الطلب",
+              callback_data: `REJECT|${txId}`
+            }
           ]
-        };
-      }
+        ]
+      };
 
     } else {
       const voucher = data.voucher_code || data.cardCode || "غير متوفر";
