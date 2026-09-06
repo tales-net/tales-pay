@@ -9,7 +9,11 @@ const { Server } = require("socket.io");
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
-const { sendTelegramMessage, sendSupportChatMessage } = require("./telegram");
+const { 
+  sendTelegramMessage, 
+  sendSupportChatMessage, 
+  handleTelegramWebhook 
+} = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
@@ -72,6 +76,13 @@ io.on("connection", (socket) => {
       console.log(`🔌 العميل [${clientId}] انضم لغرفته المخصصة.`);
     }
   });
+
+  socket.on("join_support", (clientId) => {
+    if (clientId) {
+      socket.join(clientId);
+      console.log(`🔌 العميل [${clientId}] متصل بالبث المباشر للدعم.`);
+    }
+  });
 });
 
 app.get("/", (req, res) => {
@@ -130,8 +141,12 @@ app.get("/api/support/messages/:clientId", (req, res) => {
   res.json({ success: true, messages });
 });
 
-// 🌟 مسار استقبال أحداث التليجرام (Telegram Webhook) لزر الرد
+// 🌟 مسار استقبال أحداث التليجرام (Telegram Webhook) مع دعم Socket.io للرد الآني
 app.post("/telegram-webhook", async (req, res) => {
+  if (typeof handleTelegramWebhook === "function") {
+    return handleTelegramWebhook(req, res, io);
+  }
+
   try {
     const update = req.body;
 
@@ -175,14 +190,15 @@ app.post("/telegram-webhook", async (req, res) => {
           time: new Date().toLocaleTimeString("ar-EG", { hour: '2-digit', minute: '2-digit' })
         };
 
-        // حفظ الرسالة بالذاكرة وإرسالها فوراً عبر Socket.io للعميل
+        // حفظ الرسالة بالذاكرة
         if (!global.supportMessagesMap.has(targetClientId)) {
           global.supportMessagesMap.set(targetClientId, []);
         }
         global.supportMessagesMap.get(targetClientId).push(msgObject);
 
-        // إرسال للعميل لحظياً عبر Socket.io
+        // إرسال للعميل لحظياً عبر Socket.io (تغطية الحادثتين للتوافق)
         io.to(targetClientId).emit("receive_support_message", msgObject);
+        io.to(targetClientId).emit("support_reply", msgObject);
 
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
           chat_id: update.message.chat.id,
@@ -197,6 +213,14 @@ app.post("/telegram-webhook", async (req, res) => {
     console.error("❌ Telegram Webhook Error:", err.message);
     res.sendStatus(500);
   }
+});
+
+// المسار الإضافي لاستقبال Webhook لتسهيل التوافق
+app.post("/api/telegram/webhook", (req, res) => {
+  if (typeof handleTelegramWebhook === "function") {
+    return handleTelegramWebhook(req, res, io);
+  }
+  return res.redirect(307, "/telegram-webhook");
 });
 
 async function handlePaymentRequest(req, res) {
