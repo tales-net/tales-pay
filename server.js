@@ -3,36 +3,31 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const path = require("path");
 const multer = require("multer");
-const axios = require("axios");
 const http = require("http");
 const { Server } = require("socket.io");
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
-const { 
-  sendTelegramMessage, 
-  sendSupportChatMessage, 
-  handleTelegramWebhook 
-} = require("./telegram");
+const { sendTelegramMessage, sendSupportChatMessage } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 
-const upload = multer({ storage: multer.memoryStorage() });
+// 🌟 استدعاء محرك الدعم المستقل
+const supportEngine = require("./chat_support");
 
+const upload = multer({ storage: multer.memoryStorage() });
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 🌟 إنشاء سيرفر HTTP وربطه بـ Socket.io
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*" }
-});
+const io = new Server(server, { cors: { origin: "*" } });
+
+// 🌟 تشغيل Socket.io عبر محرك الدعم
+supportEngine.initSocket(io);
 
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-
 const BRANCH_NAMES = {
   waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك",
   main: "حكايات نت رئيسي",
@@ -41,20 +36,13 @@ const BRANCH_NAMES = {
 };
 
 global.generatedCardsMap = global.generatedCardsMap || new Map();
-// 🌟 ذاكرة مؤقتة لتخزين رسائل الدعم الموجهة للعملاء (لضمان وصول الرسالة حتى لو أعاد العميل فتح الصفحة)
-global.supportMessagesMap = global.supportMessagesMap || new Map();
 
-// تنظيف دوري للذاكرة المؤقتة كل نصف ساعة
+// تنظيف دوري للذاكرة المؤقتة للكروت كل نصف ساعة
 setInterval(() => {
   const oneHourAgo = Date.now() - (60 * 60 * 1000);
   for (let [key, value] of global.generatedCardsMap.entries()) {
     if (value.createdAt && new Date(value.createdAt).getTime() < oneHourAgo) {
       global.generatedCardsMap.delete(key);
-    }
-  }
-  for (let [key, messages] of global.supportMessagesMap.entries()) {
-    if (messages.length > 0 && (Date.now() - messages[messages.length - 1].timestamp) > oneHourAgo) {
-      global.supportMessagesMap.delete(key);
     }
   }
 }, 30 * 60 * 1000);
@@ -64,26 +52,6 @@ app.use(express.json());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
-
-// 🌟 إعداد اتصالات Socket.io مع شات العميل
-io.on("connection", (socket) => {
-  console.log(`⚡ عميل متصل بالسوكت: ${socket.id}`);
-
-  // انضمام العميل لغرفته الخاصة برقم المعرف
-  socket.on("join_chat", (clientId) => {
-    if (clientId) {
-      socket.join(clientId);
-      console.log(`🔌 العميل [${clientId}] انضم لغرفته المخصصة.`);
-    }
-  });
-
-  socket.on("join_support", (clientId) => {
-    if (clientId) {
-      socket.join(clientId);
-      console.log(`🔌 العميل [${clientId}] متصل بالبث المباشر للدعم.`);
-    }
-  });
-});
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
@@ -98,128 +66,23 @@ function getClientPublicIP(req) {
   );
 }
 
-// 🌟 API استقبال رسائل الدعم المباشر (نصوص وصور)
-app.post("/api/support/message", upload.single("image"), async (req, res) => {
-  try {
-    const { message, txId, clientChatId, clientName } = req.body;
-    const file = req.file;
-    const clientId = clientChatId || txId || "GUEST_" + Date.now();
-
-    // إرسال البيانات للتليجرام مع زر الرد التفاعلي
-    await sendSupportChatMessage({ 
-      text: message, 
-      file, 
-      txId: clientId,
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: "💬 رد على العميل",
-              callback_data: `reply_${clientId}`
-            }
-          ]
-        ]
-      }
-    });
-
-    let botReply = "تم استلام رسالتك بنجاح، وسنقوم بالرد عليك فوراً.";
-    if (file) {
-      botReply = "✅ تم استلام صورة الإيصال! جاري التحقق من عملية الدفع وإصدار الكارت.";
-    }
-
-    return res.json({ success: true, reply: botReply, clientId });
-  } catch (err) {
-    console.error("❌ Support API Error:", err.message);
-    return res.status(500).json({ success: false, error: err.message });
-  }
+// 🌟 API الدعم المباشر (مُمَرَّر للمحرك المستقل)
+app.post("/api/support/message", upload.single("image"), (req, res) => {
+  return supportEngine.handleClientMessage(req, res, sendSupportChatMessage);
 });
 
-// 🌟 API للعميل لاسترجاع الرسائل الموجهة له (في حال انقطع السوكت)
 app.get("/api/support/messages/:clientId", (req, res) => {
-  const { clientId } = req.params;
-  const messages = global.supportMessagesMap.get(clientId) || [];
+  const messages = supportEngine.getStoredMessages(req.params.clientId);
   res.json({ success: true, messages });
 });
 
-// 🌟 مسار استقبال أحداث التليجرام (Telegram Webhook) مع دعم Socket.io للرد الآني
+// 🌟 مسار التليجرام ويبهوك (معالجة ردود الآدمن)
 app.post("/telegram-webhook", async (req, res) => {
-  if (typeof handleTelegramWebhook === "function") {
-    return handleTelegramWebhook(req, res, io);
-  }
-
-  try {
-    const update = req.body;
-
-    // 1. التعامل مع ضغطة زر "💬 رد على العميل"
-    if (update.callback_query) {
-      const callbackData = update.callback_query.data;
-      const adminChatId = update.callback_query.message.chat.id;
-
-      if (callbackData && callbackData.startsWith("reply_")) {
-        const targetClientId = callbackData.replace("reply_", "");
-
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
-          callback_query_id: update.callback_query.id
-        });
-
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          chat_id: adminChatId,
-          text: `✏️ اكتب ردك الآن للعميل صاحب المعرف:\n\`${targetClientId}\`\n\n*(تأكد من عمل Reply على هذه الرسالة أثناء الكتابة)*`,
-          parse_mode: "Markdown",
-          reply_markup: { force_reply: true }
-        });
-      }
-      return res.sendStatus(200);
-    }
-
-    // 2. التعامل مع رسالة الرد المكتوبة من الآدمن
-    if (update.message && update.message.reply_to_message) {
-      const replyText = update.message.text;
-      const originalText = update.message.reply_to_message.text || "";
-
-      const match = originalText.match(/`([^`]+)`/);
-      if (match && match[1]) {
-        const targetClientId = match[1];
-
-        console.log(`📩 الرد الموجه للعميل [${targetClientId}]: ${replyText}`);
-
-        const msgObject = {
-          sender: "support",
-          text: replyText,
-          timestamp: Date.now(),
-          time: new Date().toLocaleTimeString("ar-EG", { hour: '2-digit', minute: '2-digit' })
-        };
-
-        // حفظ الرسالة بالذاكرة
-        if (!global.supportMessagesMap.has(targetClientId)) {
-          global.supportMessagesMap.set(targetClientId, []);
-        }
-        global.supportMessagesMap.get(targetClientId).push(msgObject);
-
-        // إرسال للعميل لحظياً عبر Socket.io (تغطية الحادثتين للتوافق)
-        io.to(targetClientId).emit("receive_support_message", msgObject);
-        io.to(targetClientId).emit("support_reply", msgObject);
-
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          chat_id: update.message.chat.id,
-          text: `✅ تم إرسال الرد بنجاح إلى العميل (\`${targetClientId}\`)`,
-          parse_mode: "Markdown"
-        });
-      }
-    }
-
-    res.sendStatus(200);
-  } catch (err) {
-    console.error("❌ Telegram Webhook Error:", err.message);
-    res.sendStatus(500);
-  }
+  await supportEngine.handleTelegramReply(req.body);
+  res.sendStatus(200);
 });
 
-// المسار الإضافي لاستقبال Webhook لتسهيل التوافق
 app.post("/api/telegram/webhook", (req, res) => {
-  if (typeof handleTelegramWebhook === "function") {
-    return handleTelegramWebhook(req, res, io);
-  }
   return res.redirect(307, "/telegram-webhook");
 });
 
@@ -354,6 +217,7 @@ app.get("/api/test-create-card", async (req, res) => {
   }
 });
 
+// 🌟 مسار عرض صفحة المساهمة الاحترافية المدمجة
 app.get("/contribution-success", (req, res) => {
   const amount = req.query.amount || req.query.price || 150;
   const transactionId = req.query.tx || req.query.id || req.query.order || 'TRX-DEFAULT';
@@ -523,7 +387,6 @@ app.get("/success", (req, res) => {
             a.click();
           }
         </script>
-        <script src="/chat-widget.js"></script>
       </body>
     </html>
   `);
@@ -561,7 +424,6 @@ app.get("/fail", (req, res) => {
 
 app.use("/", webhookRouter);
 
-// 🌟 تشغيل السيرفر باستخدام server.listen لتفعيل Socket.io
 server.listen(PORT, () => {
-  console.log(`🚀 Server with WebSockets running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
