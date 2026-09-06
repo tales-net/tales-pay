@@ -2,25 +2,26 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const path = require("path");
-const multer = require("multer"); // 👈 استيراد مكتبة رفع الملفات
+const multer = require("multer");
+const axios = require("axios");
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
-const { sendTelegramMessage, sendSupportChatMessage } = require("./telegram"); // 👈 استيراد sendSupportChatMessage
+const { sendTelegramMessage, sendSupportChatMessage } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 
-// إعداد Multer مع تخزين الملفات في الذاكرة (Memory Storage)
 const upload = multer({ storage: multer.memoryStorage() });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 const BRANCH_NAMES = {
-  waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك", // 👈 إضافة الفرع الافتراضي الجديد هنا
+  waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك",
   main: "حكايات نت رئيسي",
   branch2: "حكايات نت فرع ثاني",
   branch3: "حكايات نت فرع ثالث"
@@ -60,13 +61,27 @@ function getClientPublicIP(req) {
 // 🌟 API استقبال رسائل الدعم المباشر (نصوص وصور)
 app.post("/api/support/message", upload.single("image"), async (req, res) => {
   try {
-    const { message, txId } = req.body;
+    const { message, txId, clientChatId, clientName } = req.body;
     const file = req.file;
+    const clientId = clientChatId || txId || "GUEST_" + Date.now();
 
-    // إرسال البيانات للتليجرام
-    await sendSupportChatMessage({ text: message, file, txId });
+    // إرسال البيانات للتليجرام مع زر الرد التفاعلي
+    await sendSupportChatMessage({ 
+      text: message, 
+      file, 
+      txId: clientId,
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "💬 رد على العميل",
+              callback_data: `reply_${clientId}`
+            }
+          ]
+        ]
+      }
+    });
 
-    // الرد التلقائي على العميل في الواجهة
     let botReply = "تم استلام رسالتك بنجاح، وسنقوم بالرد عليك فوراً.";
     if (file) {
       botReply = "✅ تم استلام صورة الإيصال! جاري التحقق من عملية الدفع وإصدار الكارت.";
@@ -76,6 +91,59 @@ app.post("/api/support/message", upload.single("image"), async (req, res) => {
   } catch (err) {
     console.error("❌ Support API Error:", err.message);
     return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 🌟 مسار استقبال أحداث التليجرام (Telegram Webhook) لزر الرد
+app.post("/telegram-webhook", async (req, res) => {
+  try {
+    const update = req.body;
+
+    // 1. التعامل مع ضغطة زر "💬 رد على العميل"
+    if (update.callback_query) {
+      const callbackData = update.callback_query.data;
+      const adminChatId = update.callback_query.message.chat.id;
+
+      if (callbackData && callbackData.startsWith("reply_")) {
+        const targetClientId = callbackData.replace("reply_", "");
+
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+          callback_query_id: update.callback_query.id
+        });
+
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          chat_id: adminChatId,
+          text: `✏️ اكتب ردك الآن للعميل صاحب المعرف:\n\`${targetClientId}\`\n\n*(تأكد من عمل Reply على هذه الرسالة أثناء الكتابة)*`,
+          parse_mode: "Markdown",
+          reply_markup: { force_reply: true }
+        });
+      }
+      return res.sendStatus(200);
+    }
+
+    // 2. التعامل مع رسالة الرد المكتوبة من الآدمن
+    if (update.message && update.message.reply_to_message) {
+      const replyText = update.message.text;
+      const originalText = update.message.reply_to_message.text || "";
+
+      const match = originalText.match(/`([^`]+)`/);
+      if (match && match[1]) {
+        const targetClientId = match[1];
+
+        console.log(`📩 الرد الموجه للعميل [${targetClientId}]: ${replyText}`);
+
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          chat_id: update.message.chat.id,
+          text: `✅ تم إرسال الرد بنجاح إلى العميل (\`${targetClientId}\`)`,
+          parse_mode: "Markdown"
+        });
+      }
+    }
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("❌ Telegram Webhook Error:", err.message);
+    res.sendStatus(500);
   }
 });
 
@@ -210,7 +278,6 @@ app.get("/api/test-create-card", async (req, res) => {
   }
 });
 
-// 🌟 مسار عرض صفحة المساهمة الاحترافية المدمجة
 app.get("/contribution-success", (req, res) => {
   const amount = req.query.amount || req.query.price || 150;
   const transactionId = req.query.tx || req.query.id || req.query.order || 'TRX-DEFAULT';
@@ -261,7 +328,7 @@ app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "";
   const queryBranch = req.query.branch || "";
   
-  let inferredBranch = "waitPage"; // التعيين الافتراضي
+  let inferredBranch = "waitPage";
   const upperTx = transactionId.toUpperCase();
   if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
   else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
