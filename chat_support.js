@@ -18,7 +18,24 @@ global.telegramToClientMap = telegramToClientMap;
 function initSocket(io) {
   io.on("connection", (socket) => {
     socket.on("join_chat", (clientId) => {
-      if (clientId) socket.join(clientId);
+      if (clientId) {
+        socket.join(clientId);
+        
+        // إرسال رسالة ترحيبية تلقائية إذا كانت المحادثة جديدة ولا توجد رسائل سابقة
+        if (!chatSessions.has(clientId) || chatSessions.get(clientId).length === 0) {
+          const welcomeMsg = {
+            sender: "admin",
+            text: "مرحباً بك في شبكة حكايات 🌐\nكيف يمكننا مساعدتك اليوم؟ يمكنك إرسال استفسارك أو رفع صورة المشكلة وسيقوم فريق الدعم بالرد عليك في أقرب وقت.",
+            timestamp: new Date()
+          };
+          
+          if (!chatSessions.has(clientId)) {
+            chatSessions.set(clientId, []);
+          }
+          chatSessions.get(clientId).push(welcomeMsg);
+          socket.emit("new_message", welcomeMsg);
+        }
+      }
     });
   });
   global.ioInstance = io;
@@ -95,7 +112,7 @@ async function sendSupportChatMessage(clientId, messageText, imageBuffer = null)
     const replyMarkup = {
       inline_keyboard: [
         [
-          { text: "✍️ للرد (اكتب /reply وإليك المعرف)", callback_data: `info_${clientId}` },
+          { text: "✍️ أكتب الرد", callback_data: `reply_${clientId}` },
           { text: "🔒 إغلاق الشات", callback_data: `close_${clientId}` }
         ]
       ]
@@ -132,16 +149,40 @@ async function sendSupportChatMessage(clientId, messageText, imageBuffer = null)
   }
 }
 
-// معالجة ردود الآدمن من تليجرام (سواء عبر الضغط على أزرار Callback أو الرد النصي Reply)
+// معالجة ردود الآدمن من تليجرام (سواء عبر الأزرار أو الرد النصي)
 async function handleTelegramReply(body) {
   try {
-    // 1. التعامل مع ضغط الأزرار (Callback Query) مثل زر إغلاق الشات
+    // 1. التعامل مع ضغط الأزرار (Callback Query)
     if (body.callback_query) {
       const callbackQuery = body.callback_query;
       const data = callbackQuery.data;
       const chatId = callbackQuery.message.chat.id;
       const messageId = callbackQuery.message.message_id;
+      const originalMessage = callbackQuery.message;
 
+      // أ) الضغط على زر "أكتب الرد" -> تفعيل خاصية Force Reply لإجبار تليجرام على فتح خانة الرد
+      if (data.startsWith("reply_")) {
+        const clientId = data.replace("reply_", "");
+        
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+          callback_query_id: callbackQuery.id,
+          text: "✍️ اكتب ردك الآن في المحادثة..."
+        });
+
+        // إرسال رسالة توجيهية للآدمن مع تفعيل Force Reply وربطها بمعرف الكلاينت في النص المخفي أو عن طريق الـ Reply
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          chat_id: chatId,
+          text: `👉 أكتب ردك الآن للعميل (معرف العميل: ${clientId}):\n(قم بالرد مباشرة على هذه الرسالة أو اكتب رسالتك)`,
+          reply_to_message_id: originalMessage.message_id,
+          reply_markup: {
+            force_reply: true,
+            input_field_placeholder: `اكتب الرد للعميل ${clientId}...`
+          }
+        });
+        return;
+      }
+
+      // ب) الضغط على زر "إغلاق الشات"
       if (data.startsWith("close_")) {
         const clientId = data.replace("close_", "");
         chatStatuses.set(clientId, "closed");
@@ -166,26 +207,33 @@ async function handleTelegramReply(body) {
       return;
     }
 
-    // 2. التعامل مع ردود الآدمن النصية (سواء بالرد مباشرة على الرسالة Reply أو بكتابة المعرف)
+    // 2. التعامل مع ردود الآدمن النصية أو الصور المرسلة من تليجرام
     const message = body.message;
-    if (!message || !message.text) return;
+    if (!message) return;
 
     let clientId = null;
-    let replyText = message.text;
+    let replyText = message.text || message.caption || "";
 
-    // إذا كان الآدمن قام بعمل Reply على رسالة سابقة في التليجرام
+    // أ) إذا قام الآدمن بالرد مباشرة (Reply) على رسالة التليجرام الخاصة بالعميل
     if (message.reply_to_message) {
       const repliedMsgId = String(message.reply_to_message.message_id);
       clientId = telegramToClientMap.get(repliedMsgId);
+
+      // إذا لم يتم العثور عليها مباشرة، نحاول استخراج معرف العميل من نص الرسالة الأصلية التي رد عليها الآدمن
+      if (!clientId && message.reply_to_message.text) {
+        const match = message.reply_to_message.text.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
+        if (match) clientId = match[1];
+      }
+      if (!clientId && message.reply_to_message.caption) {
+        const match = message.reply_to_message.caption.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
+        if (match) clientId = match[1];
+      }
     }
 
-    // طريقة بديلة: إذا بدأ النص بـ /reply [clientId] [النص]
-    if (!clientId && replyText.startsWith("/reply")) {
-      const parts = replyText.split(" ");
-      if (parts.length >= 3) {
-        clientId = parts[1];
-        replyText = parts.slice(2).join(" ");
-      }
+    // ب) استخراج الكلاينت آي دي لو كان الرد من خلال رسالة الـ Force Reply التي أرسناها قبل قليل
+    if (!clientId && message.reply_to_message && message.reply_to_message.text) {
+      const match = message.reply_to_message.text.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
+      if (match) clientId = match[1];
     }
 
     if (clientId) {
@@ -201,9 +249,24 @@ async function handleTelegramReply(body) {
         chatSessions.set(clientId, []);
       }
 
+      let adminImageUrl = null;
+
+      // دعم إرسال صورة من الآدمن للعميل عبر الشات
+      if (message.photo && message.photo.length > 0) {
+        const photoFileId = message.photo[message.photo.length - 1].file_id;
+        try {
+          const fileRes = await axios.get(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${photoFileId}`);
+          const filePath = fileRes.data.result.file_path;
+          adminImageUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+        } catch (imgErr) {
+          console.error("❌ خطأ في جلب صورة رد الآدمن:", imgErr.message);
+        }
+      }
+
       const adminMsgObj = {
         sender: "admin",
         text: replyText,
+        image: adminImageUrl,
         timestamp: new Date()
       };
 
@@ -222,7 +285,7 @@ async function handleTelegramReply(body) {
       });
     }
   } catch (err) {
-    console.error("❌ خطأ في معالجة رد تليجرام:", err.message);
+    console.error("❌ خطأ في معالجة رد المحادثة:", err.message);
   }
 }
 
