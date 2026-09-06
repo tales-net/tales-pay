@@ -101,7 +101,7 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           const txId = "${transactionId}";
           let attempts = 0;
 
-          // الانضمام لغرفة خاصة برقم المعاملة لتلقي الاستجابة الفورية عند الضغط في التليجرть
+          // الانضمام لغرفة خاصة برقم المعاملة لتلقي الاستجابة الفورية عند الضغط في التليجرام
           if (txId && txId !== "غير محدد") {
             socket.emit('join-transaction', txId);
           }
@@ -110,7 +110,7 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           socket.on('telegram-action-result', (response) => {
             if (response.success) {
               if (response.isContribution) {
-                // إذا تم اختيار مساهمة، يتم استبدال الصفحة بصفحة المساهمة مباشرة
+                // إذا تم اختيار مساهمة، يتم استبدال محتوى الصفحة بالكامل بصفحة المساهمة القادمة من السيرفر
                 document.open();
                 document.write(response.htmlContent);
                 document.close();
