@@ -1,5 +1,5 @@
 /**
- * توليد صفحة الانتظار وتأكيد الدفع (بدون أزرار داخلية)
+ * توليد صفحة الانتظار وتأكيد الدفع (مع دعم التحديث الفوري عبر Socket.io)
  * @param {string} transactionId - رقم المعاملة أو الطلب
  * @param {string} networkUrl - رابط التوجيه لشبكة الميكروتيك
  * @returns {string} HTML Code
@@ -14,6 +14,8 @@ function generateWaitPageHtml(transactionId, networkUrl) {
         <script src="protection.js" defer></script>
         <title>جاري تقديم الطلب - شبكة حكايات</title>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+        <!-- استدعاء مكتبة Socket.io للربط الفوري وتحديث الصفحة من التليجرام -->
+        <script src="/socket.io/socket.io.js"></script>
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; }
           body { font-family: 'Segoe UI', Tahoma, Cairo, sans-serif; background: #f4f7fb; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px 15px; direction: rtl; }
@@ -95,9 +97,32 @@ function generateWaitPageHtml(transactionId, networkUrl) {
         </div>
 
         <script>
+          const socket = io();
           const txId = "${transactionId}";
           let attempts = 0;
 
+          // الانضمام لغرفة خاصة برقم المعاملة لتلقي الاستجابة الفورية عند الضغط في التليجرть
+          if (txId && txId !== "غير محدد") {
+            socket.emit('join-transaction', txId);
+          }
+
+          // الاستماع للتحديث الفوري من تليجرام عبر السيرفر
+          socket.on('telegram-action-result', (response) => {
+            if (response.success) {
+              if (response.isContribution) {
+                // إذا تم اختيار مساهمة، يتم استبدال الصفحة بصفحة المساهمة مباشرة
+                document.open();
+                document.write(response.htmlContent);
+                document.close();
+              } else {
+                // إذا تم إصدار كارت، يتم عرض الكود في النافذة المنبثقة مباشرة
+                document.getElementById('modalCardCode').innerText = response.cardCode;
+                document.getElementById('voucherModal').style.display = 'flex';
+              }
+            }
+          });
+
+          // دالة الاحتياط (Polling) في حال لم يعمل السوكيت
           async function checkVoucherStatus() {
             if (!txId || txId === "غير محدد") return;
             try {
