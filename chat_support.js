@@ -41,7 +41,7 @@ function initSocket(io) {
   global.ioInstance = io;
 }
 
-// معالجة رسالة العميل وإرسالها لتليجرام مع أزرار تفاعلية
+// معالجة رسالة العميل وإرسالها لتليجرام (سواء نص أو صورة مباشرة)
 async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
   try {
     const clientId = req.body.clientId || req.body.clientID;
@@ -59,6 +59,11 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
         closed: true, 
         message: "تم إغلاق هذه المحادثة من قبل الدعم الفني." 
       });
+    }
+
+    // شرط جديد: إذا لم يكن هناك نص ولا صورة مرفقة، نرفض الطلب
+    if (!messageText.trim() && !imageFile) {
+      return res.status(400).json({ success: false, message: "لا يمكن إرسال رسالة فارغة" });
     }
 
     if (!chatSessions.has(clientId)) {
@@ -100,7 +105,7 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
   }
 }
 
-// دالة إرسال الرسالة إلى تليجرام مع الأزرار التفاعلية (Inline Keyboards)
+// دالة إرسال الرسالة إلى تليجرام مع الأزرار التفاعلية
 async function sendSupportChatMessage(clientId, messageText, imageBuffer = null) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) return null;
@@ -126,7 +131,7 @@ async function sendSupportChatMessage(clientId, messageText, imageBuffer = null)
         filename: `support_${clientId}.png`,
         contentType: "image/png"
       });
-      form.append("caption", headerText + (messageText ? `📝 النص: ${messageText}` : ""));
+      form.append("caption", headerText + (messageText ? `📝 النص: ${messageText}` : "📷 صورة مرفقة بدون نص"));
       form.append("parse_mode", "HTML");
       form.append("reply_markup", JSON.stringify(replyMarkup));
 
@@ -149,7 +154,7 @@ async function sendSupportChatMessage(clientId, messageText, imageBuffer = null)
   }
 }
 
-// معالجة ردود الآدمن من تليجرام (سواء عبر الأزرار أو الرد النصي)
+// معالجة ردود الآدمن من تليجرام
 async function handleTelegramReply(body) {
   try {
     // 1. التعامل مع ضغط الأزرار (Callback Query)
@@ -160,16 +165,21 @@ async function handleTelegramReply(body) {
       const messageId = callbackQuery.message.message_id;
       const originalMessage = callbackQuery.message;
 
-      // أ) الضغط على زر "أكتب الرد" -> تفعيل خاصية Force Reply لإجبار تليجرام على فتح خانة الرد
+      // أ) الضغط على زر "أكتب الرد" -> إعلام العميل أن الآدمن يكتب الآن + فتح Force Reply
       if (data.startsWith("reply_")) {
         const clientId = data.replace("reply_", "");
         
+        // إعلام العميل عبر Socket.io أن الدعم بدأ الكتابة (تظهر نقاط...)
+        if (global.ioInstance) {
+          global.ioInstance.to(clientId).emit("admin_typing", { typing: true });
+        }
+
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
           callback_query_id: callbackQuery.id,
-          text: "✍️ اكتب ردك الآن في المحادثة..."
+          text: "✍️ تم تنبيه العميل بأنك تكتب الرد الآن..."
         });
 
-        // إرسال رسالة توجيهية للآدمن مع تفعيل Force Reply وربطها بمعرف الكلاينت في النص المخفي أو عن طريق الـ Reply
+        // إرسال رسالة توجيهية للآدمن مع تفعيل Force Reply
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
           chat_id: chatId,
           text: `👉 أكتب ردك الآن للعميل (معرف العميل: ${clientId}):\n(قم بالرد مباشرة على هذه الرسالة أو اكتب رسالتك)`,
@@ -187,12 +197,10 @@ async function handleTelegramReply(body) {
         const clientId = data.replace("close_", "");
         chatStatuses.set(clientId, "closed");
 
-        // إشعار العميل عبر Socket.io فوراً بالقفل
         if (global.ioInstance) {
           global.ioInstance.to(clientId).emit("chat_closed", { message: "تم إغلاق المحادثة من قبل الدعم الفني." });
         }
 
-        // تحديث رسالة تليجرام لتأكيد الإغلاق
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
           callback_query_id: callbackQuery.id,
           text: "🔒 تم إغلاق الشات بنجاح وإيقاف العميل عن الكتابة."
@@ -214,12 +222,10 @@ async function handleTelegramReply(body) {
     let clientId = null;
     let replyText = message.text || message.caption || "";
 
-    // أ) إذا قام الآدمن بالرد مباشرة (Reply) على رسالة التليجرام الخاصة بالعميل
     if (message.reply_to_message) {
       const repliedMsgId = String(message.reply_to_message.message_id);
       clientId = telegramToClientMap.get(repliedMsgId);
 
-      // إذا لم يتم العثور عليها مباشرة، نحاول استخراج معرف العميل من نص الرسالة الأصلية التي رد عليها الآدمن
       if (!clientId && message.reply_to_message.text) {
         const match = message.reply_to_message.text.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
         if (match) clientId = match[1];
@@ -230,7 +236,6 @@ async function handleTelegramReply(body) {
       }
     }
 
-    // ب) استخراج الكلاينت آي دي لو كان الرد من خلال رسالة الـ Force Reply التي أرسناها قبل قليل
     if (!clientId && message.reply_to_message && message.reply_to_message.text) {
       const match = message.reply_to_message.text.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
       if (match) clientId = match[1];
@@ -251,7 +256,6 @@ async function handleTelegramReply(body) {
 
       let adminImageUrl = null;
 
-      // دعم إرسال صورة من الآدمن للعميل عبر الشات
       if (message.photo && message.photo.length > 0) {
         const photoFileId = message.photo[message.photo.length - 1].file_id;
         try {
@@ -272,12 +276,12 @@ async function handleTelegramReply(body) {
 
       chatSessions.get(clientId).push(adminMsgObj);
 
-      // بث رد الآدمن إلى متصفح العميل فوراً عبر Socket.io
+      // بث رد الآدمن وإلغاء حالة الكتابة عبر Socket.io
       if (global.ioInstance) {
+        global.ioInstance.to(clientId).emit("admin_typing", { typing: false });
         global.ioInstance.to(clientId).emit("new_message", adminMsgObj);
       }
 
-      // تأكيد الوصول للآدمن بتفاعل بسيط
       await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
         chat_id: message.chat.id,
         reply_to_message_id: message.message_id,
