@@ -35,8 +35,20 @@ const BRANCH_NAMES = {
 
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
-// تهيئة Socket.io للدعم المباشر
+// ربط io بـ Express ليتم استخدامه في ملفات الراوتر
+app.set('io', io);
+
+// تهيئة Socket.io للدعم المباشر ومعالجة انضمام العميل لغرفة المعاملة
 chatSupport.initSocket(io);
+
+io.on('connection', (socket) => {
+  // استقبال طلب انضمام صفحة الانتظار لررفة المعاملة الخاصة بها
+  socket.on('join-transaction', (txId) => {
+    if (txId) {
+      socket.join(txId);
+    }
+  });
+});
 
 // إعداد Multer لاستقبال الصور والملفات المرفوعة في الشات
 const upload = multer();
@@ -99,7 +111,7 @@ app.post('/telegram-webhook', async (req, res) => {
 });
 
 // ==========================================
-// 🕹️ مسار معالجة إصدار الكارت يدوياً عبر زر التليجرام
+// 🕹️ مسار معالجة إصدار الكارت يدوياً عبر زر التليجرام (احتياطي)
 // ==========================================
 app.get('/api/manual-create-card', async (req, res) => {
   try {
@@ -108,11 +120,9 @@ app.get('/api/manual-create-card', async (req, res) => {
     const branchKey = branch || 'main';
 
     if (numAmount > 100) {
-      // إذا كان المبلغ مساهمة، يوجه مباشرة لصفحة المساهمة
       return res.send(generateContributionHtmlPage(numAmount, tx));
     }
 
-    // توليد الكارت عبر ميكروتيك للرقم والفرع المحدد
     const result = await processPaymentAndCreateCard(numAmount, branchKey, tx);
 
     if (result.isContribution) {
@@ -165,7 +175,7 @@ async function handlePaymentRequest(req, res) {
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
-    const transactionId = "TX_" + Date.now(); // توليد رقم معاملة فريد افتراضي
+    const transactionId = "TX_" + Date.now();
 
     const paymentPayload = {
       phone: userPhone,
@@ -200,7 +210,7 @@ async function handlePaymentRequest(req, res) {
       await sendTelegramMessage(paymentPayload, true);
     }
 
-    // ✅ إرسال الأزرار لتليجرام يدوياً وفورياً قبل الانتقال لصفحة الانتظار
+    // إرسال الأزرار التفاعلية لتليجرام
     if (typeof sendTelegramManualButtons === "function") {
       await sendTelegramManualButtons({
         phone: userPhone,
@@ -219,7 +229,6 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      // ✅ التوجيه الافتراضي لملف waitPage.js وعرض صفحة الانتظار برقم المعاملة
       return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
     }
   } catch (err) {
@@ -334,7 +343,6 @@ app.get("/success", async (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
   const queryBranch = req.query.branch || "branch2";
 
-  // ✅ إرسال الإشعار والأزرار لتليجرام أيضاً عند الدخول لرابط النجاح/الانتظار المباشر
   if (typeof sendTelegramManualButtons === "function") {
     await sendTelegramManualButtons({
       phone: req.query.phone || "غير محدد",
@@ -343,7 +351,6 @@ app.get("/success", async (req, res) => {
     }, transactionId);
   }
 
-  // استدعاء صفحة الانتظار الافتراضية من waitPage.js وعرضها مباشرة للعميل
   return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
 });
 
