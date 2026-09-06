@@ -176,7 +176,7 @@ async function sendTelegramMessage(data, isInitial = true) {
 }
 
 /**
- * 2. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام
+ * 2. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام (مصلحة بالكامل)
  */
 async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   try {
@@ -193,6 +193,7 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     const form = new FormData();
     form.append("chat_id", CHAT_ID);
     
+    // إرفاق الصورة كـ Buffer مع تحديد اسم الملف ونوع الـ Content-Type بوضوح
     form.append("photo", imageBuffer, {
       filename: `card_${paymentDetails.transactionId || Date.now()}.png`,
       contentType: "image/png"
@@ -209,6 +210,7 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     form.append("caption", caption);
     form.append("parse_mode", "HTML");
 
+    // إرسال الطلب مع إضافة ترويسات الـ Form Data المناسبة
     const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
       headers: {
         ...form.getHeaders()
@@ -226,50 +228,7 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   }
 }
 
-/**
- * 3. 💬 إرسال رسائل الدردشة المباشرة (الدعم الفني) إلى التليجرام
- */
-async function sendSupportChatMessage(clientId, messageText, imageBuffer = null) {
-  try {
-    if (!BOT_TOKEN || !CHAT_ID) {
-      console.warn("⚠️ Telegram Bot Token or Chat ID is missing for support chat!");
-      return null;
-    }
-
-    const headerText = `💬 <b>رسالة دعم جديدة من العميل</b>\n` +
-                       `🆔 معرف العميل: <code>${clientId}</code>\n` +
-                       `----------------------------------------\n`;
-
-    if (imageBuffer) {
-      const form = new FormData();
-      form.append("chat_id", CHAT_ID);
-      form.append("photo", imageBuffer, {
-        filename: `support_${clientId}_${Date.now()}.png`,
-        contentType: "image/png"
-      });
-      form.append("caption", headerText + (messageText ? `📝 النص: ${messageText}` : ""));
-      form.append("parse_mode", "HTML");
-
-      const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
-        headers: { ...form.getHeaders() }
-      });
-      return response.data?.result?.message_id;
-    } else {
-      const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        chat_id: CHAT_ID,
-        text: headerText + (messageText || ""),
-        parse_mode: "HTML"
-      });
-      return response.data?.result?.message_id;
-    }
-  } catch (err) {
-    console.error("❌ [Support Telegram Error]:", err.response?.data || err.message);
-    return null;
-  }
-}
-
 module.exports = {
   sendTelegramMessage,
-  sendVoucherWithCardImage,
-  sendSupportChatMessage
+  sendVoucherWithCardImage
 };
