@@ -229,12 +229,24 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
 /**
  * 3. 💬 إرسال رسائل وسائط شات الدعم المباشر من العميل للتليجرام
  */
-async function sendSupportChatMessage({ text, file, txId }) {
+async function sendSupportChatMessage({ text, file, txId, reply_markup }) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) {
       console.warn("⚠️ [Telegram Error] BOT_TOKEN أو CHAT_ID مفقود!");
       return;
     }
+
+    // بناء الزر التفاعلي افتراضياً إن لم يُمرر
+    const defaultReplyMarkup = reply_markup || {
+      inline_keyboard: [
+        [
+          {
+            text: "💬 رد على العميل",
+            callback_data: `reply_${txId || "GUEST"}`
+          }
+        ]
+      ]
+    };
 
     if (file) {
       const form = new FormData();
@@ -243,19 +255,21 @@ async function sendSupportChatMessage({ text, file, txId }) {
         filename: file.originalname || "user_upload.png",
         contentType: file.mimetype || "image/png"
       });
-      const caption = `💬 <b>رسالة دعم عميل (صورة إيصال)</b>\n🆔 رقم العملية/المعاملة: <code>${txId || 'عام'}</code>\n📝 النص المُرفق: ${text || 'بدون نص'}`;
+      const caption = `💬 <b>رسالة دعم عميل (صورة إيصال)</b>\n🆔 المعرف: <code>${txId || 'عام'}</code>\n📝 النص المُرفق: ${text || 'بدون نص'}`;
       form.append("caption", caption);
       form.append("parse_mode", "HTML");
+      form.append("reply_markup", JSON.stringify(defaultReplyMarkup));
 
       await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
         headers: { ...form.getHeaders() }
       });
     } else if (text) {
-      const message = `💬 <b>رسالة دعم جديدة من العميل:</b>\n🆔 رقم العملية/المعاملة: <code>${txId || 'عام'}</code>\n\n📝 الرسالة:\n${text}`;
+      const message = `💬 <b>رسالة دعم جديدة من العميل:</b>\n🆔 المعرف: <code>${txId || 'عام'}</code>\n\n📝 الرسالة:\n${text}`;
       await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
         chat_id: CHAT_ID,
         text: message,
-        parse_mode: "HTML"
+        parse_mode: "HTML",
+        reply_markup: defaultReplyMarkup
       });
     }
   } catch (err) {
@@ -263,8 +277,70 @@ async function sendSupportChatMessage({ text, file, txId }) {
   }
 }
 
+/**
+ * 4. 🔄 معالج الويب هوك الخاص بالتليجرام (Telegram Webhook Handler)
+ */
+async function handleTelegramWebhook(req, res) {
+  try {
+    const update = req.body;
+
+    // 1. التعامل مع ضغطة زر "💬 رد على العميل"
+    if (update.callback_query) {
+      const callbackData = update.callback_query.data;
+      const adminChatId = update.callback_query.message.chat.id;
+
+      if (callbackData && callbackData.startsWith("reply_")) {
+        const targetClientId = callbackData.replace("reply_", "");
+
+        // إشعار التليجرام باستلام الضغطة ليزيل مؤشر التحميل
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+          callback_query_id: update.callback_query.id
+        });
+
+        // إرسال تعليمات الرد مع تفعيل ForceReply
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          chat_id: adminChatId,
+          text: `✏️ اكتب ردك الآن للعميل صاحب المعرف:\n\`${targetClientId}\`\n\n*(تأكد من عمل Reply على هذه الرسالة أثناء الكتابة)*`,
+          parse_mode: "Markdown",
+          reply_markup: {
+            force_reply: true
+          }
+        });
+      }
+      return res.sendStatus(200);
+    }
+
+    // 2. التعامل مع رسالة الرد المكتوبة من الآدمن
+    if (update.message && update.message.reply_to_message) {
+      const replyText = update.message.text;
+      const originalText = update.message.reply_to_message.text || "";
+
+      // استخراج targetClientId بين العلامتين ``
+      const match = originalText.match(/`([^`]+)`/);
+      if (match && match[1]) {
+        const targetClientId = match[1];
+
+        console.log(`📩 [SUPPORT REPLY] الرد الموجه للعميل [${targetClientId}]: ${replyText}`);
+
+        // تأكيد إرسال الرد في شات التليجرام
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          chat_id: update.message.chat.id,
+          text: `✅ تم تسليم الرد بنجاح للعميل (\`${targetClientId}\`)`,
+          parse_mode: "Markdown"
+        });
+      }
+    }
+
+    return res.sendStatus(200);
+  } catch (err) {
+    console.error("❌ [Telegram Webhook Error]:", err.response?.data || err.message);
+    return res.sendStatus(500);
+  }
+}
+
 module.exports = {
   sendTelegramMessage,
   sendVoucherWithCardImage,
-  sendSupportChatMessage
+  sendSupportChatMessage,
+  handleTelegramWebhook
 };
