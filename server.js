@@ -269,7 +269,10 @@ app.post("/api/disable-queue", async (req, res) => {
 });
 
 app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "";
+  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
+  
+  // استدعاء صفحة الانتظار الافتراضية من waitPage.js وعرضها مباشرة للعميل
+  return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
   const queryBranch = req.query.branch || "";
   
   let inferredBranch = "waitPage";
