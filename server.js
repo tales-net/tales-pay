@@ -13,6 +13,7 @@ const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
+const { generateWaitPageHtml } = require('./waitPage'); // استدعاء ملف صفحة الانتظار
 
 // استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
@@ -71,20 +72,16 @@ function getClientPublicIP(req) {
 // ==========================================
 // 💬 مسارات الدعم الفني المباشر (Chat Support API)
 // ==========================================
-
-// 1. استقبال رسالة أو صوره من العميل وإرسالها لتليجرام
 app.post('/api/support/message', upload.single('image'), (req, res) => {
   chatSupport.handleClientMessage(req, res, chatSupport.sendSupportChatMessage);
 });
 
-// 2. جلب الرسائل السابقة للعميل عند فتح النافذة
 app.get('/api/support/messages/:clientId', (req, res) => {
   const clientId = req.params.clientId;
   const messages = chatSupport.getStoredMessages(clientId);
   res.json({ success: true, messages });
 });
 
-// 3. مسار استلام التحديثات من تليجرام (Webhook للردود وأزرار الإغلاق)
 app.post('/telegram-webhook', async (req, res) => {
   await chatSupport.handleTelegramReply(req.body);
   res.sendStatus(200);
@@ -93,7 +90,6 @@ app.post('/telegram-webhook', async (req, res) => {
 // ==========================================
 // 💳 مسارات المدفوعات وباقي الخدمة
 // ==========================================
-
 async function handlePaymentRequest(req, res) {
   try {
     const data = { ...req.query, ...req.body };
@@ -116,6 +112,7 @@ async function handlePaymentRequest(req, res) {
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
+    const transactionId = "TX_" + Date.now(); // توليد رقم معاملة فريد افتراضي
 
     const paymentPayload = {
       phone: userPhone,
@@ -159,6 +156,9 @@ async function handlePaymentRequest(req, res) {
       return res.redirect(result.url);
     } else if (result.type === "html") {
       return res.send(result.content);
+    } else {
+      // إرجاع صفحة الانتظار الافتراضية في حالة الدفع الافتراضي
+      return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
     }
   } catch (err) {
     console.error("❌ خطأ في معالجة طلب الدفع:", err.response?.data || err.message);
@@ -428,7 +428,6 @@ app.get("/fail", (req, res) => {
 
 app.use("/", webhookRouter);
 
-// استخدام server.listen بدلاً من app.listen لضمان عمل Socket.io بشكل صحيح
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
