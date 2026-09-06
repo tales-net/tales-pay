@@ -6,7 +6,7 @@
     localStorage.setItem("hikayat_client_id", clientId);
   }
 
-  // حقن تصميم وأيقونة الشات في الصفحة (مع تنسيق مؤشر جاري الكتابة)
+  // حقن تصميم وأيقونة الشات في الصفحة (مع تنسيق زر الإرسال الجديد)
   const chatStyle = document.createElement("style");
   chatStyle.innerHTML = `
     #hikayat-chat-bubble { position: fixed; bottom: 20px; left: 20px; background: #01338D; color: white; width: 55px; height: 55px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 99999; font-size: 24px; transition: transform 0.2s; }
@@ -21,7 +21,8 @@
     .hikayat-msg img { max-width: 100%; border-radius: 6px; margin-top: 5px; }
     #hikayat-chat-input-area { padding: 10px; background: white; border-top: 1px solid #ddd; display: flex; gap: 6px; align-items: center; }
     #hikayat-chat-input { flex: 1; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; outline: none; }
-    #hikayat-chat-send, #hikayat-chat-img-btn { background: #01338D; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    #hikayat-chat-send, #hikayat-chat-img-btn { background: #01338D; color: white; border: none; width: 38px; height: 38px; border-radius: 6px; cursor: pointer; font-size: 15px; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+    #hikayat-chat-send:hover, #hikayat-chat-img-btn:hover { background: #002266; }
     #hikayat-chat-img-input { display: none; }
     .chat-notice { background: #f8d7da; color: #721c24; padding: 8px; border-radius: 6px; text-align: center; font-size: 12px; margin: 5px 0; }
     #hikayat-typing-indicator { padding: 6px 12px; color: #666; font-size: 12px; font-style: italic; display: none; align-self: flex-end; background: #eee; border-radius: 12px; margin-bottom: 5px; }
@@ -42,7 +43,7 @@
         <label id="hikayat-chat-img-btn" for="hikayat-chat-img-input" title="رفع صورة">📷</label>
         <input type="file" id="hikayat-chat-img-input" accept="image/*">
         <input type="text" id="hikayat-chat-input" placeholder="اكتب رسالتك هنا...">
-        <button id="hikayat-chat-send" style="display:none;">إرسال</button>
+        <button id="hikayat-chat-send" title="إرسال">📤</button>
       </div>
     </div>
   `;
@@ -97,6 +98,7 @@
   const box = document.getElementById("hikayat-chat-box");
   const closeBtn = document.getElementById("hikayat-chat-close");
   const input = document.getElementById("hikayat-chat-input");
+  const sendBtn = document.getElementById("hikayat-chat-send");
   const imgInput = document.getElementById("hikayat-chat-img-input");
   const messagesContainer = document.getElementById("hikayat-chat-messages");
   const typingIndicator = document.getElementById("hikayat-typing-indicator");
@@ -134,6 +136,7 @@
     input.disabled = true;
     input.placeholder = reason;
     imgInput.disabled = true;
+    sendBtn.disabled = true;
 
     const notice = document.createElement("div");
     notice.className = "chat-notice";
@@ -164,13 +167,18 @@
     .catch(err => console.error(err));
   }
 
-  // إرسال النص عند الضغط على Enter
+  function handleSend() {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    sendPayload(text, null);
+  }
+
+  // إرسال النص عند الضغط على زر الإرسال أو مفتاح Enter
+  sendBtn.onclick = handleSend;
   input.onkeypress = (e) => { 
     if (e.key === "Enter") {
-      const text = input.value.trim();
-      if (!text) return;
-      input.value = "";
-      sendPayload(text, null);
+      handleSend();
     }
   };
 
