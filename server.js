@@ -23,7 +23,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
+const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://tales.net";
 
 const BRANCH_NAMES = {
   waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك",
