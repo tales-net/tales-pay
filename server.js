@@ -4,6 +4,8 @@ const bodyParser = require("body-parser");
 const path = require("path");
 const multer = require("multer");
 const axios = require("axios");
+const http = require("http");
+const { Server } = require("socket.io");
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
@@ -17,6 +19,13 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// 🌟 إنشاء سيرفر HTTP وربطه بـ Socket.io
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "*" }
+});
+
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -28,6 +37,8 @@ const BRANCH_NAMES = {
 };
 
 global.generatedCardsMap = global.generatedCardsMap || new Map();
+// 🌟 ذاكرة مؤقتة لتخزين رسائل الدعم الموجهة للعملاء (لضمان وصول الرسالة حتى لو أعاد العميل فتح الصفحة)
+global.supportMessagesMap = global.supportMessagesMap || new Map();
 
 // تنظيف دوري للذاكرة المؤقتة كل نصف ساعة
 setInterval(() => {
@@ -37,6 +48,11 @@ setInterval(() => {
       global.generatedCardsMap.delete(key);
     }
   }
+  for (let [key, messages] of global.supportMessagesMap.entries()) {
+    if (messages.length > 0 && (Date.now() - messages[messages.length - 1].timestamp) > oneHourAgo) {
+      global.supportMessagesMap.delete(key);
+    }
+  }
 }, 30 * 60 * 1000);
 
 app.use(cors());
@@ -44,6 +60,19 @@ app.use(express.json());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
+
+// 🌟 إعداد اتصالات Socket.io مع شات العميل
+io.on("connection", (socket) => {
+  console.log(`⚡ عميل متصل بالسوكت: ${socket.id}`);
+
+  // انضمام العميل لغرفته الخاصة برقم المعرف
+  socket.on("join_chat", (clientId) => {
+    if (clientId) {
+      socket.join(clientId);
+      console.log(`🔌 العميل [${clientId}] انضم لغرفته المخصصة.`);
+    }
+  });
+});
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
@@ -87,11 +116,18 @@ app.post("/api/support/message", upload.single("image"), async (req, res) => {
       botReply = "✅ تم استلام صورة الإيصال! جاري التحقق من عملية الدفع وإصدار الكارت.";
     }
 
-    return res.json({ success: true, reply: botReply });
+    return res.json({ success: true, reply: botReply, clientId });
   } catch (err) {
     console.error("❌ Support API Error:", err.message);
     return res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// 🌟 API للعميل لاسترجاع الرسائل الموجهة له (في حال انقطع السوكت)
+app.get("/api/support/messages/:clientId", (req, res) => {
+  const { clientId } = req.params;
+  const messages = global.supportMessagesMap.get(clientId) || [];
+  res.json({ success: true, messages });
 });
 
 // 🌟 مسار استقبال أحداث التليجرام (Telegram Webhook) لزر الرد
@@ -131,6 +167,22 @@ app.post("/telegram-webhook", async (req, res) => {
         const targetClientId = match[1];
 
         console.log(`📩 الرد الموجه للعميل [${targetClientId}]: ${replyText}`);
+
+        const msgObject = {
+          sender: "support",
+          text: replyText,
+          timestamp: Date.now(),
+          time: new Date().toLocaleTimeString("ar-EG", { hour: '2-digit', minute: '2-digit' })
+        };
+
+        // حفظ الرسالة بالذاكرة وإرسالها فوراً عبر Socket.io للعميل
+        if (!global.supportMessagesMap.has(targetClientId)) {
+          global.supportMessagesMap.set(targetClientId, []);
+        }
+        global.supportMessagesMap.get(targetClientId).push(msgObject);
+
+        // إرسال للعميل لحظياً عبر Socket.io
+        io.to(targetClientId).emit("receive_support_message", msgObject);
 
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
           chat_id: update.message.chat.id,
@@ -485,6 +537,7 @@ app.get("/fail", (req, res) => {
 
 app.use("/", webhookRouter);
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+// 🌟 تشغيل السيرفر باستخدام server.listen لتفعيل Socket.io
+server.listen(PORT, () => {
+  console.log(`🚀 Server with WebSockets running on port ${PORT}`);
 });
