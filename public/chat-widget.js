@@ -1,127 +1,153 @@
 (function () {
-  // تحميل مكتبة Socket.io تلقائياً إن لم تكن متوفرة
-  if (typeof io === 'undefined') {
-    const socketScript = document.createElement('script');
-    socketScript.src = "/socket.io/socket.io.js";
-    socketScript.onload = startWidget;
-    socketScript.onerror = startWidget;
-    document.head.appendChild(socketScript);
-  } else {
-    startWidget();
+  // توليد أو جلب معرف فريد للعميل وتخزينه في المتصفح
+  let clientId = localStorage.getItem("hikayat_client_id");
+  if (!clientId) {
+    clientId = "client_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
+    localStorage.setItem("hikayat_client_id", clientId);
   }
 
-  function startWidget() {
-    const style = document.createElement('style');
-    style.innerHTML = `
-      .chat-bubble-btn { position: fixed; bottom: 20px; left: 20px; background: #01338D; color: white; width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); cursor: pointer; z-index: 99999; }
-      .chat-widget-window { position: fixed; bottom: 85px; left: 20px; width: 320px; max-width: 90vw; background: #ffffff; border-radius: 12px; box-shadow: 0 8px 25px rgba(0,0,0,0.2); display: none; flex-direction: column; overflow: hidden; z-index: 99999; border: 1px solid #e0e0e0; font-family: sans-serif; direction: rtl; }
-      .chat-widget-header { background: #01338D; color: white; padding: 12px 15px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
-      .chat-widget-body { padding: 12px; height: 250px; overflow-y: auto; background: #f8f9fa; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
-      .chat-msg { max-width: 80%; padding: 8px 12px; border-radius: 10px; word-break: break-word; line-height: 1.4; }
-      .chat-msg.bot { background: #e9ecef; color: #333; align-self: flex-start; }
-      .chat-msg.user { background: #01338D; color: white; align-self: flex-end; }
-      .chat-widget-footer { padding: 8px 10px; background: #ffffff; border-top: 1px solid #eee; display: flex; gap: 6px; align-items: center; }
-      .chat-widget-footer input[type="text"] { flex: 1; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 12px; }
-      .chat-widget-footer button { background: #27ae60; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
-    `;
-    document.head.appendChild(style);
+  // حقن تصميم وأيقونة الشات في الصفحة
+  const chatStyle = document.createElement("style");
+  chatStyle.innerHTML = `
+    #hikayat-chat-bubble { position: fixed; bottom: 20px; left: 20px; background: #01338D; color: white; width: 55px; height: 55px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 99999; font-size: 24px; transition: transform 0.2s; }
+    #hikayat-chat-bubble:hover { transform: scale(1.05); }
+    #hikayat-chat-box { position: fixed; bottom: 90px; left: 20px; width: 340px; height: 450px; background: white; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); display: none; flex-direction: column; z-index: 99999; direction: rtl; font-family: Tahoma, Cairo, sans-serif; overflow: hidden; border: 1px solid #e0e0e0; }
+    #hikayat-chat-header { background: #01338D; color: white; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 15px; }
+    #hikayat-chat-close { background: none; border: none; color: white; font-size: 18px; cursor: pointer; }
+    #hikayat-chat-messages { flex: 1; padding: 12px; overflow-y: auto; background: #f9f9f9; display: flex; flex-direction: column; gap: 8px; }
+    .hikayat-msg { padding: 8px 12px; border-radius: 8px; max-width: 80%; font-size: 13px; word-break: break-word; line-height: 1.4; }
+    .hikayat-msg.client { background: #01338D; color: white; align-self: flex-start; }
+    .hikayat-msg.admin { background: #e4e6eb; color: #333; align-self: flex-end; }
+    .hikayat-msg img { max-width: 100%; border-radius: 6px; margin-top: 5px; }
+    #hikayat-chat-input-area { padding: 10px; background: white; border-top: 1px solid #ddd; display: flex; gap: 6px; align-items: center; }
+    #hikayat-chat-input { flex: 1; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; outline: none; }
+    #hikayat-chat-send, #hikayat-chat-img-btn { background: #01338D; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    #hikayat-chat-img-input { display: none; }
+    .chat-notice { background: #f8d7da; color: #721c24; padding: 8px; border-radius: 6px; text-align: center; font-size: 12px; margin: 5px 0; }
+  `;
+  document.head.appendChild(chatStyle);
 
-    const widget = document.createElement('div');
-    widget.innerHTML = `
-      <div class="chat-bubble-btn" id="chatBubbleBtn">💬</div>
-      <div class="chat-widget-window" id="chatWidgetWindow">
-        <div class="chat-widget-header">
-          <span>🎧 الدعم المباشر - شبكة حكايات</span>
-          <span style="cursor:pointer;" id="chatCloseBtn">✕</span>
-        </div>
-        <div class="chat-widget-body" id="chatWidgetBody">
-          <div class="chat-msg bot">أهلاً بك! يمكنك إرسال استفسارك أو صورة الإيصال هنا.</div>
-        </div>
-        <div class="chat-widget-footer">
-          <input type="text" id="chatWidgetInput" placeholder="اكتب رسالتك..." />
-          <label for="chatWidgetImage" style="cursor:pointer; font-size:18px;">📎</label>
-          <input type="file" id="chatWidgetImage" accept="image/*" style="display:none;" />
-          <button id="chatWidgetSend">إرسال</button>
-        </div>
+  const chatHTML = `
+    <div id="hikayat-chat-bubble" title="الدعم المباشر">💬</div>
+    <div id="hikayat-chat-box">
+      <div id="hikayat-chat-header">
+        <span>الدعم الفني المباشر</span>
+        <button id="hikayat-chat-close">&times;</button>
       </div>
-    `;
-    document.body.appendChild(widget);
+      <div id="hikayat-chat-messages"></div>
+      <div id="hikayat-chat-input-area">
+        <label id="hikayat-chat-img-btn" for="hikayat-chat-img-input">📷</label>
+        <input type="file" id="hikayat-chat-img-input" accept="image/*">
+        <input type="text" id="hikayat-chat-input" placeholder="اكتب رسالتك هنا...">
+        <button id="hikayat-chat-send">إرسال</button>
+      </div>
+    </div>
+  `;
+  const container = document.createElement("div");
+  container.innerHTML = chatHTML;
+  document.body.appendChild(container);
 
-    const urlParams = new URLSearchParams(window.location.search);
-    const rawTxId = urlParams.get('id') || urlParams.get('order') || urlParams.get('merchant_order_id');
-    let clientId = rawTxId || localStorage.getItem('chat_client_id');
-    if (!clientId) {
-      clientId = 'CLIENT_' + Math.random().toString(36).substr(2, 9);
-      localStorage.setItem('chat_client_id', clientId);
-    }
+  // تحميل مكتبة Socket.io عميل إذا لم تكن موجودة
+  if (typeof io === "undefined") {
+    const script = document.createElement("script");
+    script.src = "https://cdn.socket.io/4.7.2/socket.io.min.js";
+    script.onload = initSocketConnection;
+    document.head.appendChild(script);
+  } else {
+    initSocketConnection();
+  }
 
-    const bodyEl = document.getElementById('chatWidgetBody');
-    const inputEl = document.getElementById('chatWidgetInput');
-    const windowEl = document.getElementById('chatWidgetWindow');
-    let displayedIds = new Set();
+  function initSocketConnection() {
+    const socket = io();
+    socket.emit("join_chat", clientId);
 
-    function addMessage(sender, text) {
-      const cls = sender === 'user' ? 'user' : 'bot';
-      bodyEl.innerHTML += `<div class="chat-msg ${cls}">${text}</div>`;
-      bodyEl.scrollTop = bodyEl.scrollHeight;
-    }
+    socket.on("new_message", (data) => {
+      appendMessage(data.sender, data.text, data.image);
+    });
 
-    // الربط بالبث المباشر
-    if (typeof io !== 'undefined') {
-      const socket = io();
-      socket.on('connect', () => {
-        socket.emit('join_chat', clientId);
-        socket.emit('join_support', clientId);
-      });
-      socket.on('receive_support_message', (msg) => msg?.text && addMessage('support', msg.text));
-      socket.on('support_reply', (msg) => msg?.text && addMessage('support', msg.text));
-    }
+    socket.on("chat_closed", (data) => {
+      lockChatInterface(data.message || "تم إغلاق المحادثة بواسطة الدعم الفني.");
+    });
 
-    // استعلام احتياطي للرسائل
-    async function checkMessages() {
-      try {
-        const res = await fetch('/api/support/messages/' + encodeURIComponent(clientId));
-        const data = await res.json();
-        if (data.success && Array.isArray(data.messages)) {
-          data.messages.forEach(m => {
-            const key = m.timestamp + "_" + m.text;
-            if (!displayedIds.has(key)) {
-              displayedIds.add(key);
-              addMessage('support', m.text);
-            }
-          });
+    // جلب الرسائل السابقة عند الفتح
+    fetch(`/api/support/messages/${clientId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.messages) {
+          data.messages.forEach(m => appendMessage(m.sender, m.text, m.image));
         }
-      } catch (e) {}
-    }
-    setInterval(checkMessages, 4000);
+      }).catch(err => console.log(err));
+  }
 
-    const toggle = () => windowEl.style.display = (windowEl.style.display === 'flex') ? 'none' : 'flex';
-    document.getElementById('chatBubbleBtn').onclick = toggle;
-    document.getElementById('chatCloseBtn').onclick = toggle;
+  const bubble = document.getElementById("hikayat-chat-bubble");
+  const box = document.getElementById("hikayat-chat-box");
+  const closeBtn = document.getElementById("hikayat-chat-close");
+  const sendBtn = document.getElementById("hikayat-chat-send");
+  const input = document.getElementById("hikayat-chat-input");
+  const imgInput = document.getElementById("hikayat-chat-img-input");
+  const messagesContainer = document.getElementById("hikayat-chat-messages");
 
-    async function sendMsg(file = null) {
-      const text = inputEl.value.trim();
-      if (!text && !file) return;
+  bubble.onclick = () => { box.style.display = box.style.display === "flex" ? "none" : "flex"; };
+  closeBtn.onclick = () => { box.style.display = "none"; };
 
-      if (text) { addMessage('user', text); inputEl.value = ''; }
-      if (file) addMessage('user', '📷 [جاري رفع الصورة...]');
+  function appendMessage(sender, text, imageUrl) {
+    const div = document.createElement("div");
+    div.className = `hikayat-msg ${sender}`;
+    let content = "";
+    if (text) content += `<div>${escapeHtml(text)}</div>`;
+    if (imageUrl) content += `<img src="${imageUrl}" alt="صورة مرفقة">`;
+    div.innerHTML = content;
+    messagesContainer.appendChild(div);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
 
-      const fd = new FormData();
-      fd.append('clientChatId', clientId);
-      if (text) fd.append('message', text);
-      if (file) fd.append('image', file);
+  function lockChatInterface(reason) {
+    input.disabled = true;
+    input.placeholder = reason;
+    sendBtn.disabled = true;
+    imgInput.disabled = true;
 
-      try {
-        const res = await fetch('/api/support/message', { method: 'POST', body: fd });
-        const data = await res.json();
-        if (data.reply) addMessage('bot', data.reply);
-      } catch (e) {
-        addMessage('bot', '⚠️ حدث خطأ في الاتصال.');
+    const notice = document.createElement("div");
+    notice.className = "chat-notice";
+    notice.innerText = reason;
+    messagesContainer.appendChild(notice);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
+
+  function sendMessage() {
+    const text = input.value.trim();
+    const file = imgInput.files[0];
+
+    if (!text && !file) return;
+
+    const formData = new FormData();
+    formData.append("clientId", clientId);
+    if (text) formData.append("message", text);
+    if (file) formData.append("image", file);
+
+    input.value = "";
+    imgInput.value = "";
+
+    fetch("/api/support/message", {
+      method: "POST",
+      body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.closed) {
+        lockChatInterface(data.message);
+      } else if (!data.success) {
+        alert("فشل إرسال الرسالة");
       }
-    }
+    })
+    .catch(err => console.error(err));
+  }
 
-    document.getElementById('chatWidgetSend').onclick = () => sendMsg();
-    inputEl.onkeypress = (e) => e.key === 'Enter' && sendMsg();
-    document.getElementById('chatWidgetImage').onchange = (e) => e.target.files[0] && sendMsg(e.target.files[0]);
+  sendBtn.onclick = sendMessage;
+  input.onkeypress = (e) => { if (e.key === "Enter") sendMessage(); };
+
+  function escapeHtml(text) {
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+    return text.replace(/[&<>"']/g, m => map[m]);
   }
 })();
