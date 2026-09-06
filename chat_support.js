@@ -41,7 +41,7 @@ function initSocket(io) {
   global.ioInstance = io;
 }
 
-// معالجة رسالة العميل وإرسالها لتليجرام (سواء نص أو صورة مباشرة)
+// معالجة رسالة العميل وإرسالها لتليجرام مع أزرار تفاعلية
 async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
   try {
     const clientId = req.body.clientId || req.body.clientID;
@@ -59,11 +59,6 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
         closed: true, 
         message: "تم إغلاق هذه المحادثة من قبل الدعم الفني." 
       });
-    }
-
-    // شرط جديد: إذا لم يكن هناك نص ولا صورة مرفقة، نرفض الطلب
-    if (!messageText.trim() && !imageFile) {
-      return res.status(400).json({ success: false, message: "لا يمكن إرسال رسالة فارغة" });
     }
 
     if (!chatSessions.has(clientId)) {
@@ -105,7 +100,7 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
   }
 }
 
-// دالة إرسال الرسالة إلى تليجرام مع الأزرار التفاعلية
+// دالة إرسال الرسالة إلى تليجرام مع الأزرار التفاعلية (Inline Keyboards)
 async function sendSupportChatMessage(clientId, messageText, imageBuffer = null) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) return null;
@@ -131,7 +126,7 @@ async function sendSupportChatMessage(clientId, messageText, imageBuffer = null)
         filename: `support_${clientId}.png`,
         contentType: "image/png"
       });
-      form.append("caption", headerText + (messageText ? `📝 النص: ${messageText}` : "📷 صورة مرفقة بدون نص"));
+      form.append("caption", headerText + (messageText ? `📝 النص: ${messageText}` : ""));
       form.append("parse_mode", "HTML");
       form.append("reply_markup", JSON.stringify(replyMarkup));
 
@@ -154,7 +149,7 @@ async function sendSupportChatMessage(clientId, messageText, imageBuffer = null)
   }
 }
 
-// معالجة ردود الآدمن من تليجرام
+// معالجة ردود الآدمن من تليجرام (سواء عبر الأزرار أو الرد النصي)
 async function handleTelegramReply(body) {
   try {
     // 1. التعامل مع ضغط الأزرار (Callback Query)
@@ -165,21 +160,20 @@ async function handleTelegramReply(body) {
       const messageId = callbackQuery.message.message_id;
       const originalMessage = callbackQuery.message;
 
-      // أ) الضغط على زر "أكتب الرد" -> إعلام العميل أن الآدمن يكتب الآن + فتح Force Reply
+      // أ) الضغط على زر "أكتب الرد" -> إرسال حدث الكتابة للعميل ثم فتح خانة الرد في تليجرام
       if (data.startsWith("reply_")) {
         const clientId = data.replace("reply_", "");
         
-        // إعلام العميل عبر Socket.io أن الدعم بدأ الكتابة (تظهر نقاط...)
+        // إرسال إشعار للعميل عبر الـ Socket بأن الدعم يكتب الآن
         if (global.ioInstance) {
-          global.ioInstance.to(clientId).emit("admin_typing", { typing: true });
+          global.ioInstance.to(clientId).emit("typing_status", { isTyping: true });
         }
 
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
           callback_query_id: callbackQuery.id,
-          text: "✍️ تم تنبيه العميل بأنك تكتب الرد الآن..."
+          text: "✍️ اكتب ردك الآن في المحادثة..."
         });
 
-        // إرسال رسالة توجيهية للآدمن مع تفعيل Force Reply
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
           chat_id: chatId,
           text: `👉 أكتب ردك الآن للعميل (معرف العميل: ${clientId}):\n(قم بالرد مباشرة على هذه الرسالة أو اكتب رسالتك)`,
@@ -222,6 +216,7 @@ async function handleTelegramReply(body) {
     let clientId = null;
     let replyText = message.text || message.caption || "";
 
+    // استخراج معرف العميل من رسالة الـ Reply أو رسالة الـ Force Reply
     if (message.reply_to_message) {
       const repliedMsgId = String(message.reply_to_message.message_id);
       clientId = telegramToClientMap.get(repliedMsgId);
@@ -234,11 +229,6 @@ async function handleTelegramReply(body) {
         const match = message.reply_to_message.caption.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
         if (match) clientId = match[1];
       }
-    }
-
-    if (!clientId && message.reply_to_message && message.reply_to_message.text) {
-      const match = message.reply_to_message.text.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
-      if (match) clientId = match[1];
     }
 
     if (clientId) {
@@ -276,9 +266,9 @@ async function handleTelegramReply(body) {
 
       chatSessions.get(clientId).push(adminMsgObj);
 
-      // بث رد الآدمن وإلغاء حالة الكتابة عبر Socket.io
+      // بث رد الآدمن وإيقاف مؤشر الكتابة للعميل فوراً عبر Socket.io
       if (global.ioInstance) {
-        global.ioInstance.to(clientId).emit("admin_typing", { typing: false });
+        global.ioInstance.to(clientId).emit("typing_status", { isTyping: false });
         global.ioInstance.to(clientId).emit("new_message", adminMsgObj);
       }
 
