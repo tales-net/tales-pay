@@ -61,7 +61,7 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           </div>
           
           <h1>جاري تقديم طلب الدفع...</h1>
-          <p class="subtitle">انتظر قليلاً، وسيظهر الكارت فور التأكيد في هذه النافذة دون الحاجة للخروج.</p>
+          <p class="subtitle">انتظر قليلاً، وسيظهر الكارت فور التأكيد بالنافذة دون الحاجة للخروج.</p>
 
           <div class="highlight-action">
             <i class="fa fa-bell" style="font-size: 16px;"></i>
