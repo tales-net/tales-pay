@@ -4,8 +4,6 @@ const { generateContributionHtmlPage } = require('./contributionMessages');
 
 /**
  * إرسال إشعار تليجرام مع زرين تفاعليين يدويين مرتبطين برقم المعاملة
- * @param {Object} paymentData - بيانات الطلب أو الدفع
- * @param {string} transactionId - رقم المعاملة الفريد
  */
 async function sendTelegramManualButtons(paymentData, transactionId) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -22,17 +20,17 @@ async function sendTelegramManualButtons(paymentData, transactionId) {
   const serverBaseUrl = process.env.SERVER_BASE_URL || "https://tales-pay.onrender.com";
 
   const messageText = `
-⚠️ *طلب دفع جديد / كارت إنترنت / مساهمة (يدوي)*
-━━━━━━━━━━━━━━━━━━━━
-📱 *الهاتف:* \`${phone}\`
-💰 *المبلغ:* *${amount} جنيه*
-🌐 *الفرع:* ${branch}
-🔢 *رقم العملية:* \`${transactionId}\`
-━━━━━━━━━━━━━━━━━━━━
-*(اختر الإجراء المناسب يدويًا من الأزرار أدناه)*
+⚠️ طلب دفع جديد / فشلت المحفظة (تدوي)
+------------------------------------
+📱 الهاتف: ${phone}
+💰 المبلغ: ${amount} جنيه
+🌐 الفرع: ${branch}
+🔢 رقم العملية: ${transactionId}
+------------------------------------
+(اختر الإجراء المناسب يدويًا)
   `.trim();
 
-  // أزرار تفاعلية (Callback Data) لتحديث صفحة العميل فوراً بالضغط دون مغادرة التليجرام
+  // أزرار تفاعلية ترسل بيانات نظيفة بدون رموز تكسر الماركداون
   const inlineKeyboard = {
     inline_keyboard: [
       [
@@ -52,7 +50,6 @@ async function sendTelegramManualButtons(paymentData, transactionId) {
     await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
       chat_id: chatId,
       text: messageText,
-      parse_mode: "Markdown",
       reply_markup: inlineKeyboard
     });
     console.log(`✅ تم إرسال رسالة الأزرار اليدوية لتليجرام برقم العملية: ${transactionId}`);
@@ -62,9 +59,7 @@ async function sendTelegramManualButtons(paymentData, transactionId) {
 }
 
 /**
- * معالجة ضغطات الأزرار القادمة من تليجرام (Callback Query) وتحديث شاشة العميل فورا
- * @param {Object} botIo - كائن Socket.io لإرسال التحديث للعميل
- * @param {Object} callbackQuery - بيانات الضغطة من تليجرام
+ * معالجة ضغطات الأزرار القادمة من تليجرام وتحديث شاشة العميل فورا
  */
 async function handleTelegramCallback(botIo, callbackQuery) {
   const data = callbackQuery.data;
@@ -76,13 +71,13 @@ async function handleTelegramCallback(botIo, callbackQuery) {
 
   try {
     if (data.startsWith('action_contrib_')) {
-      const [, amountStr, txId] = data.split('_');
+      const parts = data.split('_');
+      const txId = parts[parts.length - 1]; // استخراج رقم المعاملة بدقة من الأخير
+      const amountStr = parts[2];
       const amount = parseFloat(amountStr);
 
-      // توليد محتوى صفحة المساهمة
       const htmlContent = generateContributionHtmlPage(amount, txId);
 
-      // إرسال التحديث الفوري للعميل المفتوح لديه صفحة الانتظار برقم txId
       if (botIo) {
         botIo.to(txId).emit('telegram-action-result', {
           success: true,
@@ -91,26 +86,25 @@ async function handleTelegramCallback(botIo, callbackQuery) {
         });
       }
 
-      // الرد على التليجرام لتأكيد نجاح الضغطة
       await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
         callback_query_id: callbackQuery.id,
         text: "✅ تم توجيه العميل لصفحة المساهمة بنجاح",
         show_alert: false
       });
 
-      // تعديل رسالة تليجرام لإظهار أنه تم التنفيذ
       await axios.post(`https://api.telegram.org/bot${token}/editMessageText`, {
         chat_id: chatId,
         message_id: messageId,
-        text: callbackQuery.message.text + "\n\n✅ *[تم اختيار: صفحة المساهمة]*",
-        parse_mode: "Markdown"
+        text: callbackQuery.message.text + "\n\n[تم اختيار: صفحة المساهمة بنجاح ✅]"
       });
 
     } else if (data.startsWith('action_card_')) {
-      const [, amountStr, branch, txId] = data.split('_');
+      const parts = data.split('_');
+      const txId = parts[parts.length - 1]; // رقم المعاملة الأخير
+      const branch = parts[parts.length - 2]; // الفرع قبل الأخير
+      const amountStr = parts[2];
       const amount = parseFloat(amountStr);
 
-      // توليد الكارت عبر الميكروتيك
       const result = await processPaymentAndCreateCard(amount, branch, txId);
 
       if (result.isContribution) {
@@ -123,7 +117,6 @@ async function handleTelegramCallback(botIo, callbackQuery) {
           });
         }
       } else {
-        // حفظ الكارت في الخريطة ليتمكن العميل من رؤيته
         if (global.generatedCardsMap) {
           global.generatedCardsMap.set(txId, {
             code: result.cardCode,
@@ -134,7 +127,6 @@ async function handleTelegramCallback(botIo, callbackQuery) {
           });
         }
 
-        // إرسال تفاصيل الكارت للعميل عبر Socket.io لتحديث الشاشة فوراً
         if (botIo) {
           botIo.to(txId).emit('telegram-action-result', {
             success: true,
@@ -145,26 +137,23 @@ async function handleTelegramCallback(botIo, callbackQuery) {
         }
       }
 
-      // الرد على تليجرام
       await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
         callback_query_id: callbackQuery.id,
-        text: "✅ تم إصدار الكارت وإرساله لشاشة العميل بنجاح",
+        text: "✅ تم إصدار الكارت وإرساله لشاشة العميل",
         show_alert: false
       });
 
-      // تعديل رسالة تليجرام
       await axios.post(`https://api.telegram.org/bot${token}/editMessageText`, {
         chat_id: chatId,
         message_id: messageId,
-        text: callbackQuery.message.text + `\n\n✅ *[تم إصدار الكارت بنجاح: ${result.cardCode || 'مساهمة'}]*`,
-        parse_mode: "Markdown"
+        text: callbackQuery.message.text + `\n\n[تم إصدار الكارت: ${result.cardCode || 'مساهمة'} ✅]`
       });
     }
   } catch (error) {
     console.error("❌ خطأ في معالجة ضغطة زر تليجرام:", error.response?.data || error.message);
     await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
       callback_query_id: callbackQuery.id,
-      text: "❌ حدث خطأ أثناء تنفيذ الطلب",
+      text: "❌ حدث خطأ أثناء تنفيذ الطلب: " + (error.message || ""),
       show_alert: true
     }).catch(() => {});
   }
