@@ -83,8 +83,18 @@ app.get('/api/support/messages/:clientId', (req, res) => {
   res.json({ success: true, messages });
 });
 
+// ==========================================
+// 🤖 مسار استقبال ردود وتفاعلات تليجرام (Webhook)
+// ==========================================
 app.post('/telegram-webhook', async (req, res) => {
-  await chatSupport.handleTelegramReply(req.body);
+  if (req.body.callback_query) {
+    // إذا قام المسؤول بالضغط على الأزرار التفاعلية من تليجرام
+    const ioInstance = req.app.get('io');
+    await handleTelegramCallback(ioInstance, req.body.callback_query);
+  } else {
+    // إذا كانت رسالة رد عادية تخص الدعم الفني
+    await chatSupport.handleTelegramReply(req.body);
+  }
   res.sendStatus(200);
 });
 
