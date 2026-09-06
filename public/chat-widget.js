@@ -6,7 +6,7 @@
     localStorage.setItem("hikayat_client_id", clientId);
   }
 
-  // حقن تصميم وأيقونة الشات في الصفحة
+  // حقن تصميم وأيقونة الشات في الصفحة (مع تنسيق مؤشر جاري الكتابة)
   const chatStyle = document.createElement("style");
   chatStyle.innerHTML = `
     #hikayat-chat-bubble { position: fixed; bottom: 20px; left: 20px; background: #01338D; color: white; width: 55px; height: 55px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 99999; font-size: 24px; transition: transform 0.2s; }
@@ -24,6 +24,7 @@
     #hikayat-chat-send, #hikayat-chat-img-btn { background: #01338D; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
     #hikayat-chat-img-input { display: none; }
     .chat-notice { background: #f8d7da; color: #721c24; padding: 8px; border-radius: 6px; text-align: center; font-size: 12px; margin: 5px 0; }
+    #hikayat-typing-indicator { padding: 6px 12px; color: #666; font-size: 12px; font-style: italic; display: none; align-self: flex-end; background: #eee; border-radius: 12px; margin-bottom: 5px; }
   `;
   document.head.appendChild(chatStyle);
 
@@ -34,12 +35,14 @@
         <span>الدعم الفني المباشر</span>
         <button id="hikayat-chat-close">&times;</button>
       </div>
-      <div id="hikayat-chat-messages"></div>
+      <div id="hikayat-chat-messages">
+        <div id="hikayat-typing-indicator">الدعم الفني يكتب الآن...</div>
+      </div>
       <div id="hikayat-chat-input-area">
-        <label id="hikayat-chat-img-btn" for="hikayat-chat-img-input">📷</label>
+        <label id="hikayat-chat-img-btn" for="hikayat-chat-img-input" title="رفع صورة">📷</label>
         <input type="file" id="hikayat-chat-img-input" accept="image/*">
         <input type="text" id="hikayat-chat-input" placeholder="اكتب رسالتك هنا...">
-        <button id="hikayat-chat-send">إرسال</button>
+        <button id="hikayat-chat-send" style="display:none;">إرسال</button>
       </div>
     </div>
   `;
@@ -62,7 +65,18 @@
     socket.emit("join_chat", clientId);
 
     socket.on("new_message", (data) => {
+      // إخفاء مؤشر الكتابة فور وصول أي رسالة جديدة
+      hideTypingIndicator();
       appendMessage(data.sender, data.text, data.image);
+    });
+
+    // استماع لحالة الكتابة عند ضغط الأدمن على زر أكتب الرد في تليجرام
+    socket.on("typing_status", (data) => {
+      if (data.isTyping) {
+        showTypingIndicator();
+      } else {
+        hideTypingIndicator();
+      }
     });
 
     socket.on("chat_closed", (data) => {
@@ -82,13 +96,26 @@
   const bubble = document.getElementById("hikayat-chat-bubble");
   const box = document.getElementById("hikayat-chat-box");
   const closeBtn = document.getElementById("hikayat-chat-close");
-  const sendBtn = document.getElementById("hikayat-chat-send");
   const input = document.getElementById("hikayat-chat-input");
   const imgInput = document.getElementById("hikayat-chat-img-input");
   const messagesContainer = document.getElementById("hikayat-chat-messages");
+  const typingIndicator = document.getElementById("hikayat-typing-indicator");
 
   bubble.onclick = () => { box.style.display = box.style.display === "flex" ? "none" : "flex"; };
   closeBtn.onclick = () => { box.style.display = "none"; };
+
+  function showTypingIndicator() {
+    if (typingIndicator) {
+      typingIndicator.style.display = "block";
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+  }
+
+  function hideTypingIndicator() {
+    if (typingIndicator) {
+      typingIndicator.style.display = "none";
+    }
+  }
 
   function appendMessage(sender, text, imageUrl) {
     const div = document.createElement("div");
@@ -97,36 +124,30 @@
     if (text) content += `<div>${escapeHtml(text)}</div>`;
     if (imageUrl) content += `<img src="${imageUrl}" alt="صورة مرفقة">`;
     div.innerHTML = content;
-    messagesContainer.appendChild(div);
+    
+    // إدراج الرسالة قبل مؤشر الكتابة ليبقى المؤشر بالأسفل دائماً إن وُجد
+    messagesContainer.insertBefore(div, typingIndicator);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 
   function lockChatInterface(reason) {
     input.disabled = true;
     input.placeholder = reason;
-    sendBtn.disabled = true;
     imgInput.disabled = true;
 
     const notice = document.createElement("div");
     notice.className = "chat-notice";
     notice.innerText = reason;
-    messagesContainer.appendChild(notice);
+    messagesContainer.insertBefore(notice, typingIndicator);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 
-  function sendMessage() {
-    const text = input.value.trim();
-    const file = imgInput.files[0];
-
-    if (!text && !file) return;
-
+  // دالة الإرسال المشتركة للرسائل والصور
+  function sendPayload(text, file) {
     const formData = new FormData();
     formData.append("clientId", clientId);
     if (text) formData.append("message", text);
     if (file) formData.append("image", file);
-
-    input.value = "";
-    imgInput.value = "";
 
     fetch("/api/support/message", {
       method: "POST",
@@ -143,8 +164,27 @@
     .catch(err => console.error(err));
   }
 
-  sendBtn.onclick = sendMessage;
-  input.onkeypress = (e) => { if (e.key === "Enter") sendMessage(); };
+  // إرسال النص عند الضغط على Enter
+  input.onkeypress = (e) => { 
+    if (e.key === "Enter") {
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = "";
+      sendPayload(text, null);
+    }
+  };
+
+  // رفع الصورة وإرسالها فور اختيارها من الملفات دون الحاجة لزر إرسال
+  imgInput.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    // إرسال الصورة فوراً
+    sendPayload("", file);
+    
+    // إعادة تصفير الحقل ليسمح باختيار نفس الصورة مرة أخرى إن أراد
+    imgInput.value = "";
+  };
 
   function escapeHtml(text) {
     const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
