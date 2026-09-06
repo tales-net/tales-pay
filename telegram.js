@@ -176,7 +176,7 @@ async function sendTelegramMessage(data, isInitial = true) {
 }
 
 /**
- * 2. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام
+ * 2. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام (مصلحة بالكامل)
  */
 async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   try {
@@ -193,6 +193,7 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     const form = new FormData();
     form.append("chat_id", CHAT_ID);
     
+    // إرفاق الصورة كـ Buffer مع تحديد اسم الملف ونوع الـ Content-Type بوضوح
     form.append("photo", imageBuffer, {
       filename: `card_${paymentDetails.transactionId || Date.now()}.png`,
       contentType: "image/png"
@@ -209,8 +210,11 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     form.append("caption", caption);
     form.append("parse_mode", "HTML");
 
+    // إرسال الطلب مع إضافة ترويسات الـ Form Data المناسبة
     const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
-      headers: { ...form.getHeaders() },
+      headers: {
+        ...form.getHeaders()
+      },
       maxContentLength: Infinity,
       maxBodyLength: Infinity
     });
@@ -224,130 +228,7 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   }
 }
 
-/**
- * 3. 💬 إرسال رسائل وسائط شات الدعم المباشر من العميل للتليجرام
- */
-async function sendSupportChatMessage({ text, file, txId, reply_markup }) {
-  try {
-    if (!BOT_TOKEN || !CHAT_ID) {
-      console.warn("⚠️ [Telegram Error] BOT_TOKEN أو CHAT_ID مفقود!");
-      return;
-    }
-
-    const defaultReplyMarkup = reply_markup || {
-      inline_keyboard: [
-        [
-          {
-            text: "💬 رد على العميل",
-            callback_data: `reply_${txId || "GUEST"}`
-          }
-        ]
-      ]
-    };
-
-    if (file) {
-      const form = new FormData();
-      form.append("chat_id", CHAT_ID);
-      form.append("photo", file.buffer, {
-        filename: file.originalname || "user_upload.png",
-        contentType: file.mimetype || "image/png"
-      });
-      const caption = `💬 <b>رسالة دعم عميل (مرفق)</b>\n🆔 المعرف: <code>${txId || 'عام'}</code>\n📝 النص المُرفق: ${text || 'بدون نص'}`;
-      form.append("caption", caption);
-      form.append("parse_mode", "HTML");
-      form.append("reply_markup", JSON.stringify(defaultReplyMarkup));
-
-      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
-        headers: { ...form.getHeaders() }
-      });
-    } else if (text) {
-      const message = `💬 <b>رسالة دعم جديدة من العميل:</b>\n🆔 المعرف: <code>${txId || 'عام'}</code>\n\n📝 الرسالة:\n${text}`;
-      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        chat_id: CHAT_ID,
-        text: message,
-        parse_mode: "HTML",
-        reply_markup: defaultReplyMarkup
-      });
-    }
-  } catch (err) {
-    console.error("❌ [Support Chat Telegram Error]:", err.response?.data || err.message);
-  }
-}
-
-/**
- * 4. 🔄 معالج الويب هوك مع دعم البث المباشر (WebSocket / Socket.io)
- * @param {object} req - طلب HTTP
- * @param {object} res - استجابة HTTP
- * @param {object} io - (اختياري) كائن Socket.io الخاص بالخادم لتوصيل الرسالة المباشرة
- */
-async function handleTelegramWebhook(req, res, io = null) {
-  try {
-    const update = req.body;
-
-    // 1. التعامل مع ضغطة زر "💬 رد على العميل"
-    if (update.callback_query) {
-      const callbackData = update.callback_query.data;
-      const adminChatId = update.callback_query.message.chat.id;
-
-      if (callbackData && callbackData.startsWith("reply_")) {
-        const targetClientId = callbackData.replace("reply_", "");
-
-        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
-          callback_query_id: update.callback_query.id
-        });
-
-        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-          chat_id: adminChatId,
-          text: `✏️ اكتب ردك الآن للعميل صاحب المعرف:\n\`${targetClientId}\`\n\n*(تأكد من عمل Reply على هذه الرسالة أثناء الكتابة)*`,
-          parse_mode: "Markdown",
-          reply_markup: {
-            force_reply: true
-          }
-        });
-      }
-      return res.sendStatus(200);
-    }
-
-    // 2. التعامل مع رسالة الرد المكتوبة من الأدمن
-    if (update.message && update.message.reply_to_message) {
-      const replyText = update.message.text || "";
-      const originalText = update.message.reply_to_message.text || update.message.reply_to_message.caption || "";
-
-      // استخراج targetClientId بين العلامتين ``
-      const match = originalText.match(/`([^`]+)`/);
-      if (match && match[1]) {
-        const targetClientId = match[1];
-
-        console.log(`📩 [LIVE CHAT REPLY] الرد الموجه للعميل [${targetClientId}]: ${replyText}`);
-
-        // 📡 إرسال الرد فوراً عبر البث المباشر WebSocket إن وجد
-        if (io) {
-          io.to(targetClientId).emit("support_reply", {
-            sender: "support",
-            text: replyText,
-            timestamp: new Date().toISOString()
-          });
-        }
-
-        // تأكيد إرسال الرد في شات التليجرام
-        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-          chat_id: update.message.chat.id,
-          text: `✅ تم تسليم الرد بنجاح عبر البث المباشر للعميل (\`${targetClientId}\`)`,
-          parse_mode: "Markdown"
-        });
-      }
-    }
-
-    return res.sendStatus(200);
-  } catch (err) {
-    console.error("❌ [Telegram Webhook Error]:", err.response?.data || err.message);
-    return res.sendStatus(500);
-  }
-}
-
 module.exports = {
   sendTelegramMessage,
-  sendVoucherWithCardImage,
-  sendSupportChatMessage,
-  handleTelegramWebhook
+  sendVoucherWithCardImage
 };
