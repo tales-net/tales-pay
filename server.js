@@ -88,6 +88,48 @@ app.post('/telegram-webhook', async (req, res) => {
 });
 
 // ==========================================
+// 🕹️ مسار معالجة إصدار الكارت يدوياً عبر زر التليجرام
+// ==========================================
+app.get('/api/manual-create-card', async (req, res) => {
+  try {
+    const { tx, amount, branch } = req.query;
+    const numAmount = parseFloat(amount || 5);
+    const branchKey = branch || 'main';
+
+    if (numAmount > 100) {
+      // إذا كان المبلغ مساهمة، يوجه مباشرة لصفحة المساهمة
+      return res.send(generateContributionHtmlPage(numAmount, tx));
+    }
+
+    // توليد الكارت عبر ميكروتيك للرقم والفرع المحدد
+    const result = await processPaymentAndCreateCard(numAmount, branchKey, tx);
+
+    if (result.isContribution) {
+      return res.send(generateContributionHtmlPage(numAmount, tx));
+    }
+
+    return res.send(`
+      <!DOCTYPE html>
+      <html lang="ar" dir="rtl">
+      <head><meta charset="UTF-8"><title>إصدار الكارت</title></head>
+      <body style="font-family:Tahoma; text-align:center; padding:50px; background:#f4f7fb;">
+        <div style="background:white; max-width:400px; margin:0 auto; padding:30px; border-radius:15px; box-shadow:0 5px 15px rgba(0,0,0,0.1);">
+          <h2 style="color:#16a34a;">✅ تم إصدار الكارت بنجاح</h2>
+          <p>رقم العملية: <b>${tx}</b></p>
+          <div style="background:#f0f9ff; color:#0369a1; font-size:24px; font-weight:bold; padding:15px; border-radius:10px; margin:15px 0; font-family:monospace;">
+            ${result.cardCode}
+          </div>
+          <p>الباقة: ${result.packageName} (${numAmount} جنيه)</p>
+        </div>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    res.status(500).send(`<h3>❌ حدث خطأ أثناء إصدار الكارت:</h3><p>${error.message}</p>`);
+  }
+});
+
+// ==========================================
 // 💳 مسارات المدفوعات وباقي الخدمة
 // ==========================================
 async function handlePaymentRequest(req, res) {
