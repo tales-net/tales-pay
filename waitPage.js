@@ -130,6 +130,7 @@ function generateWaitPageHtml(transactionId, networkUrl) {
             alert("تم نسخ كود الكارت بنجاح!");
           }
         </script>
+        <script src="/chat-widget.js"></script>
       </body>
     </html>
   `;
