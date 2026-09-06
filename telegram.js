@@ -210,9 +210,7 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     form.append("parse_mode", "HTML");
 
     const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
-      headers: {
-        ...form.getHeaders()
-      },
+      headers: { ...form.getHeaders() },
       maxContentLength: Infinity,
       maxBodyLength: Infinity
     });
@@ -236,7 +234,6 @@ async function sendSupportChatMessage({ text, file, txId, reply_markup }) {
       return;
     }
 
-    // بناء الزر التفاعلي افتراضياً إن لم يُمرر
     const defaultReplyMarkup = reply_markup || {
       inline_keyboard: [
         [
@@ -255,7 +252,7 @@ async function sendSupportChatMessage({ text, file, txId, reply_markup }) {
         filename: file.originalname || "user_upload.png",
         contentType: file.mimetype || "image/png"
       });
-      const caption = `💬 <b>رسالة دعم عميل (صورة إيصال)</b>\n🆔 المعرف: <code>${txId || 'عام'}</code>\n📝 النص المُرفق: ${text || 'بدون نص'}`;
+      const caption = `💬 <b>رسالة دعم عميل (مرفق)</b>\n🆔 المعرف: <code>${txId || 'عام'}</code>\n📝 النص المُرفق: ${text || 'بدون نص'}`;
       form.append("caption", caption);
       form.append("parse_mode", "HTML");
       form.append("reply_markup", JSON.stringify(defaultReplyMarkup));
@@ -278,9 +275,12 @@ async function sendSupportChatMessage({ text, file, txId, reply_markup }) {
 }
 
 /**
- * 4. 🔄 معالج الويب هوك الخاص بالتليجرام (Telegram Webhook Handler)
+ * 4. 🔄 معالج الويب هوك مع دعم البث المباشر (WebSocket / Socket.io)
+ * @param {object} req - طلب HTTP
+ * @param {object} res - استجابة HTTP
+ * @param {object} io - (اختياري) كائن Socket.io الخاص بالخادم لتوصيل الرسالة المباشرة
  */
-async function handleTelegramWebhook(req, res) {
+async function handleTelegramWebhook(req, res, io = null) {
   try {
     const update = req.body;
 
@@ -292,12 +292,10 @@ async function handleTelegramWebhook(req, res) {
       if (callbackData && callbackData.startsWith("reply_")) {
         const targetClientId = callbackData.replace("reply_", "");
 
-        // إشعار التليجرام باستلام الضغطة ليزيل مؤشر التحميل
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
           callback_query_id: update.callback_query.id
         });
 
-        // إرسال تعليمات الرد مع تفعيل ForceReply
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
           chat_id: adminChatId,
           text: `✏️ اكتب ردك الآن للعميل صاحب المعرف:\n\`${targetClientId}\`\n\n*(تأكد من عمل Reply على هذه الرسالة أثناء الكتابة)*`,
@@ -310,22 +308,31 @@ async function handleTelegramWebhook(req, res) {
       return res.sendStatus(200);
     }
 
-    // 2. التعامل مع رسالة الرد المكتوبة من الآدمن
+    // 2. التعامل مع رسالة الرد المكتوبة من الأدمن
     if (update.message && update.message.reply_to_message) {
-      const replyText = update.message.text;
-      const originalText = update.message.reply_to_message.text || "";
+      const replyText = update.message.text || "";
+      const originalText = update.message.reply_to_message.text || update.message.reply_to_message.caption || "";
 
       // استخراج targetClientId بين العلامتين ``
       const match = originalText.match(/`([^`]+)`/);
       if (match && match[1]) {
         const targetClientId = match[1];
 
-        console.log(`📩 [SUPPORT REPLY] الرد الموجه للعميل [${targetClientId}]: ${replyText}`);
+        console.log(`📩 [LIVE CHAT REPLY] الرد الموجه للعميل [${targetClientId}]: ${replyText}`);
+
+        // 📡 إرسال الرد فوراً عبر البث المباشر WebSocket إن وجد
+        if (io) {
+          io.to(targetClientId).emit("support_reply", {
+            sender: "support",
+            text: replyText,
+            timestamp: new Date().toISOString()
+          });
+        }
 
         // تأكيد إرسال الرد في شات التليجرام
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
           chat_id: update.message.chat.id,
-          text: `✅ تم تسليم الرد بنجاح للعميل (\`${targetClientId}\`)`,
+          text: `✅ تم تسليم الرد بنجاح عبر البث المباشر للعميل (\`${targetClientId}\`)`,
           parse_mode: "Markdown"
         });
       }
