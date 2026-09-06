@@ -2,34 +2,21 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const path = require("path");
-const multer = require("multer");
-const http = require("http");
-const { Server } = require("socket.io");
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
-const { sendTelegramMessage, sendSupportChatMessage } = require("./telegram");
+const { sendTelegramMessage } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 
-// 🌟 استدعاء محرك الدعم المستقل
-const supportEngine = require("./chat_support");
-
-const upload = multer({ storage: multer.memoryStorage() });
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
-
-// 🌟 تشغيل Socket.io عبر محرك الدعم
-supportEngine.initSocket(io);
-
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
+
 const BRANCH_NAMES = {
-  waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك",
+  waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك", // 👈 إضافة الفرع الافتراضي الجديد هنا
   main: "حكايات نت رئيسي",
   branch2: "حكايات نت فرع ثاني",
   branch3: "حكايات نت فرع ثالث"
@@ -37,7 +24,7 @@ const BRANCH_NAMES = {
 
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
-// تنظيف دوري للذاكرة المؤقتة للكروت كل نصف ساعة
+// تنظيف دوري للذاكرة المؤقتة كل نصف ساعة
 setInterval(() => {
   const oneHourAgo = Date.now() - (60 * 60 * 1000);
   for (let [key, value] of global.generatedCardsMap.entries()) {
@@ -65,26 +52,6 @@ function getClientPublicIP(req) {
     "غير متوفر"
   );
 }
-
-// 🌟 API الدعم المباشر (مُمَرَّر للمحرك المستقل)
-app.post("/api/support/message", upload.single("image"), (req, res) => {
-  return supportEngine.handleClientMessage(req, res, sendSupportChatMessage);
-});
-
-app.get("/api/support/messages/:clientId", (req, res) => {
-  const messages = supportEngine.getStoredMessages(req.params.clientId);
-  res.json({ success: true, messages });
-});
-
-// 🌟 مسار التليجرام ويبهوك (معالجة ردود الآدمن)
-app.post("/telegram-webhook", async (req, res) => {
-  await supportEngine.handleTelegramReply(req.body);
-  res.sendStatus(200);
-});
-
-app.post("/api/telegram/webhook", (req, res) => {
-  return res.redirect(307, "/telegram-webhook");
-});
 
 async function handlePaymentRequest(req, res) {
   try {
@@ -268,14 +235,15 @@ app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "";
   const queryBranch = req.query.branch || "";
   
-  let inferredBranch = "waitPage";
+  let inferredBranch = "waitPage"; // التعيين الافتراضي
   const upperTx = transactionId.toUpperCase();
   if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
   else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
   else if (upperTx.includes("MAIN")) inferredBranch = "main";
 
   const activeBranchKey = queryBranch || inferredBranch;
-  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.waitPage;
+  // الآن تعمل القيمة الافتراضية بشكل صحيح وبدون أخطاء
+const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.waitPage;
 
   res.send(`
     <!DOCTYPE html>
@@ -424,6 +392,6 @@ app.get("/fail", (req, res) => {
 
 app.use("/", webhookRouter);
 
-server.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
