@@ -9,7 +9,7 @@ require("dotenv").config();
 
 const { processPayment } = require("./pay");
 const { sendTelegramMessage } = require("./telegram");
-const { sendTelegramManualButtons } = require("./telegramButtons"); // ⬅️ استدعاء ملف الأزرار اليدوية للتليجرام
+const { sendTelegramManualButtons, handleTelegramCallback } = require("./telegramButtons"); // ⬅️ استدعاء دالة الأزرار ودالة الـ Callback
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
