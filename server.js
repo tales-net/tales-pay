@@ -1,7 +1,10 @@
 const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const path = require("path");
+const multer = require("multer");
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
@@ -11,18 +14,30 @@ const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 
+// استدعاء ملف الدعم المباشر (Chat Support)
+const chatSupport = require('./chat_support');
+
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
 const PORT = process.env.PORT || 3000;
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
 
 const BRANCH_NAMES = {
-  waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك", // 👈 إضافة الفرع الافتراضي الجديد هنا
+  waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك",
   main: "حكايات نت رئيسي",
   branch2: "حكايات نت فرع ثاني",
   branch3: "حكايات نت فرع ثالث"
 };
 
 global.generatedCardsMap = global.generatedCardsMap || new Map();
+
+// تهيئة Socket.io للدعم المباشر
+chatSupport.initSocket(io);
+
+// إعداد Multer لاستقبال الصور والملفات المرفوعة في الشات
+const upload = multer();
 
 // تنظيف دوري للذاكرة المؤقتة كل نصف ساعة
 setInterval(() => {
@@ -53,6 +68,32 @@ function getClientPublicIP(req) {
   );
 }
 
+// ==========================================
+// 💬 مسارات الدعم الفني المباشر (Chat Support API)
+// ==========================================
+
+// 1. استقبال رسالة أو صوره من العميل وإرسالها لتليجرام
+app.post('/api/support/message', upload.single('image'), (req, res) => {
+  chatSupport.handleClientMessage(req, res, chatSupport.sendSupportChatMessage);
+});
+
+// 2. جلب الرسائل السابقة للعميل عند فتح النافذة
+app.get('/api/support/messages/:clientId', (req, res) => {
+  const clientId = req.params.clientId;
+  const messages = chatSupport.getStoredMessages(clientId);
+  res.json({ success: true, messages });
+});
+
+// 3. مسار استلام التحديثات من تليجرام (Webhook للردود وأزرار الإغلاق)
+app.post('/telegram-webhook', async (req, res) => {
+  await chatSupport.handleTelegramReply(req.body);
+  res.sendStatus(200);
+});
+
+// ==========================================
+// 💳 مسارات المدفوعات وباقي الخدمة
+// ==========================================
+
 async function handlePaymentRequest(req, res) {
   try {
     const data = { ...req.query, ...req.body };
@@ -72,8 +113,6 @@ async function handlePaymentRequest(req, res) {
     const rawBranch = branch || branch_key || "branch2";
     const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "branch2";
     const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.branch2;
-
-    console.log(`🚨 [SERVER CHECK] الفرع المستلم من الواجهة هو: [${selectedBranch}] (${branchDisplayName})`);
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
@@ -137,7 +176,6 @@ app.get("/api/test-create-card", async (req, res) => {
   const secretKey = req.query.secret;
   
   if (!secretKey || secretKey !== process.env.TEST_SECRET_KEY) {
-    console.warn(`🚨 محاولة وصول غير مصرح بها للرابط التجريبي من IP: ${getClientPublicIP(req)}`);
     return res.status(403).json({ 
       success: false, 
       message: "⚠️ غير مسموح لك بالوصول لهذا الرابط التجريبي. مفتاح الحماية غير صحيح أو مفقود." 
@@ -184,7 +222,6 @@ app.get("/api/test-create-card", async (req, res) => {
   }
 });
 
-// 🌟 مسار عرض صفحة المساهمة الاحترافية المدمجة
 app.get("/contribution-success", (req, res) => {
   const amount = req.query.amount || req.query.price || 150;
   const transactionId = req.query.tx || req.query.id || req.query.order || 'TRX-DEFAULT';
@@ -235,15 +272,14 @@ app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "";
   const queryBranch = req.query.branch || "";
   
-  let inferredBranch = "waitPage"; // التعيين الافتراضي
+  let inferredBranch = "waitPage";
   const upperTx = transactionId.toUpperCase();
   if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
   else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
   else if (upperTx.includes("MAIN")) inferredBranch = "main";
 
   const activeBranchKey = queryBranch || inferredBranch;
-  // الآن تعمل القيمة الافتراضية بشكل صحيح وبدون أخطاء
-const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.waitPage;
+  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.waitPage;
 
   res.send(`
     <!DOCTYPE html>
@@ -392,6 +428,7 @@ app.get("/fail", (req, res) => {
 
 app.use("/", webhookRouter);
 
-app.listen(PORT, () => {
+// استخدام server.listen بدلاً من app.listen لضمان عمل Socket.io بشكل صحيح
+server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
