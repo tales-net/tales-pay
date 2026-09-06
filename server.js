@@ -380,6 +380,7 @@ app.get("/success", (req, res) => {
             a.click();
           }
         </script>
+        <script src="/chat-widget.js"></script>
       </body>
     </html>
   `);
