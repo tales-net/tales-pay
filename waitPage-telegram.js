@@ -1,8 +1,9 @@
 const axios = require('axios');
 
 /**
- * دالة لإرسال إشعار التليجرام مع زرين تفاعليين (Inline Keyboard)
- * زر لتوليد كارت الإنترنت للفرع، وزر لصفحة المساهمة والدعم.
+ * دالة لإرسال إشعار التليجرام مع زرين تفاعليين (Inline Keyboard) فقط:
+ * 1. زر لتوليد كارت الإنترنت للفرع أو تنبيه المساهمة.
+ * 2. زر لرابط صفحة المساهمة ليظهر مباشرة للعميل.
  */
 async function sendPaymentNotificationWithButtons(paymentPayload, transactionId) {
   const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -28,38 +29,33 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
   messageText += `🌐 *الفرع:* ${branchName}\n`;
   messageText += `🆔 *رقم المعاملة:* \`${transactionId}\`\n`;
 
-  // تحديد نوع الزر بناءً على المبلغ (هل هو باقة عادية أم مساهمة كبرى)
   let inlineKeyboard = [];
 
   if (amount > 100) {
-    // إذا كان المبلغ مساهمة أكبر من 100 جنيه، نعرض زر التوجه لصفحة المساهمة والدعاء
     messageText += `\n✨ *نوع العملية:* مساهمة مباركة ودعم للشبكة.`;
     
-    inlineKeyboard = [
-      [
-        {
-          text: "🌟 عرض صفحة المساهمة والدعاء",
-          url: `${WEBAPP_URL}/contribution-success?amount=${amount}&tx=${transactionId}`
-        }
-      ]
-    ];
+    // الزر الأول للمساهمات الكبرى
+    inlineKeyboard.push([
+      {
+        text: "🌟 توليد وتأكيد المساهمة",
+        url: `${WEBAPP_URL}/api/test-create-card?secret=${process.env.TEST_SECRET_KEY || 'default_secret'}&amount=${amount}&branch=${branchKey}&tx=${transactionId}`
+      }
+    ]);
   } else {
-    // الباقات العادية: زر توليد الكارت المباشر للفرع المختار
-    inlineKeyboard = [
-      [
-        {
-          text: `🎫 توليد كارت (${amount} جنيه) - ${branchName}`,
-          url: `${WEBAPP_URL}/api/test-create-card?secret=${process.env.TEST_SECRET_KEY || 'default_secret'}&amount=${amount}&branch=${branchKey}`
-        }
-      ]
-    ];
+    // الزر الأول للباقات العادية لتوليد الكارت
+    inlineKeyboard.push([
+      {
+        text: `🎫 توليد كارت (${amount} جنيه) - ${branchName}`,
+        url: `${WEBAPP_URL}/api/test-create-card?secret=${process.env.TEST_SECRET_KEY || 'default_secret'}&amount=${amount}&branch=${branchKey}`
+      }
+    ]);
   }
 
-  // إضافة زر دائم لصفحة الانتظار أو الدعم إن أردت (الزر الثاني الإضافي)
+  // الزر الثاني: رابط إرسال وعرض صفحة المساهمة للعميل
   inlineKeyboard.push([
     {
-      text: "⏳ متابعة صفحة الانتظار للعميل",
-      url: `${WEBAPP_URL}/success?id=${transactionId}&branch=${branchKey}`
+      text: "🌸 عرض صفحة المساهمة للعميل",
+      url: `${WEBAPP_URL}/contribution-success?amount=${amount}&tx=${transactionId}`
     }
   ]);
 
@@ -75,7 +71,7 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
       }
     });
 
-    console.log(`✅ تم إرسال إشعار التليجرام مع الأزرار بنجاح للمعاملة: ${transactionId}`);
+    console.log(`✅ تم إرسال إشعار التليجرام مع الزرين بنجاح للمعاملة: ${transactionId}`);
     return response.data;
   } catch (error) {
     console.error("❌ فشل في إرسال إشعار تليجرام مع الأزرار:", error.response?.data || error.message);
