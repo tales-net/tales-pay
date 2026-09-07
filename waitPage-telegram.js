@@ -89,12 +89,15 @@ async function handleWaitPageCallback(callbackQuery, io) {
         console.log(`🚀 [Socket.io] تم تفعيل العرض الخفي لصفحة المساهمة للمعاملة: ${txId}`);
       }
 
-      // الرد على تليجرام لإزالة علامة التحميل من الزر
-      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
-        callback_query_id: callbackQueryId,
-        text: "🌟 تم إرسال صفحة المساهمة لظهر العميل بنجاح!",
-        show_alert: false
-      });
+      // عند إرسال إشعار صفحة الانتظار مع الأزرار
+const replyMarkup = {
+  inline_keyboard: [
+    [
+      { text: "🎟️ إصدار الكارت", callback_data: `approve_card_${transactionId}` },
+      { text: "🌟 صفحة المساهمة والدعم", callback_data: `show_contribution_${transactionId}_150` }
+    ]
+  ]
+};
     }
   } catch (err) {
     console.error("❌ [WaitPage Callback Error]:", err.response?.data || err.message);
