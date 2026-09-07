@@ -287,10 +287,78 @@ function getStoredMessages(clientId) {
   return chatSessions.get(clientId) || [];
 }
 
+/**
+ * دالة لتوليد كود الـ JavaScript الخاص بفقاعة الترحيب العائمة (Chat Widget Bubble)
+ * تظهر الفقاعة بعبارة "💬 تحدث معنا مباشرة" عند فتح الصفحة وتختفي تلقائياً بعد دقيقة (60 ثانية).
+ */
+function getChatWidgetScript() {
+  return `
+    <script>
+      (function() {
+        // إنشاء عنصر الفقاعة الترحيبية
+        const bubble = document.createElement('div');
+        bubble.id = 'supportWelcomeBubble';
+        bubble.innerHTML = '💬 تحدث معنا مباشرة';
+        
+        // تنسيق تصميم الفقاعة لتكون عائمة في الزاوية السفلية (بجانب زر الشات أو في المنتصف السفلي)
+        Object.assign(bubble.style, {
+          position: 'fixed',
+          bottom: '85px',
+          right: '20px',
+          backgroundColor: '#01338D',
+          color: '#ffffff',
+          padding: '10px 16px',
+          borderRadius: '20px 20px 2px 20px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          fontFamily: 'Segoe UI, Tahoma, Cairo, sans-serif',
+          fontSize: '14px',
+          fontWeight: 'bold',
+          zIndex: '999999',
+          cursor: 'pointer',
+          direction: 'rtl',
+          opacity: '0',
+          transform: 'translateY(10px)',
+          transition: 'all 0.4s ease'
+        });
+
+        document.body.appendChild(bubble);
+
+        // إظهار الفقاعة بتأثير حركي لطيف بعد ثانية من تحميل الصفحة
+        setTimeout(() => {
+          bubble.style.opacity = '1';
+          bubble.style.transform = 'translateY(0)';
+        }, 1000);
+
+        // الضغط على الفقاعة يفتح واجهة الشات أو يوجه للمحادثة
+        bubble.onclick = function() {
+          if (typeof openChatModal === 'function') {
+            openChatModal();
+          } else {
+            // محاولة النقر على زر الويدجت الافتراضي إن وجد
+            const defaultBtn = document.querySelector('.chat-widget-btn, #chatButton, .support-btn');
+            if (defaultBtn) defaultBtn.click();
+          }
+          bubble.remove(); // إخوائها فور الضغط عليها
+        };
+
+        // إخفاء الفقاعة تلقائياً بعد مرور دقيقة كاملة (60 ثانية)
+        setTimeout(() => {
+          if (bubble && bubble.parentNode) {
+            bubble.style.opacity = '0';
+            bubble.style.transform = 'translateY(10px)';
+            setTimeout(() => bubble.remove(), 400);
+          }
+        }, 61000); // 60 ثانية + وقت التأثير
+      })();
+    </script>
+  `;
+}
+
 module.exports = {
   initSocket,
   handleClientMessage,
   sendSupportChatMessage,
   handleTelegramReply,
-  getStoredMessages
+  getStoredMessages,
+  getChatWidgetScript
 };
