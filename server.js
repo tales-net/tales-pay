@@ -5,6 +5,7 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const path = require("path");
 const multer = require("multer");
+const axios = require("axios");
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
@@ -97,35 +98,78 @@ app.get('/api/support/messages/:clientId', (req, res) => {
 app.post('/telegram-webhook', async (req, res) => {
   try {
     const update = req.body;
+    const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
     // 1. معالجة ضغطات الأزرار التفاعلية (Inline Keyboard Buttons)
     if (update.callback_query) {
       const callbackQuery = update.callback_query;
       const data = callbackQuery.data; 
+      const callbackQueryId = callbackQuery.id;
 
       if (data.startsWith('approve_card_')) {
-        const txId = data.replace('approve_card_', '');
-        
-        // استدعاء خدمة الميكروتيك لتوليد الكارت آلياً بناءً على أمر المشرف
-        const cardResult = await processPaymentAndCreateCard("5", "branch2", txId);
+        // استخراج رقم المعاملة والفرع والمبلغ من بيانات الزر
+        const parts = data.replace('approve_card_', '').split('_');
+        const txId = parts[0];
+        const targetBranch = parts[1] || "branch2";
+        const amount = parts[2] || "5";
+
+        // ✅ استدعاء خدمة الميكروتيك للفرع الصحيح المحدد بالطلب
+        const cardResult = await processPaymentAndCreateCard(amount, targetBranch, txId);
 
         if (cardResult.success) {
-          global.generatedCardsMap.set(txId, {
+          const cardPayload = {
             code: cardResult.cardCode,
             packageName: cardResult.packageName,
-            branchName: "حكايات نت",
+            amount: parseFloat(amount),
+            branchName: BRANCH_NAMES[targetBranch] || "حكايات نت",
             createdAt: new Date()
+          };
+
+          global.generatedCardsMap.set(txId, cardPayload);
+
+          // إرسال الكارت للعميل فوراً عبر Socket.io ليظهر في صفحة الانتظار waitPage.js أو صفحة النجاح
+          io.to(txId).emit('voucher_ready', { 
+            success: true, 
+            code: cardResult.cardCode,
+            amount: parseFloat(amount)
           });
 
-          // إرسال الكارت للعميل فوراً عبر Socket.io دون تحديث صفحته
-          io.to(txId).emit('voucher_ready', { success: true, code: cardResult.cardCode });
+          // ✅ الرد على بوت تليجرام بأن العملية تمت بنجاح وتختفي علامة التحميل من الزر
+          if (BOT_TOKEN) {
+            await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+              callback_query_id: callbackQueryId,
+              text: "✅ تم إصدار وتفعيل الكارت بنجاح في الفرع المطلوب!",
+              show_alert: true
+            });
+          }
+        } else {
+          if (BOT_TOKEN) {
+            await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+              callback_query_id: callbackQueryId,
+              text: "❌ فشل إصدار الكارت من الميكروتيك.",
+              show_alert: true
+            });
+          }
         }
       } 
       else if (data.startsWith('show_contribution_')) {
-        const txId = data.replace('show_contribution_', '');
-        
-        // توجيه العميل فوراً لصفحة المساهمة عبر Socket.io
-        io.to(txId).emit('redirect_contribution', { url: `/contribution-success?tx=${txId}` });
+        const parts = data.replace('show_contribution_', '').split('_');
+        const txId = parts[0];
+        const amount = parts[1] || "150";
+
+        // ✅ توجيه العميل فوراً لصفحة المساهمة عبر Socket.io
+        io.to(txId).emit('redirect_contribution', { 
+          url: `/contribution-success?amount=${amount}&tx=${encodeURIComponent(txId)}` 
+        });
+
+        // ✅ الرد على بوت تليجرام
+        if (BOT_TOKEN) {
+          await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+            callback_query_id: callbackQueryId,
+            text: "🤝 تم توجيه العميل لصفحة المساهمة بنجاح.",
+            show_alert: false
+          });
+        }
       }
     }
 
