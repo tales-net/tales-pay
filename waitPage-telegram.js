@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 /**
- * إرسال إشعار إلى التليجرام مع أزرار تفاعلية مخصصة حسب قيمة المبلغ (مساهمة أو كارت ميكروتيك)
+ * إرسال إشعار إلى التليجرام مع زر يوجه لصفحة الانتظار (WaitPage) الخاصة بالمعاملة
  * @param {Object} paymentData - بيانات الدفع
  * @param {string} transactionId - رقم المعاملة الفريد
  */
@@ -26,38 +26,35 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
 📌 *النوع:* ${isContribution ? "🌸 مساهمة ودعم للشبكة" : "🎟️ باقة إنترنت ميكروتيك"}
   `.trim();
 
-  // ⚠️ استبدل هذا الرابط برابط موقعك الحقيقي على Render (بدون / في النهاية)
-  // مثال: https://your-app-name.onrender.com
   const serverBaseUrl = process.env.SERVER_BASE_URL || process.env.RENDER_EXTERNAL_URL || "https://your-app.onrender.com";
 
   let inlineKeyboardButtons = [];
 
+  // الزر الرئيسي الذي يوجه لصفحة الانتظار الافتراضية المرتبطة بالمعاملة
   if (isContribution) {
-    // إذا كان المبلغ مساهمة (> 100)
     inlineKeyboardButtons = [
       [
         {
-          text: "🌸 فتح صفحة المساهمة والدعاء",
-          url: `${serverBaseUrl}/contribution-success?amount=${amount}&tx=${transactionId}`
+          text: "🌸 فتح صفحة الانتظار / المساهمة",
+          url: `${serverBaseUrl}/wait?tx=${transactionId}`
         }
       ]
     ];
   } else {
-    // إذا كان المبلغ باقة إنترنت عادية (توليد كارت ميكروتيك)
     inlineKeyboardButtons = [
       [
         {
-          text: "⚙️ توليد الكارت يدويًا وتفعيله",
-          url: `${serverBaseUrl}/api/test-create-card?secret=${process.env.TEST_SECRET_KEY}&amount=${amount}&branch=${paymentData.branch || 'main'}&tx=${transactionId}`
+          text: "⏳ فتح صفحة الانتظار وتوليد الكارت",
+          url: `${serverBaseUrl}/wait?tx=${transactionId}`
         }
       ]
     ];
   }
 
-  // زر عام لمتابعة حالة الطلب أو صفحة النجاح
+  // زر إضافي احتياطي لمعاينة الكارت أو الصفحة مباشرة
   inlineKeyboardButtons.push([
     {
-      text: "🔍 معاينة صفحة العميل",
+      text: "🔍 معاينة حالة العميل المباشرة",
       url: `${serverBaseUrl}/success?merchant_order_id=${transactionId}&branch=${paymentData.branch || 'main'}`
     }
   ]);
@@ -73,7 +70,7 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
       parse_mode: "Markdown",
       reply_markup: inlineKeyboard
     });
-    console.log("✅ تم إرسال إشعار التليجرام مع الأزرار التفاعلية بنجاح.");
+    console.log("✅ تم إرسال إشعار التليجرام مع الأزرار التفاعلية المحدثة بنجاح.");
   } catch (error) {
     console.error("❌ فشل إرسال إشعار التليجرام للأزرار:", error.response?.data || error.message);
   }
