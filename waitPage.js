@@ -1,5 +1,5 @@
 /**
- * توليد صفحة الانتظار وتأكيد الدفع مع التحديث الحي التلقائي من التليجرام
+ * توليد صفحة الانتظار وتأكيد الدفع مع الاستجابة الفورية لقرارات البوت (كارت أو مساهمة)
  * @param {string} transactionId - رقم المعاملة أو الطلب
  * @param {string} networkUrl - رابط التوجيه لشبكة الميكروتيك
  * @returns {string} HTML Code
@@ -66,17 +66,17 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           </div>
           
           <h1>جاري مراجعة طلب الدفع...</h1>
-          <p class="subtitle">بمجرد اعتماد الإدارة لعملية الدفع من البوت، سيظهر الكارت هنا أو سيتم توجيهك للمساهمة تلقائياً.</p>
+          <p class="subtitle">انتظر قليلاً، سيتم اعتماد طلبك من الإدارة وفتح صفحة الدعم أو الكارت تلقائياً أمامك.</p>
 
           <div class="highlight-action">
             <i class="fa fa-bell" style="font-size: 16px;"></i>
-            <span>الرجاء الانتظار، يتم فحص حالة الطلب بشكل لحظي...</span>
+            <span>جاري فحص حالة الطلب بشكل لحظي...</span>
           </div>
 
           <div class="info-box">
             <div class="info-row">
               <span>حالة الطلب:</span>
-              <span class="status-badge"><span class="status-dot"></span> بانتظار موافقة البوت</span>
+              <span class="status-badge"><span class="status-dot"></span> بانتظار قرار الإدارة</span>
             </div>
             <div class="info-row" style="margin-top: 10px;">
               <span>رقم المعاملة:</span>
@@ -85,16 +85,16 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           </div>
 
           <div class="manual-actions">
-            <a href="/contribution-success?amount=150&tx=${transactionId}" class="btn-custom btn-contrib">
+            <a href="#" id="contribBtn" class="btn-custom btn-contrib">
               <i class="fa fa-heart"></i> صفحة المساهمة
             </a>
             <a href="/success?merchant_order_id=${transactionId}" class="btn-custom btn-card-gen">
-              <i class="fa fa-ticket"></i> تحديث / فحص الكارت
+              <i class="fa fa-ticket"></i> تحديث الحالة
             </a>
           </div>
         </div>
 
-        <!-- نافذة عرض الكارت عند توليده -->
+        <!-- نافذة عرض الكارت عند توفره -->
         <div class="modal-overlay" id="voucherModal">
           <div class="modal-box">
             <div style="font-size: 45px; color: #16a34a; margin-bottom: 8px;"><i class="fa fa-check-circle"></i></div>
@@ -122,13 +122,18 @@ function generateWaitPageHtml(transactionId, networkUrl) {
               if (data.success && data.data) {
                 const cardAmount = parseFloat(data.data.amount || 0);
 
-                // إذا قام الأدمن باختيار المساهمة أو المبلغ تجاوز 100، يتم تحويل العميل تلقائياً نيابة عنه
-                if (cardAmount > 100 || data.data.isContribution) {
-                  window.location.href = '/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId);
+                // تحديث رابط زر المساهمة اليدوي بالمبلغ الفعلي ورقم المعاملة
+                if (cardAmount > 0) {
+                  document.getElementById('contribBtn').href = '/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId);
+                }
+
+                // 🌸 إذا قام المسؤول بالضغط على خيار المساهمة من البوت، يتم توجيه العميل فوراً لصفحة المساهمة أمام شاشته
+                if (data.data.isContribution || data.data.forceContribution || cardAmount > 100) {
+                  window.location.href = '/contribution-success?amount=' + (cardAmount || 150) + '&tx=' + encodeURIComponent(txId);
                   return;
                 }
 
-                // إذا قام الأدمن بالضغط على توليد الكارت، تظهر النافذة المنبثقة بالكود فوراً للعميل
+                // 🎟️ إذا قام المسؤول بالضغط على توليد الكارت، تظهر نافذة الكارت للعميل فوراً
                 if (data.data.code) {
                   document.getElementById('modalCardCode').innerText = data.data.code;
                   document.getElementById('voucherModal').style.display = 'flex';
@@ -136,7 +141,7 @@ function generateWaitPageHtml(transactionId, networkUrl) {
                 }
               }
               
-              // الاستمرار في الاستعلام كل 3 ثوانٍ
+              // الاستمرار في الفحص التلقائي كل 3 ثوانٍ
               if (attempts < 150) {
                 setTimeout(checkVoucherStatus, 3000);
               }
@@ -147,8 +152,7 @@ function generateWaitPageHtml(transactionId, networkUrl) {
             }
           }
 
-          // بدء الفحص التلقائي فور فتح الصفحة
-          checkVounderStatus = checkVoucherStatus; // احتياطي
+          // بدء الفحص التلقائي بمجرد فتح صفحة الانتظار
           checkVoucherStatus();
 
           function copyCardCode() {
