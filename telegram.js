@@ -149,14 +149,15 @@ async function sendTelegramMessage(data, isInitial = true) {
                  `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
 
       // ✅ إضافة الأزرار التفاعلية المدمجة لرسالة جاري الدفع
-      replyMarkup = {
-        inline_keyboard: [
-          [
-            { text: "🎟️ إصدار الكارت (ميكروتيك)", callback_data: `approve_card_${transactionId}` },
-            { text: "🤝 صفحة المساهمة", callback_data: `show_contribution_${transactionId}` }
-          ]
-        ]
-      };
+      // مثال داخل دالة إرسال الرسالة إلى تليجرام مع الأزرار التفاعلية
+const keyboard = {
+  inline_keyboard: [
+    [
+      { text: "🎟️ إصدار كارت ميكروتيك", callback_data: `approve_card_${transactionId}_${branch}` },
+      { text: "🤝 صفحة المساهمة", callback_data: `show_contribution_${transactionId}` }
+    ]
+  ]
+};
 
     } else {
       const txnId = data.id || data.transactionId || data.order?.id || "غير متوفر";
