@@ -13,7 +13,6 @@
     #hikayat-chat-header { background: #01338D; color: white; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 15px; }
     #hikayat-chat-close { background: none; border: none; color: white; font-size: 18px; cursor: pointer; }
     
-    /* شريط الانتظار الوهمي */
     #hikayat-queue-banner { background: #fff3cd; color: #856404; padding: 8px 12px; font-size: 12px; text-align: center; border-bottom: 1px solid #ffeeba; display: none; font-weight: bold; }
 
     #hikayat-chat-messages { flex: 1; padding: 12px; overflow-y: auto; background: #f9f9f9; display: flex; flex-direction: column; gap: 8px; }
@@ -73,8 +72,8 @@
       hideTypingIndicator();
       appendMessage(data.sender, data.text, data.image);
       
-      // إذا رد الآدمن (Admin)، نقوم بإيقاف طابور الانتظار فوراً وتحديث النص
-      if (data.sender === "admin") {
+      // إذا كان المرسل هو الآدمن (وليس رسالة الترحيب التلقائية)
+      if (data.sender === "admin" && !data.text.includes("مرحباً بك في شبكة حكايات")) {
         stopQueueTimer("🟢 تم توصيلك بممثل الدعم الفني بنجاح.");
       }
     });
@@ -98,13 +97,21 @@
       .then(data => {
         if (data.success && data.messages) {
           let hasClientMsg = false;
+          let hasRealAdminReply = false;
+
           data.messages.forEach(m => {
             appendMessage(m.sender, m.text, m.image);
             if (m.sender === "client") hasClientMsg = true;
+            if (m.sender === "admin" && m.text && !m.text.includes("مرحباً بك في شبكة حكايات")) {
+              hasRealAdminReply = true;
+            }
           });
-          // إذا كانت هناك رسائل سابقة من العميل، نظهر العداد
-          if (hasClientMsg && data.messages.some(m => m.sender === "admin") === false) {
+
+          // إذا أرسل العميل رسالة ولم يرد الآدمن رد حقيقي بعد، نستأنف العداد
+          if (hasClientMsg && !hasRealAdminReply) {
             startFakeQueue();
+          } else if (hasRealAdminReply) {
+            stopQueueTimer("🟢 تم توصيلك بممثل الدعم الفني بنجاح.");
           }
         }
       }).catch(err => console.log(err));
@@ -141,35 +148,34 @@
     }
   }
 
-  // تشغيل العداد الوهمي (عشوائي من 5 إلى 20)
   function startFakeQueue() {
-    if (queueInterval) return; // منع التكرار
+    if (queueInterval) return;
     
     queueBanner.style.display = "block";
     
-    // جلب أو تخزين رقم عشوائي خاص بهذا العميل لكي لا يتغير عند إعادة تحميل الصفحة
-    let currentQueue = localStorage.getItem("hikayat_q_num");
+    let currentQueue = localStorage.getItem("hikayat_q_num_" + clientId);
     if (!currentQueue) {
+      // عشوائي بين 5 و 20
       currentQueue = Math.floor(Math.random() * (20 - 5 + 1)) + 5;
-      localStorage.setItem("hikayat_q_num", currentQueue);
+      localStorage.setItem("hikayat_q_num_" + clientId, currentQueue);
     } else {
       currentQueue = parseInt(currentQueue);
     }
     
     queueNumberSpan.innerText = currentQueue;
 
-    // تناقص الرقم تدريجياً (كل 35 ثانية مثلاً ينقص رقم واحد)
+    // ينقص رقم كل 35 ثانية
     queueInterval = setInterval(() => {
       if (currentQueue > 0) {
         currentQueue--;
-        localStorage.setItem("hikayat_q_num", currentQueue);
+        localStorage.setItem("hikayat_q_num_" + clientId, currentQueue);
         queueNumberSpan.innerText = currentQueue;
       }
       
       if (currentQueue <= 0) {
         stopQueueTimer("⚠️ نظراً لضغط العمل، سيتم الرد عليك في أقرب وقت ممكن.");
       }
-    }, 35000); // 35 ثانية لكل خطوة
+    }, 35000);
   }
 
   function stopQueueTimer(customText) {
@@ -179,8 +185,8 @@
     }
     if (customText) {
       queueBanner.style.display = "block";
-      queueBanner.style.backgroundColor = "#d1e7dd";
-      queueBanner.style.color = "#0f5132";
+      queueBanner.style.backgroundColor = customText.includes("🟢") ? "#d1e7dd" : "#fff3cd";
+      queueBanner.style.color = customText.includes("🟢") ? "#0f5132" : "#856404";
       queueBanner.innerText = customText;
     } else {
       queueBanner.style.display = "none";
@@ -227,7 +233,7 @@
       if (data.closed) {
         lockChatInterface(data.message);
       } else if (data.success) {
-        // بمجرد إرسال العميل أول رسالة، يبدأ طابور الانتظار الوهمي
+        // بعد إرسال رسالة العميل، يبدأ العداد التنازلي الوهمي
         startFakeQueue();
       } else {
         alert("فشل إرسال الرسالة");
