@@ -80,10 +80,12 @@ async function sendTelegramMessage(data, isInitial = true) {
     const method = getPaymentMethodName(data);
     const amountEGP = data.amount_cents
       ? (data.amount_cents / 100).toFixed(2)
-      : (data.amount || "غير محدد");
+      : (data.amount || "5");
     const dateTimeStr = getFormattedDateTime();
 
     const branchName = data.branchName || data.branch_name || "حكايات نت رئيسي";
+    const branchKey = data.branch || data.branch_key || "branch2"; // تحديد الفرع بدقة
+    const transactionId = data.transactionId || data.id || "TX_" + Date.now();
     const userPhone = data.phone || 
                         data.billing_data?.phone_number || 
                         data.customer?.phone_number || 
@@ -94,8 +96,6 @@ async function sendTelegramMessage(data, isInitial = true) {
 
     if (isInitial) {
       const clientID = data.clientID || data.clientId || "غير متوفر";
-      // استخراج أو توليد رقم المعاملة لربطه بالأزرار
-      const transactionId = data.transactionId || data.id || "TX_" + Date.now();
 
       let locationText = data.geoCity && data.geoCountry ? `${data.geoCity}، ${data.geoCountry}` : null;
       let ispText = data.ispProvider || data.isp || null;
@@ -148,17 +148,15 @@ async function sendTelegramMessage(data, isInitial = true) {
                  `⏰ <b>المنطقة الزمنية:</b> <code>${userTimeZone}</code>\n` +
                  `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
 
-      // مثال داخل دالة إرسال رسالة تلغرام
-const keyboard = {
-  inline_keyboard: [
-    [
-      { text: "🎟️ إصدار الكارت (ميكروتيك)", callback_data: `approve_card_${transactionId}` },
-      { text: "🤝 صفحة المساهمة", callback_data: `show_contribution_${transactionId}` }
-    ]
-  ]
-};
-
-// يتم إرسال هذا الكيبورد مع رسالة التنبيه في تلغرام
+      // ✅ إضافة الأزرار التفاعلية لتفعيل الكارت أو صفحة المساهمة مع تمرير (transactionId, branchKey, amountEGP)
+      replyMarkup = {
+        inline_keyboard: [
+          [
+            { text: "🎟️ إصدار الكارت (ميكروتيك)", callback_data: `approve_card_${transactionId}_${branchKey}_${amountEGP}` },
+            { text: "🤝 صفحة المساهمة", callback_data: `show_contribution_${transactionId}_${amountEGP}` }
+          ]
+        ]
+      };
 
     } else {
       const txnId = data.id || data.transactionId || data.order?.id || "غير متوفر";
