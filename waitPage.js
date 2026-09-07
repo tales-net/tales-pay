@@ -52,7 +52,6 @@ function generateWaitPageHtml(transactionId, networkUrl) {
         p { color: #e0e0e0; font-size: 16px; line-height: 1.6; margin-bottom: 20px; }
         .tx-id { font-size: 13px; color: #b2bec3; margin-top: 15px; }
 
-        /* تنسيقات صفحة المساهمة الحية (تظهر عند التفعيل) */
         .icon-box {
           font-size: 60px;
           margin-bottom: 20px;
@@ -123,10 +122,10 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           <div class="tx-id">رقم المعاملة: #${transactionId}</div>
         </div>
 
-        <!-- حالة نجاح المساهمة (تظهر فوراً عند ضغط زر التليجرام دون ريفرش) -->
+        <!-- حالة نجاح المساهمة -->
         <div id="contribution-state" class="hidden">
           <div class="icon-box">🌟</div>
-          <h2 id="contrib-title">✨ مساهمة مباركة ودعم كريم ✨</h2>
+          <h2>✨ مساهمة مباركة ودعم كريم ✨</h2>
           
           <div class="amount-badge" id="contrib-amount-text">
             مبلغ المساهمة: جاري التحميل...
@@ -138,7 +137,7 @@ function generateWaitPageHtml(transactionId, networkUrl) {
 
           <div class="tx-id">رقم المعاملة: #${transactionId}</div>
 
-          <div class="footer-note" id="contrib-footer">
+          <div class="footer-note">
             دمتم سباقين للخير، بارك الله في مالكم وأهليكم، لا تنسي الدعاء لوالدي
           </div>
 
@@ -153,7 +152,6 @@ function generateWaitPageHtml(transactionId, networkUrl) {
         const txId = "${transactionId}";
         const socket = io();
 
-        // عبارات الأدعية لتوليدها مباشرة في واجهة العميل عند التفعيل
         const blessings = [
           "جزاكم الله خيراً وجعل هذه المساهمة الطيبة في ميزان حسناتكم، وبارك لكم في مالكم وأهليكم.",
           "تقبل الله منا ومنكم صالح الأعمال، نسأل الله أن يبارك في عطائكم ويجعله صدقة جارية ونوراً في دربكم.",
@@ -161,27 +159,8 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           "نشكر لكم مساهمتكم المباركة، نسأل الله أن يخلف عليكم خيراً وأن يرزقكم من حيث لا تحتسبون."
         ];
 
-        // الانضمام لغرفة المعاملة الخاصة بهذا العميل
         socket.emit('join_transaction', txId);
 
-        // وظيفة لتحويل شكل الشاشة إلى شاشة المساهمة فوراً (بشبه نظام البث والدردشة الحية)
-        function renderContributionView(amount) {
-          document.getElementById('loading-state').classList.add('hidden');
-          
-          const contribState = document.getElementById('contribution-state');
-          contribState.classList.remove('hidden');
-
-          // تعبئة البيانات ديناميكياً
-          document.getElementById('contrib-amount-text.innerText` = `مبلغ المساهمة: ${amount} جنيه`; // تصحيح صياغة النص
-          
-          const randomMsg = blessings[Math.floor(Math.random() * blessings.length)];
-          document.getElementById('contrib-message').innerText = randomMsg;
-          
-          // تأثير بصري خفيف على الكارت
-          document.getElementById('main-card').style.borderColor = '#2ecc71';
-        }
-
-        // إصلاح دالة تعبئة مبلغ المساهمة بدقة
         function showContribution(amount) {
           document.getElementById('loading-state').classList.add('hidden');
           document.getElementById('contribution-state').classList.remove('hidden');
@@ -189,14 +168,12 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           
           const randomMsg = blessings[Math.floor(Math.random() * blessings.length)];
           document.getElementById('contrib-message').innerText = randomMsg;
+          document.getElementById('main-card').style.borderColor = '#2ecc71';
         }
 
-        // 1. الاستماع للبث الفوري عبر Socket.io (تحديث حي تماماً مثل الشات)
         socket.on('force_redirect', function(data) {
-          if (data && data.url) {
-            // استخراج المبلغ من الـ URL أو افتراض قيمة إن لم تتوفر
-            const urlParams = new URLSearchParams(data.url.split('?')[1]);
-            const amt = urlParams.get('amount') || '150';
+          if (data) {
+            const amt = data.amount || '150';
             showContribution(amt);
           }
         });
@@ -205,7 +182,6 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           window.location.href = "/success?merchant_order_id=" + txId;
         });
 
-        // 2. الفحص الدوري (Polling) للتأكد في حال انقطاع الـ Socket
         setInterval(async () => {
           try {
             const response = await fetch('/api/check-voucher/' + txId);
@@ -219,7 +195,6 @@ function generateWaitPageHtml(transactionId, networkUrl) {
                 window.location.href = "/success?merchant_order_id=" + txId;
               }
             } else {
-              // إظهار تنبيه يشبه "جاري الكتابة..." في الدعم الفني
               document.getElementById('status-text').innerText = "جاري مراجعة الإدارة وتجهيز رسالة الشكر والمساهمة...";
             }
           } catch (e) {
