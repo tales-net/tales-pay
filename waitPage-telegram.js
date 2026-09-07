@@ -1,9 +1,7 @@
 const axios = require('axios');
 
 /**
- * دالة لإرسال إشعار التليجرام مع زرين تفاعليين (Inline Keyboard) فقط:
- * 1. زر لتوليد كارت الإنترنت للفرع أو تنبيه المساهمة.
- * 2. زر لرابط صفحة المساهمة ليظهر مباشرة للعميل.
+ * دالة لإرسال إشعار التليجرام مع زر تفعيل سريع في الخلفية
  */
 async function sendPaymentNotificationWithButtons(paymentPayload, transactionId) {
   const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -11,7 +9,7 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
   const WEBAPP_URL = process.env.RENDER_EXTERNAL_URL || "https://tales-pay.onrender.com";
 
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-    console.warn("⚠️ توكن بوت التليجرام أو معرف الشات (Chat ID) غير متوفر في ملف البيئة.");
+    console.warn("⚠️ توكن بوت التليجرام أو معرف الشات (Chat ID) غير متوفر.");
     return;
   }
 
@@ -21,41 +19,20 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
   const branchName = paymentPayload.branchName || "حكايات نت";
   const paymentMethod = paymentPayload.payment_method || "wallet";
 
-  // بناء نص الرسالة الاحترافية للتليجرام
-  let messageText = `🔔 *عملية دفع جديدة قيد المعالجة*\n\n`;
+  let messageText = `⚡ *طلب دفع جديد (جاهز للتفعيل الفوري)*\n\n`;
   messageText += `📱 *رقم الهاتف:* \`${phone}\`\n`;
   messageText += `💰 *المبلغ:* \`${amount} جنيه\`\n`;
-  messageText += `🏷️ *طريقة الدفع:* \`${paymentMethod}\`\n`;
+  messageText += `🏷️ *الطريقة:* \`${paymentMethod}\`\n`;
   messageText += `🌐 *الفرع:* ${branchName}\n`;
-  messageText += `🆔 *رقم المعاملة:* \`${transactionId}\`\n`;
+  messageText += `🆔 *المعاملة:* \`${transactionId}\`\n`;
 
   let inlineKeyboard = [];
 
-  if (amount > 100) {
-    messageText += `\n✨ *نوع العملية:* مساهمة مباركة ودعم للشبكة.`;
-    
-    // الزر الأول للمساهمات الكبرى
-    inlineKeyboard.push([
-      {
-        text: "🌟 توليد وتأكيد المساهمة",
-        url: `${WEBAPP_URL}/api/test-create-card?secret=${process.env.TEST_SECRET_KEY || 'default_secret'}&amount=${amount}&branch=${branchKey}&tx=${transactionId}`
-      }
-    ]);
-  } else {
-    // الزر الأول للباقات العادية لتوليد الكارت
-    inlineKeyboard.push([
-      {
-        text: `🎫 توليد كارت (${amount} جنيه) - ${branchName}`,
-        url: `${WEBAPP_URL}/api/test-create-card?secret=${process.env.TEST_SECRET_KEY || 'default_secret'}&amount=${amount}&branch=${branchKey}`
-      }
-    ]);
-  }
-
-  // الزر الثاني: رابط إرسال وعرض صفحة المساهمة للعميل
+  // زر واحد فقط تضغط عليه من التليجرام فيقوم بتوليد الكارت وتحديث شاشة العميل في نفس اللحظة دون فتح صفحات عندك
   inlineKeyboard.push([
     {
-      text: "🌸 عرض صفحة المساهمة للعميل",
-      url: `${WEBAPP_URL}/contribution-success?amount=${amount}&tx=${transactionId}`
+      text: `⚡ اضغط هنا لاعتماد وتفعيل الطلب فوراً`,
+      url: `${WEBAPP_URL}/api/test-create-card?secret=${process.env.TEST_SECRET_KEY || 'default_secret'}&amount=${amount}&branch=${branchKey}&tx=${transactionId}`
     }
   ]);
 
@@ -71,10 +48,10 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
       }
     });
 
-    console.log(`✅ تم إرسال إشعار التليجرام مع الزرين بنجاح للمعاملة: ${transactionId}`);
+    console.log(`✅ تم إرسال إشعار التليجرام للمعاملة: ${transactionId}`);
     return response.data;
   } catch (error) {
-    console.error("❌ فشل في إرسال إشعار تليجرام مع الأزرار:", error.response?.data || error.message);
+    console.error("❌ فشل إرسال إشعار تليجرام:", error.response?.data || error.message);
   }
 }
 
