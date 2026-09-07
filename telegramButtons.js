@@ -14,20 +14,18 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
     return;
   }
 
-  const amount = paymentData.amount_cents ? paymentData.amount_cents / 100 : 5;
+  const amount = paymentData.amount_cents ? paymentData.amount_cents / 100 : (paymentData.amount || 5);
   const isContribution = amount > 100;
 
   const messageText = `
 🔔 *طلب دفع جديد*
 👤 *الهاتف:* ${paymentData.phone || "غير محدد"}
 💰 *المبلغ:* ${amount} جنيه
-🌐 *الفرع:* ${paymentData.branchName || "فرع غير محدد"}
+🌐 *الفرع:* ${paymentData.branchName || paymentData.branch || "main"}
 🔢 *رقم المعاملة:* \`${transactionId}\`
 📌 *النوع:* ${isContribution ? "🌸 مساهمة ودعم للشبكة" : "🎟️ باقة إنترنت ميكروتيك"}
   `.trim();
 
-  // ⚠️ استبدل هذا الرابط برابط موقعك الحقيقي على Render (بدون / في النهاية)
-  // مثال: https://your-app-name.onrender.com
   const serverBaseUrl = process.env.SERVER_BASE_URL || process.env.RENDER_EXTERNAL_URL || "https://your-app.onrender.com";
 
   let inlineKeyboardButtons = [];
@@ -37,27 +35,27 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
     inlineKeyboardButtons = [
       [
         {
-          text: "🌸 فتح صفحة المساهمة والدعاء",
+          text: "🌸 فتح صفحة المساهمة نيابة عن العميل",
           url: `${serverBaseUrl}/contribution-success?amount=${amount}&tx=${transactionId}`
         }
       ]
     ];
   } else {
-    // إذا كان المبلغ باقة إنترنت عادية (توليد كارت ميكروتيك)
+    // إذا كان المبلغ باقة إنترنت عادية (توليد الكارت وتفعيله تلقائياً وإظهاره للعميل)
     inlineKeyboardButtons = [
       [
         {
-          text: "⚙️ توليد الكارت يدويًا وتفعيله",
+          text: "⚙️ توليد الكارت وتفعيله للعميل",
           url: `${serverBaseUrl}/api/test-create-card?secret=${process.env.TEST_SECRET_KEY}&amount=${amount}&branch=${paymentData.branch || 'main'}&tx=${transactionId}`
         }
       ]
     ];
   }
 
-  // زر عام لمتابعة حالة الطلب أو صفحة النجاح
+  // زر إضافي لمعاينة صفحة الانتظار أو النجاح
   inlineKeyboardButtons.push([
     {
-      text: "🔍 معاينة صفحة العميل",
+      text: "🔍 معاينة صفحة العميل الحالية",
       url: `${serverBaseUrl}/success?merchant_order_id=${transactionId}&branch=${paymentData.branch || 'main'}`
     }
   ]);
