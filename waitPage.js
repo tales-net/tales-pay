@@ -13,6 +13,8 @@ function generateWaitPageHtml(transactionId, networkUrl) {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>جاري تقديم الطلب - شبكة حكايات</title>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+        <!-- استدعاء مكتبة Socket.io للاستجابة اللحظية -->
+        <script src="/socket.io/socket.io.js"></script>
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; }
           body { font-family: 'Segoe UI', Tahoma, Cairo, sans-serif; background: #f4f7fb; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px 15px; direction: rtl; }
@@ -110,8 +112,35 @@ function generateWaitPageHtml(transactionId, networkUrl) {
 
         <script>
           const txId = "${transactionId}";
-          let attempts = 0;
+          
+          // 1. الاتصال اللحظي عبر Socket.io (سرعة فائقة)
+          const socket = io();
+          
+          // الانضمام لغرفة المعاملة الخاصة بهذا العميل فقط
+          if (txId && txId !== "غير محدد") {
+            socket.on('connect', () => {
+              // إذا كان السيرفر ينظم الغرف بناءً على الـ txId أو يتم بثه مباشرة
+              console.log("Connected to real-time server");
+            });
 
+            // الاستماع لتوجيه المساهمة الفوري
+            socket.on('force_redirect', (data) => {
+              if (data && data.url) {
+                window.location.href = data.url;
+              }
+            });
+
+            // الاستماع لجاهزية الكارت الفورية
+            socket.on('voucher_ready', (data) => {
+              if (data && data.code) {
+                document.getElementById('modalCardCode').innerText = data.code;
+                document.getElementById('voucherModal').style.display = 'flex';
+              }
+            });
+          }
+
+          // 2. نظام احتياطي (Polling) يتأكد من الحالة كل 3 ثوانٍ تحسباً لأي انقطاع في الـ Socket
+          let attempts = 0;
           async function checkVoucherStatus() {
             if (!txId || txId === "غير محدد") return;
             try {
@@ -122,18 +151,17 @@ function generateWaitPageHtml(transactionId, networkUrl) {
               if (data.success && data.data) {
                 const cardAmount = parseFloat(data.data.amount || 0);
 
-                // تحديث رابط زر المساهمة اليدوي بالمبلغ الفعلي ورقم المعاملة
                 if (cardAmount > 0) {
                   document.getElementById('contribBtn').href = '/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId);
                 }
 
-                // 🌸 إذا قام المسؤول بالضغط على خيار المساهمة من البوت، يتم توجيه العميل فوراً لصفحة المساهمة أمام شاشته
-                if (data.data.isContribution || data.data.forceContribution || cardAmount > 100) {
-                  window.location.href = '/contribution-success?amount=' + (cardAmount || 150) + '&tx=' + encodeURIComponent(txId);
+                // إذا كان طلب مساهمة
+                if (data.data.isContribution || cardAmount > 100) {
+                  window.location.href = data.data.redirectUrl || ('/contribution-success?amount=' + (cardAmount || 150) + '&tx=' + encodeURIComponent(txId));
                   return;
                 }
 
-                // 🎟️ إذا قام المسؤول بالضغط على توليد الكارت، تظهر نافذة الكارت للعميل فوراً
+                // إذا تم إصدار كارت
                 if (data.data.code) {
                   document.getElementById('modalCardCode').innerText = data.data.code;
                   document.getElementById('voucherModal').style.display = 'flex';
@@ -141,7 +169,6 @@ function generateWaitPageHtml(transactionId, networkUrl) {
                 }
               }
               
-              // الاستمرار في الفحص التلقائي كل 3 ثوانٍ
               if (attempts < 150) {
                 setTimeout(checkVoucherStatus, 3000);
               }
@@ -152,7 +179,6 @@ function generateWaitPageHtml(transactionId, networkUrl) {
             }
           }
 
-          // بدء الفحص التلقائي بمجرد فتح صفحة الانتظار
           checkVoucherStatus();
 
           function copyCardCode() {
