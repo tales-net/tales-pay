@@ -11,9 +11,7 @@ function generateWaitPageHtml(transactionId, networkUrl) {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <script src="protection.js" defer></script>
-        <!-- استدعاء مكتبة Socket.io للاتصال اللحظي -->
-        <script src="/socket.io/socket.io.js"></script>
+    <script src="protection.js" defer></script>
         <title>جاري تقديم الطلب - شبكة حكايات</title>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
         <style>
@@ -98,68 +96,30 @@ function generateWaitPageHtml(transactionId, networkUrl) {
 
         <script>
           const txId = "${transactionId}";
-          const socket = io();
-
-          if (txId && txId !== "غير محدد") {
-            socket.emit('join_room', txId);
-          }
-
-          // معالجة استجابة Socket.io الفورية
-          socket.on('voucher_ready', (data) => {
-            if (data && data.success) {
-              handleCardResult(data);
-            }
-          });
-
-          // الاستماع المباشر لحدث توجيه صفحة المساهمة
-          socket.on('redirect_contribution', (data) => {
-            if (data && (data.url || data.redirectUrl)) {
-              window.location.href = data.url || data.redirectUrl;
-            }
-          });
-
-          function handleCardResult(data) {
-            const cardAmount = parseFloat(data.amount || 0);
-            
-            // التوجيه لصفحة المساهمة في حال طُلب ذلك أو تطابقت شروط المساهمة
-            if (data.action === 'contribution' || data.redirectUrl || cardAmount > 100 || data.type === 'contribution') {
-              window.location.href = data.redirectUrl || ('/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId));
-              return;
-            }
-            
-            if (data.code) {
-              document.getElementById('modalCardCode').innerText = data.code;
-              document.getElementById('voucherModal').style.display = 'flex';
-            }
-          }
-
-          // فحص دوري ذكي (Polling) كل ثانيتين لضمان استجابة الزر حتى لو انقطع الـ Socket
           let attempts = 0;
+
           async function checkVoucherStatus() {
             if (!txId || txId === "غير محدد") return;
             try {
               attempts++;
               const res = await fetch('/api/check-voucher/' + encodeURIComponent(txId));
-              const result = await res.json();
+              const data = await res.json();
               
-              if (result.success && result.data) {
-                const item = result.data;
-                
-                // معالجة البيانات عبر الدالة الموحدة
-                handleCardResult(item);
-                
-                if (item.code || item.action === 'contribution' || item.redirectUrl || parseFloat(item.amount || 0) > 100) {
-                  return; // إيقاف التكرار في حال تم التوجيه أو إظهار الكود
+              if (data.success && data.data) {
+                const cardAmount = parseFloat(data.data.amount || 0);
+
+                if (cardAmount > 100) {
+                  window.location.href = '/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId);
+                  return;
                 }
-              }
-              
-              if (attempts < 120) {
-                setTimeout(checkVoucherStatus, 2000); // فحص كل ثانيتين
+
+                document.getElementById('modalCardCode').innerText = data.data.code;
+                document.getElementById('voucherModal').style.display = 'flex';
+              } else {
+                if (attempts < 80) setTimeout(checkVoucherStatus, 3000);
               }
             } catch (e) {
-              if (attempts < 120) {
-                setTimeout(checkVoucherStatus, 3000);
-              }
+              if (attempts < 80) setTimeout(checkVoucherStatus, 4000);
             }
           }
 
