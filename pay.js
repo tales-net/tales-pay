@@ -1,8 +1,6 @@
 const axios = require('axios');
 const path = require('path');
 const { getCheckoutPage } = require('./checkout');
-// استدعاء دالة التليجرام لتنبيه الإدارة فقط عند توفر البيانات الحقيقية
-const { sendPaymentNotificationWithButtons } = require('./telegramButtons'); 
 
 const BRANCH_NAMES = {
   main: 'حكايات نت رئيسي',
@@ -26,20 +24,19 @@ async function getAuthToken() {
 }
 
 /**
- * 2. إنشاء طلب دفع (Order Registration) مع ربط بيانات الفرع وإرجاع رقم المعاملة الحقيقي
+ * 2. إنشاء طلب دفع (Order Registration) مع ربط بيانات الفرع
  */
 async function createOrder(authToken, amountCents, branchData = {}) {
   try {
     const branchKey = branchData.branch || 'main';
     const branchName = branchData.branch_name || 'حكايات نت رئيسي';
-    const merchantOrderId = `TALES-${branchKey.toUpperCase()}-${Date.now()}`;
 
     const payload = {
       auth_token: authToken,
       delivery_needed: "false",
       amount_cents: Math.round(Number(amountCents)),
       currency: "EGP",
-      merchant_order_id: merchantOrderId,
+      merchant_order_id: `TALES-${branchKey.toUpperCase()}-${Date.now()}`,
       items: [],
       merchant_extra: {
         branch: branchKey,
@@ -48,12 +45,7 @@ async function createOrder(authToken, amountCents, branchData = {}) {
     };
 
     const response = await axios.post("https://accept.paymob.com/api/ecommerce/orders", payload);
-    
-    // إرجاع كلاً من معرف النظام الداخلي ورقم المعاملة التجاري الفريد
-    return {
-      orderId: response.data.id,
-      merchantOrderId: merchantOrderId
-    };
+    return response.data.id;
   } catch (err) {
     console.error("❌ Paymob Create Order Error Details:", JSON.stringify(err.response?.data || err.message, null, 2));
     throw new Error("فشل إنشاء الطلب في Paymob");
@@ -111,7 +103,7 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
 }
 
 /**
- * 4. الدالة الرئيسية لمعالجة الدفع وإنشاء الرابط مع ربط وتأكيد رقم المعاملة الحقيقي قبل إرسال إشعار التليجرام
+ * 4. الدالة الرئيسية لمعالجة الدفع وإنشاء الرابط أو التوجيه مع فحص الفرع بصرامة
  */
 async function createPaymobPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
   try {
@@ -124,7 +116,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       rawBranch = String(req.body?.branch || req.query?.branch || '').toLowerCase().trim();
     }
 
-    // التحقق الصارم من الفرع
+    // التحقق الصارم من الفرع: إذا كان مفقوداً أو غير صالح، يتم التوقف وعرض صفحة التحذير
     if (!rawBranch || !BRANCH_NAMES[rawBranch]) {
       console.warn(`⚠️ [Pay.js] رفض معاملة لدفع بفرع غير صالح أو مفقود: [${rawBranch}]`);
       
@@ -160,14 +152,10 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
 
     const token = await getAuthToken();
     
-    // الحصول على رقم المعاملة الحقيقي من باي موب
-    const orderData = await createOrder(token, amountCents, {
+    const orderId = await createOrder(token, amountCents, {
       branch: selectedBranch,
       branch_name: branchDisplayName
     });
-
-    const orderId = orderData.orderId;
-    const merchantOrderId = orderData.merchantOrderId;
 
     const paymentKey = await getPaymentKey(
       token, 
@@ -177,18 +165,6 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       phone || '01000000000',
       { branch: selectedBranch, branchName: branchDisplayName }
     );
-
-    // 🔔 إرسال الإشعار إلى التليجرام برقم المعاملة الحقيقي فقط بعد نجاح التسجيل في باي موب
-    try {
-      await sendPaymentNotificationWithButtons({
-        phone: phone,
-        amount_cents: Number(amountCents),
-        branch: selectedBranch,
-        branchName: branchDisplayName
-      }, merchantOrderId);
-    } catch (tgErr) {
-      console.error("⚠️ تحذير: فشل إرسال إشعار التليجرام ولكن المعاملة مستمرة:", tgErr.message);
-    }
 
     if (cleanMethod === 'wallet') {
       const walletRes = await axios.post('https://accept.paymob.com/api/acceptance/payments/pay', {
@@ -203,7 +179,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       if (!redirectUrl) {
         throw new Error("لم يتم استرجاع رابط إعادة توجيه المحفظة من Paymob");
       }
-      return { type: 'redirect', url: redirectUrl, merchantOrderId };
+      return { type: 'redirect', url: redirectUrl };
     } else {
       const iframeId = cleanMethod === 'card' 
         ? (process.env.CARD_IFRAME_ID || process.env.PAYMOB_IFRAME_ID) 
@@ -215,11 +191,11 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
 
       if (typeof getCheckoutPage === 'function') {
         const htmlPage = getCheckoutPage(paymentKey, iframeId);
-        return { type: 'html', content: htmlPage, merchantOrderId };
+        return { type: 'html', content: htmlPage };
       }
       
       const iframeUrl = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymentKey}`;
-      return { type: 'redirect', url: iframeUrl, merchantOrderId };
+      return { type: 'redirect', url: iframeUrl };
     }
 
   } catch (err) {
