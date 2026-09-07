@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 /**
- * إرسال رسالة إلى التليجرام مع زرين تفاعليين (المساهمة أو إنشاء الكارت) مرتبطة برقم العملية
+ * إرسال إشعار إلى التليجرام مع أزرار تفاعلية مخصصة حسب قيمة المبلغ (مساهمة أو كارت ميكروتيك)
  * @param {Object} paymentData - بيانات الدفع
  * @param {string} transactionId - رقم المعاملة الفريد
  */
@@ -14,31 +14,56 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
     return;
   }
 
+  const amount = paymentData.amount_cents ? paymentData.amount_cents / 100 : 5;
+  const isContribution = amount > 100;
+
   const messageText = `
-🔔 *طلب دفع جديد / كارت إنترنت غير متوفر*
+🔔 *طلب دفع جديد*
 👤 *الهاتف:* ${paymentData.phone || "غير محدد"}
-💰 *المبلغ:* ${paymentData.amount_cents ? paymentData.amount_cents / 100 : "5"} جنيه
+💰 *المبلغ:* ${amount} جنيه
 🌐 *الفرع:* ${paymentData.branchName || "فرع غير محدد"}
 🔢 *رقم المعاملة:* \`${transactionId}\`
+📌 *النوع:* ${isContribution ? "🌸 مساهمة ودعم للشبكة" : "🎟️ باقة إنترنت ميكروتيك"}
   `.trim();
 
-  // بناء الأزرار التفاعلية لتليجرام
-  // ملاحظة: يمكنك وضع الروابط الحقيقية لسيرفرك هنا ليقوم الأدمن بالضغط عليها يدوياً
-  const serverBaseUrl = process.env.SERVER_BASE_URL || "http://localhost:3000";
+  // ⚠️ استبدل هذا الرابط برابط موقعك الحقيقي على Render (بدون / في النهاية)
+  // مثال: https://your-app-name.onrender.com
+  const serverBaseUrl = process.env.SERVER_BASE_URL || process.env.RENDER_EXTERNAL_URL || "https://your-app.onrender.com";
 
-  const inlineKeyboard = {
-    inline_keyboard: [
+  let inlineKeyboardButtons = [];
+
+  if (isContribution) {
+    // إذا كان المبلغ مساهمة (> 100)
+    inlineKeyboardButtons = [
       [
         {
-          text: "💳 صفحة المساهمة",
-          url: `${serverBaseUrl}/contribution-success?amount=${(paymentData.amount_cents || 500) / 100}&tx=${transactionId}`
-        },
-        {
-          text: "⚙️ توليد الكارت يدويًا",
-          url: `${serverBaseUrl}/api/test-create-card?secret=${process.env.TEST_SECRET_KEY}&amount=${(paymentData.amount_cents || 500) / 100}&branch=${paymentData.branch || 'branch2'}`
+          text: "🌸 فتح صفحة المساهمة والدعاء",
+          url: `${serverBaseUrl}/contribution-success?amount=${amount}&tx=${transactionId}`
         }
       ]
-    ]
+    ];
+  } else {
+    // إذا كان المبلغ باقة إنترنت عادية (توليد كارت ميكروتيك)
+    inlineKeyboardButtons = [
+      [
+        {
+          text: "⚙️ توليد الكارت يدويًا وتفعيله",
+          url: `${serverBaseUrl}/api/test-create-card?secret=${process.env.TEST_SECRET_KEY}&amount=${amount}&branch=${paymentData.branch || 'main'}&tx=${transactionId}`
+        }
+      ]
+    ];
+  }
+
+  // زر عام لمتابعة حالة الطلب أو صفحة النجاح
+  inlineKeyboardButtons.push([
+    {
+      text: "🔍 معاينة صفحة العميل",
+      url: `${serverBaseUrl}/success?merchant_order_id=${transactionId}&branch=${paymentData.branch || 'main'}`
+    }
+  ]);
+
+  const inlineKeyboard = {
+    inline_keyboard: inlineKeyboardButtons
   };
 
   try {
@@ -48,7 +73,7 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
       parse_mode: "Markdown",
       reply_markup: inlineKeyboard
     });
-    console.log("✅ تم إرسال إشعار التليجرام مع الأزرار بنجاح.");
+    console.log("✅ تم إرسال إشعار التليجرام مع الأزرار التفاعلية بنجاح.");
   } catch (error) {
     console.error("❌ فشل إرسال إشعار التليجرام للأزرار:", error.response?.data || error.message);
   }
