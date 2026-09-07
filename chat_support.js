@@ -25,7 +25,7 @@ function initSocket(io) {
         if (!chatSessions.has(clientId) || chatSessions.get(clientId).length === 0) {
           const welcomeMsg = {
             sender: "admin",
-            text: "مرحباً بك في شبكة حكايات 🌐\nكيف يمكننا مساعدتك اليوم؟ يمكنك إرسال استفسارك أو رفع صورة المشكلة وسيقوم فريق الدعم بالرد عليك في أقرب وقت.",
+            text: "مرحباً بك في حكايات 🌐\nكيف يمكننا مساعدتك اليوم؟ يمكنك إرسال استفسارك أو رفع صورة المشكلة وسيقوم فريق الدعم بالرد عليك في أقرب وقت.",
             timestamp: new Date()
           };
           
