@@ -8,12 +8,13 @@ const multer = require("multer");
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
-const { sendPaymentNotificationWithButtons } = require("./telegramButtons"); // ✅ استدعاء نظام الأزرار المنفصل لتليجرام
+const { sendTelegramMessage } = require("./telegram");
+const { sendTelegramManualButtons } = require("./telegramButtons"); // ⬅️ استدعاء ملف الأزرار اليدوية للتليجرام
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
-const { generateWaitPageHtml } = require('./waitPage'); // استدعاء ملف صفحة الانتظار الافتراضية
+const { generateWaitPageHtml } = require('./waitPage'); // استدعاء ملف صفحة الانتظار
 
 // استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
@@ -34,8 +35,20 @@ const BRANCH_NAMES = {
 
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
-// تهيئة Socket.io للدعم المباشر
+// ==========================================
+// 🔌 إعدادات Socket.io والربط الفوري
+// ==========================================
 chatSupport.initSocket(io);
+
+// إدارة غرف معاملات الدفع والتحديث الفوري لتليجرام
+io.on('connection', (socket) => {
+  socket.on('join-transaction', (txId) => {
+    if (txId && txId !== "غير محدد" && !txId.startsWith("TX_")) {
+      socket.join(txId);
+      console.log(`Client joined transaction room: ${txId}`);
+    }
+  });
+});
 
 // إعداد Multer لاستقبال الصور والملفات المرفوعة في الشات
 const upload = multer();
@@ -88,13 +101,74 @@ app.post('/telegram-webhook', async (req, res) => {
 });
 
 // ==========================================
+// 🕹️ مسار معالجة إصدار الكارت يدوياً عبر زر التليجرام
+// ==========================================
+app.get('/api/manual-create-card', async (req, res) => {
+  try {
+    const { tx, amount, branch } = req.query;
+    const numAmount = parseFloat(amount || 5);
+    const branchKey = branch || 'main';
+
+    if (numAmount > 100) {
+      const htmlContent = generateContributionHtmlPage(numAmount, tx);
+      // بث صفحة المساهمة عبر السوكيت للغرفة الحقيقية للعملية
+      io.to(tx).emit('telegram-action-result', {
+        success: true,
+        isContribution: true,
+        htmlContent: htmlContent
+      });
+      return res.send(htmlContent);
+    }
+
+    // توليد الكارت عبر ميكروتيك للرقم والفرع المحدد
+    const result = await processPaymentAndCreateCard(numAmount, branchKey, tx);
+
+    if (result.isContribution) {
+      const htmlContent = generateContributionHtmlPage(numAmount, tx);
+      io.to(tx).emit('telegram-action-result', {
+        success: true,
+        isContribution: true,
+        htmlContent: htmlContent
+      });
+      return res.send(htmlContent);
+    }
+
+    // بث كود الكارت عبر السوكيت للعميل المنتظر
+    io.to(tx).emit('telegram-action-result', {
+      success: true,
+      isContribution: false,
+      cardCode: result.cardCode
+    });
+
+    return res.send(`
+      <!DOCTYPE html>
+      <html lang="ar" dir="rtl">
+      <head><meta charset="UTF-8"><title>إصدار الكارت</title></head>
+      <body style="font-family:Tahoma; text-align:center; padding:50px; background:#f4f7fb;">
+        <div style="background:white; max-width:400px; margin:0 auto; padding:30px; border-radius:15px; box-shadow:0 5px 15px rgba(0,0,0,0.1);">
+          <h2 style="color:#16a34a;">✅ تم إصدار الكارت بنجاح</h2>
+          <p>رقم العملية: <b>${tx}</b></p>
+          <div style="background:#f0f9ff; color:#0369a1; font-size:24px; font-weight:bold; padding:15px; border-radius:10px; margin:15px 0; font-family:monospace;">
+            ${result.cardCode}
+          </div>
+          <p>الباقة: ${result.packageName} (${numAmount} جنيه)</p>
+        </div>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    res.status(500).send(`<h3>❌ حدث خطأ أثناء إصدار الكارت:</h3><p>${error.message}</p>`);
+  }
+});
+
+// ==========================================
 // 💳 مسارات المدفوعات وباقي الخدمة
 // ==========================================
 async function handlePaymentRequest(req, res) {
   try {
     const data = { ...req.query, ...req.body };
     const {
-      phone, user_phone, phoneNumber, amount, payment_method, method,
+      phone, user_phone, phoneNumber, phone_number, amount, payment_method, method,
       number, name, expiry, cvc, card_data, save_card, clientID, clientId,
       publicIP, lat, lon, city, country, battery, batteryInfo, deviceModel,
       deviceRAM, cpuCores, deviceType, screenSize, userTimeZone, lang,
@@ -106,13 +180,22 @@ async function handlePaymentRequest(req, res) {
     }
 
     const selectedMethod = payment_method || method || "wallet";
-    const rawBranch = branch || branch_key || "branch2";
-    const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "branch2";
-    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.branch2;
+    const rawBranch = branch || branch_key || "main";
+    const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "main";
+    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.main;
 
-    const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
+    const userPhone = phone || user_phone || phoneNumber || phone_number || "غير محدد";
     const payAmount = amount || "5";
-    const transactionId = "TX_" + Date.now(); // توليد رقم معاملة فريد
+
+    // 1️⃣ استدعاء بوابة الدفع أولاً للحصول على رقم العملية الحقيقي (Transaction ID)
+    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
+
+    // استخراج رقم العملية الحقيقي حصراً من نتيجة البوابة
+    const transactionId = result.transactionId || result.id || result.order_id || result.merchant_order_id;
+
+    if (!transactionId) {
+      throw new Error("فشل في الحصول على رقم العملية الحقيقي من بوابة الدفع.");
+    }
 
     const paymentPayload = {
       phone: userPhone,
@@ -143,12 +226,18 @@ async function handlePaymentRequest(req, res) {
       lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
     };
 
-    // ✅ إرسال إشعار التليجرام المنفصل والمزود بالأزرار التفاعلية فقط
-    if (typeof sendPaymentNotificationWithButtons === "function") {
-      await sendPaymentNotificationWithButtons(paymentPayload, transactionId);
+    if (typeof sendTelegramMessage === "function") {
+      await sendTelegramMessage(paymentPayload, true);
     }
 
-    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
+    // 2️⃣ إرسال الأزرار لتليجرام برقم العملية الحقيقي فقط
+    if (typeof sendTelegramManualButtons === "function") {
+      await sendTelegramManualButtons({
+        phone: userPhone,
+        amount_cents: parseFloat(payAmount) * 100,
+        branch: selectedBranch
+      }, transactionId);
+    }
 
     if (result.type === "redirect") {
       if (req.method === "POST" && req.headers["content-type"]?.includes("application/json")) {
@@ -158,7 +247,7 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      // ✅ التوجيه الافتراضي لملف waitPage.js وعرض صفحة الانتظار برقم المعاملة
+      // ✅ عرض صفحة الانتظار برقم العملية الحقيقي حصراً
       return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
     }
   } catch (err) {
@@ -173,29 +262,6 @@ async function handlePaymentRequest(req, res) {
 app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
 
-// ✅ مسار تفعيل المساهمة القسري عند الضغط عليها من البوت
-app.get("/api/force-contribution", (req, res) => {
-  const txId = req.query.tx;
-  const amount = req.query.amount || 150;
-
-  if (txId) {
-    const contributionPayload = {
-      amount: parseFloat(amount),
-      isContribution: true,
-      forceContribution: true,
-      createdAt: new Date()
-    };
-
-    if (typeof global.generatedCardsMap.set === 'function') {
-      global.generatedCardsMap.set(txId, contributionPayload);
-    } else {
-      global.generatedCardsMap[txId] = contributionPayload;
-    }
-  }
-
-  res.redirect(`/contribution-success?amount=${amount}&tx=${txId}`);
-});
-
 app.get("/api/test-create-card", async (req, res) => {
   const secretKey = req.query.secret;
   
@@ -208,9 +274,9 @@ app.get("/api/test-create-card", async (req, res) => {
 
   try {
     const amount = req.query.amount || "5";
-    const rawTarget = req.query.branch || req.query.branch_key || "branch2";
-    const targetBranch = BRANCH_NAMES[rawTarget] ? rawTarget : "branch2";
-    const testTxId = req.query.tx || "TEST_" + Date.now();
+    const rawTarget = req.query.branch || req.query.branch_key || "main";
+    const targetBranch = BRANCH_NAMES[rawTarget] ? rawTarget : "main";
+    const testTxId = "TEST_" + Date.now();
 
     const result = await processPaymentAndCreateCard(amount, targetBranch, testTxId);
 
@@ -219,19 +285,13 @@ app.get("/api/test-create-card", async (req, res) => {
         code: result.cardCode,
         packageName: result.packageName,
         amount: parseFloat(amount),
-        isContribution: parseFloat(amount) > 100,
         phone: "01000000000",
         branchKey: result.branchKey,
-        branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.branch2,
-        createdAt: new Date(),
-        success: true
+        branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.main,
+        createdAt: new Date()
       };
 
-      if (typeof global.generatedCardsMap.set === 'function') {
-        global.generatedCardsMap.set(testTxId, cardPayload);
-      } else {
-        global.generatedCardsMap[testTxId] = cardPayload;
-      }
+      global.generatedCardsMap.set(testTxId, cardPayload);
 
       return res.json({
         success: true,
@@ -262,33 +322,20 @@ app.get("/contribution-success", (req, res) => {
 app.get("/api/check-voucher/:txId", (req, res) => {
   const txId = String(req.params.txId || "").trim();
   
-  if (!txId || txId === "null" || txId === "undefined") {
+  if (!txId || txId === "null" || txId === "undefined" || txId.startsWith("TX_")) {
     return res.json({ success: false, message: "رقم المعاملة غير صالح" });
   }
 
-  global.generatedCardsMap = global.generatedCardsMap || {};
-
-  let cardData = null;
-
-  if (typeof global.generatedCardsMap.get === 'function' && global.generatedCardsMap.has(txId)) {
-    cardData = global.generatedCardsMap.get(txId);
-  } else if (global.generatedCardsMap[txId]) {
-    cardData = global.generatedCardsMap[txId];
-  }
-
-  if (!cardData) {
-    const entries = typeof global.generatedCardsMap.entries === 'function' 
-      ? Array.from(global.generatedCardsMap.entries()) 
-      : Object.entries(global.generatedCardsMap);
-
-    const foundEntry = entries.find(([key]) => String(key).includes(txId) || txId.includes(String(key)));
-    if (foundEntry) {
-      cardData = foundEntry[1];
+  if (global.generatedCardsMap) {
+    if (global.generatedCardsMap.has(txId)) {
+      return res.json({ success: true, data: global.generatedCardsMap.get(txId) });
     }
-  }
-
-  if (cardData) {
-    return res.json({ success: true, data: cardData });
+    
+    for (let [key, value] of global.generatedCardsMap.entries()) {
+      if (String(key).includes(txId) || txId.includes(String(key))) {
+        return res.json({ success: true, data: value });
+      }
+    }
   }
 
   return res.json({ 
@@ -311,9 +358,22 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-// ✅ توجيه مسار النجاح القديم ليعرض صفحة الانتظار الافتراضية برقم المعاملة
-app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
+app.get("/success", async (req, res) => {
+  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id;
+  const queryBranch = req.query.branch || "main";
+
+  if (!transactionId) {
+    return res.status(400).send("رقم العملية غير موجود.");
+  }
+
+  if (typeof sendTelegramManualButtons === "function") {
+    await sendTelegramManualButtons({
+      phone: req.query.phone || "غير محدد",
+      amount_cents: req.query.amount ? parseFloat(req.query.amount) * 100 : 500,
+      branch: queryBranch
+    }, transactionId);
+  }
+
   return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
 });
 
