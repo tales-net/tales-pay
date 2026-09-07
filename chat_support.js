@@ -287,10 +287,73 @@ function getStoredMessages(clientId) {
   return chatSessions.get(clientId) || [];
 }
 
+/**
+ * دالة لتوليد كود فقاعة الدعم الفني وتنبيهها (تظهر لمدة دقيقة عند بداية الصفحة)
+ * يمكن حقنها في صفحات العرض (HTML) للعميل.
+ */
+function getSupportWidgetHtml() {
+  return `
+    <!-- زر أو فقاعة الدعم الفني السريعة -->
+    <div id="support-chat-bubble" style="position: fixed; bottom: 20px; left: 20px; z-index: 9999; display: flex; align-items: center; gap: 10px; cursor: pointer; font-family: 'Segoe UI', Tahoma, sans-serif;">
+      <!-- فقاعة التنبيه (الرسالة) -->
+      <div id="chat-notification-popup" style="background: #ffffff; color: #01338D; padding: 10px 15px; border-radius: 20px 20px 4px 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-size: 13px; font-weight: bold; border: 1px solid #e0e0e0; display: flex; align-items: center; gap: 8px; animation: bounceIn 0.5s ease;">
+        <span>💬 تحدث معنا مباشرةً</span>
+        <span style="background: #e74c3c; width: 8px; height: 8px; border-radius: 50%; display: inline-block;"></span>
+      </div>
+
+      <!-- أيقونة زر الدردشة الدائري -->
+      <div style="background: #01338D; color: white; width: 55px; height: 55px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(1, 51, 141, 0.3); font-size: 22px;">
+        <i class="fa fa-comments"></i>
+      </div>
+    </div>
+
+    <style>
+      @keyframes bounceIn {
+        0% { opacity: 0; transform: translateY(20px) scale(0.9); }
+        100% { opacity: 1; transform: translateY(0) scale(1); }
+      }
+    </style>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", function() {
+        const popup = document.getElementById('chat-notification-popup');
+        const bubble = document.getElementById('support-chat-bubble');
+
+        // إظهار الفقاعة عند بدء الصفحة وتأكيد بقائها لمدة دقيقة (60000 مللي ثانية)
+        const displayDuration = 60000; 
+
+        // إخفاء الفقاعة الترحيبية تلقائياً بعد مرور دقيقة كاملة
+        const timer = setTimeout(() => {
+          if (popup) {
+            popup.style.transition = "opacity 0.5s ease, transform 0.5s ease";
+            popup.style.opacity = "0";
+            popup.style.transform = "translateY(10px)";
+            setTimeout(() => popup.style.display = 'none', 500);
+          }
+        }, displayDuration);
+
+        // عند النقر على الفقاعة، يتم فتح نافذة الشات الخاصة بك وإلغاء التايمر
+        bubble.addEventListener('click', function() {
+          clearTimeout(timer);
+          if (popup) popup.style.display = 'none';
+          
+          // يمكنك استدعاء دالة فتح الشات الخاصة بك هنا، مثال: openChatWindow();
+          if (typeof window.openChat === 'function') {
+            window.openChat();
+          } else {
+            console.log("تم النقر على فقاعة الدعم المباشر");
+          }
+        });
+      });
+    </script>
+  `;
+}
+
 module.exports = {
   initSocket,
   handleClientMessage,
   sendSupportChatMessage,
   handleTelegramReply,
-  getStoredMessages
+  getStoredMessages,
+  getSupportWidgetHtml
 };
