@@ -2,9 +2,7 @@ const axios = require('axios');
 
 /**
  * إرسال إشعار إلى التليجرام مع أزرار تفاعلية برمجية (Callback Data) 
- * لتتحكم بلحظتها بصفحة العميل (سواء المساهمة أو توليد الكارت)
- * @param {Object} paymentData - بيانات الدفع
- * @param {string} transactionId - رقم المعاملة الفريد
+ * للتحكم الفوري بصفحة العميل (سواء المساهمة أو توليد الكارت)
  */
 async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -20,30 +18,28 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
   const branchKey = paymentData.branch || paymentData.branch_key || 'main';
 
   const messageText = `
-🔔 *طلب دفع جديد (في انتظار العميل)*
+🔔 *طلب دفع جديد (بانتظار قرار الإدارة)*
 👤 *الهاتف:* ${paymentData.phone || "غير محدد"}
 💰 *المبلغ:* ${amount} جنيه
 🌐 *الفرع:* ${paymentData.branchName || "فرع حكايات نت"}
 🔢 *رقم المعاملة:* \`${transactionId}\`
-📌 *النوع:* ${isContribution ? "🌸 مساهمة ودعم للشبكة (> 100)" : "🎟️ باقة إنترنت ميكروتيك"}
+📌 *النوع:* ${isContribution ? "🌸 مساهمة ودعم للشبكة" : "🎟️ باقة إنترنت ميكروتيك"}
   `.trim();
 
-  const serverBaseUrl = process.env.SERVER_BASE_URL || process.env.RENDER_EXTERNAL_URL || "https://tales-pay.onrender.com";
+  const serverBaseUrl = process.env.SERVER_BASE_URL || process.env.RENDER_EXTERNAL_URL || "https://your-app.onrender.com";
 
   let inlineKeyboardButtons = [];
 
   if (isContribution) {
-    // 🌸 زر تفاعلي للمساهمة: عند ضغطه سيفتح صفحة المساهمة خفية أمام العميل فوراً
     inlineKeyboardButtons = [
       [
         {
-          text: "🌸 إظهار صفحة المساهمة والدعاء للعميل",
+          text: "🌸 فتح صفحة المساهمة والدعاء للعميل",
           callback_data: `show_contrib_${transactionId}_${amount}`
         }
       ]
     ];
   } else {
-    // 🎟️ زر تفاعلي لتوليد الكارت: عند ضغطه سيقوم السيرفر بتوليد الكارت وإظهاره للعميل فوراً
     inlineKeyboardButtons = [
       [
         {
@@ -54,7 +50,6 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
     ];
   }
 
-  // زر إضافي اختياري لمعاينة الصفحة
   inlineKeyboardButtons.push([
     {
       text: "🔍 معاينة صفحة الانتظار",
@@ -62,26 +57,21 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
     }
   ]);
 
-  const inlineKeyboard = {
-    inline_keyboard: inlineKeyboardButtons
-  };
-
   try {
     await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
       chat_id: chatId,
       text: messageText,
       parse_mode: "Markdown",
-      reply_markup: inlineKeyboard
+      reply_markup: { inline_keyboard: inlineKeyboardButtons }
     });
-    console.log("✅ تم إرسال إشعار التليجرام مع الأزرار التفاعلية البرمجية بنجاح.");
+    console.log("✅ تم إرسال إشعار تليجرام مع الأزرار التفاعلية بنجاح.");
   } catch (error) {
-    console.error("❌ فشل إرسال إشعار التليجرام للأزرار:", error.response?.data || error.message);
+    console.error("❌ فشل إرسال إشعار تليجرام للأزرار:", error.response?.data || error.message);
   }
 }
 
 /**
- * معالجة الضغط على الأزرار الواردة من تليجرام (Callback Query Handler)
- * يجب استدعاء هذه الدالة في البوت الرئيسي عند استقبال أي click من الأزرار
+ * معالجة ضغطات الأزرار من تليجرام وتنبيه صفحة العميل فوراً
  */
 async function handleTelegramCallback(callbackQuery, io) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -89,33 +79,35 @@ async function handleTelegramCallback(callbackQuery, io) {
   const callbackQueryId = callbackQuery.id;
 
   try {
+    // تهيئة مصفوفة التخزين المؤقت إن لم تكن موجودة
+    if (!global.generatedCardsMap) {
+      global.generatedCardsMap = new Map();
+    }
+
     // 1. معالجة زر إظهار صفحة المساهمة
     if (data.startsWith('show_contrib_')) {
       const parts = data.replace('show_contrib_', '').split('_');
       const txId = parts[0];
       const amount = parts[1] || "150";
 
-      const redirectUrl = `/contribution-page?tx=${encodeURIComponent(txId)}&amount=${encodeURIComponent(amount)}`;
+      const redirectUrl = `/contribution-success?amount=${encodeURIComponent(amount)}&tx=${encodeURIComponent(txId)}`;
 
-      // تخزين الحالة ليعمل الـ Polling والـ Socket.io بشكل مضمون 100%
-      if (!global.generatedCardsMap) {
-        global.generatedCardsMap = new Map();
-      }
+      // تخزين الحالة للـ Polling
       global.generatedCardsMap.set(txId, {
-        action: 'contribution',
+        isContribution: true,
         redirectUrl: redirectUrl,
+        amount: amount,
         createdAt: new Date()
       });
 
-      // إرسال الإشارة عبر Socket.io للعميل المفتوح لديه صفحة الانتظار
+      // إرسال تنبيه فوري عبر Socket.io للمتصفح المفتوح لنفس رقم المعاملة
       if (io) {
-        io.to(txId).emit('redirect_contribution', { url: redirectUrl });
+        io.to(txId).emit('force_redirect', { url: redirectUrl });
       }
 
-      // الرد على تليجرام لإزالة علامة التحميل
       await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
         callback_query_id: callbackQueryId,
-        text: "🌟 تم فتح صفحة المساهمة أمام العميل بنجاح!",
+        text: "🌟 تم توجيه العميل لصفحة المساهمة فوراً!",
         show_alert: false
       });
       console.log(`🚀 تم توجيه المعاملة ${txId} إلى صفحة المساهمة بنجاح.`);
@@ -128,33 +120,31 @@ async function handleTelegramCallback(callbackQuery, io) {
       const branch = parts[1] || 'main';
       const amount = parts[2] || '5';
 
-      // يمكنك هنا استدعاء دالة توليد الكارت الحقيقية الخاصة بك أو عمل طلب داخلي للسيرفر
-      // على سبيل المثال، نقوم بتحديث الذاكرة ليظهر الكارت للعميل في الـ Modal:
-      const dummyCode = "HS-" + Math.floor(100000 + Math.random() * 900000); // استبدلها بكود الكارت الفعلي من الميكروتيك
-      
-      if (!global.generatedCardsMap) {
-        global.generatedCardsMap = new Map();
-      }
+      // يمكنك هنا ربطها بكود الميكروتيك الحقيقي لديك بدلاً من الكود التجريبي
+      const voucherCode = "HS-" + Math.floor(100000 + Math.random() * 900000);
+
+      // تخزين الكارت للـ Polling
       global.generatedCardsMap.set(txId, {
-        code: dummyCode,
+        code: voucherCode,
         amount: amount,
         createdAt: new Date()
       });
 
+      // إرسال الكارت فوراً عبر Socket.io للمتصفح
       if (io) {
-        io.to(txId).emit('voucher_ready', { success: true, code: dummyCode, amount: amount });
+        io.to(txId).emit('voucher_ready', { code: voucherCode, amount: amount });
       }
 
       await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
         callback_query_id: callbackQueryId,
-        text: `🎟️ تم توليد الكارت بنجاح: ${dummyCode}`,
+        text: `🎟️ تم إصدار الكارت بنجاح: ${voucherCode}`,
         show_alert: true
       });
-      console.log(`🎟️ تم توليد كارت الميكروتيك للمعاملة ${txId} بنجاح.`);
+      console.log(`🎟️ تم توليد كارت الميكروتيك للمعاملة ${txId}: ${voucherCode}`);
     }
 
   } catch (err) {
-    console.error("❌ خطأ في معالجة أزرار التليجرام:", err.response?.data || err.message);
+    console.error("❌ خطأ في معالجة أزرار تليجرام:", err.response?.data || err.message);
   }
 }
 
