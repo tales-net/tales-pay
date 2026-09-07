@@ -1,5 +1,5 @@
 /**
- * توليد صفحة الانتظار وتأكيد الدفع 
+ * توليد صفحة الانتظار للعميل مع تحديث تلقائي (بث مباشر) يظهر فور ضغط الأدمن في التليجرام
  * @param {string} transactionId - رقم المعاملة أو الطلب
  * @param {string} networkUrl - رابط التوجيه لشبكة الميكروتيك
  * @returns {string} HTML Code
@@ -12,7 +12,7 @@ function generateWaitPageHtml(transactionId, networkUrl) {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <script src="protection.js" defer></script>
-        <title>جاري تقديم الطلب - شبكة حكايات</title>
+        <title>جاري تجهيز الطلب - شبكة حكايات</title>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -43,7 +43,14 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           .status-dot { width: 8px; height: 8px; background: #f97316; border-radius: 50%; display: inline-block; animation: blink 1.5s infinite; }
           @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-          /* النافذة المنبثقة لإصدار الكارت عند توفره */
+          /* صندوق الأيقونة التفاعلية الذي يظهر حصرياً على شاشة العميل فور ضغطك من التليجرام */
+          .ready-action-box { display: none; background: #f0fdf4; border: 2px solid #22c55e; border-radius: 16px; padding: 20px; margin-top: 15px; text-align: center; animation: fadeIn 0.4s ease-in-out; }
+          @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+          .action-btn-main { display: flex; align-items: center; justify-content: center; gap: 10px; background: #16a34a; color: white; border: none; padding: 14px 20px; width: 100%; border-radius: 12px; font-weight: bold; font-size: 16px; cursor: pointer; text-decoration: none; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3); transition: 0.2s; }
+          .action-btn-main:hover { background: #15803d; }
+
+          /* النافذة المنبثقة لإصدار الكارت العادي على شاشة العميل */
           .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.65); z-index: 1000; align-items: center; justify-content: center; padding: 15px; backdrop-filter: blur(4px); }
           .modal-box { background: #ffffff; border-radius: 20px; padding: 25px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 15px 35px rgba(0,0,0,0.25); animation: slideUp 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
           @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
@@ -60,32 +67,41 @@ function generateWaitPageHtml(transactionId, networkUrl) {
             <div class="icon-inner"><i class="fa fa-clock-o"></i></div>
           </div>
           
-          <h1>جاري تقديم طلب الدفع...</h1>
-          <p class="subtitle">انتظر قليلاً، وسيظهر الكارت فور التأكيد بالنافذة دون الحاجة للخروج.</p>
+          <h1>جاري معالجة طلبك لحظياً...</h1>
+          <p class="subtitle">بانتظار اعتماد الإدارة، ستظهر أيقونة الخدمة على شاشتك فوراً.</p>
 
           <div class="highlight-action">
             <i class="fa fa-bell" style="font-size: 16px;"></i>
-            <span>واقبل طلب الدفع فور وصول الإشعار على هاتفك</span>
+            <span>أكد عملية الدفع على هاتفك إن لم تفعل</span>
           </div>
 
           <div class="info-box">
             <div class="info-row">
               <span>حالة الطلب:</span>
-              <span class="status-badge"><span class="status-dot"></span> قيد المراجعة والموافقة</span>
+              <span class="status-badge"><span class="status-dot"></span> قيد المتابعة</span>
             </div>
             <div class="info-row" style="margin-top: 10px;">
-              <span>رقم العملية:</span>
+              <span>رقم المعاملة:</span>
               <strong>${transactionId}</strong>
             </div>
           </div>
+
+          <!-- الأيقونة التفاعلية التي تظهر للعميل فور ضغطك من التليجرام -->
+          <div class="ready-action-box" id="readyActionBox">
+            <div style="font-size: 40px; color: #16a34a; margin-bottom: 8px;"><i class="fa fa-check-circle"></i></div>
+            <h3 style="color: #166534; font-size: 18px; margin-bottom: 12px;" id="readyTitle">تم تجهيز طلبك بنجاح!</h3>
+            <a href="#" id="readyButtonLink" class="action-btn-main">
+              <i class="fa fa-external-link"></i> <span id="readyButtonText">اضغط هنا لعرض النتيجة</span>
+            </a>
+          </div>
         </div>
 
-        <!-- النافذة المنبثقة لإصدار الكارت -->
+        <!-- النافذة المنبثقة لكارت الإنترنت العادي على شاشة العميل -->
         <div class="modal-overlay" id="voucherModal">
           <div class="modal-box">
             <div style="font-size: 45px; color: #16a34a; margin-bottom: 8px;"><i class="fa fa-check-circle"></i></div>
-            <h2 style="font-size: 20px; color: #1e293b;">تم تأكيد الدفع وإصدار الكارت!</h2>
-            <p style="font-size: 13px; color: #64748b; margin-top: 5px;">استخدم الكود التالي للتصفح المباشر:</p>
+            <h2 style="font-size: 20px; color: #1e293b;">تم إصدار كارت الإنترنت بنجاح!</h2>
+            <p style="font-size: 13px; color: #64748b; margin-top: 5px;">الكود الخاص بك جاهز للاستخدام:</p>
             
             <div class="voucher-code" id="modalCardCode">------</div>
             
@@ -98,6 +114,7 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           const txId = "${transactionId}";
           let attempts = 0;
 
+          // فحص دوري هادئ (بث مباشر من طرف العميل)
           async function checkVoucherStatus() {
             if (!txId || txId === "غير محدد") return;
             try {
@@ -108,18 +125,33 @@ function generateWaitPageHtml(transactionId, networkUrl) {
               if (data.success && data.data) {
                 const cardAmount = parseFloat(data.data.amount || 0);
 
+                // إذا كانت مساهمة (أكبر من 100 أو مسجلة كـ contribution)
                 if (cardAmount > 100 || data.data.isContribution) {
-                  window.location.href = '/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId);
+                  const contributionUrl = '/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId);
+                  
+                  // إظهار أيقونة المساهمة على شاشة العميل فوراً
+                  document.getElementById('readyTitle').innerText = "تم اعتماد المساهمة بنجاح!";
+                  document.getElementById('readyButtonText').innerText = "اضغط هنا لفتح صفحة المساهمة والدعاء 🌸";
+                  document.getElementById('readyButtonLink').href = contributionUrl;
+                  document.getElementById('readyActionBox').style.display = 'block';
                   return;
                 }
 
+                // إذا كان كارت عادي، أظهر نافذة الكارت المنبثقة على شاشة العميل فوراً
                 document.getElementById('modalCardCode').innerText = data.data.code;
+                document.getElementById('modalCardCode').setAttribute('data-code', data.data.code);
                 document.getElementById('voucherModal').style.display = 'flex';
-              } else {
-                if (attempts < 80) setTimeout(checkVoucherStatus, 3000);
+                return;
+              }
+
+              // الاستمرار بالفحص كل ثانيتين بهدوء
+              if (attempts < 150) {
+                setTimeout(checkVoucherStatus, 2000);
               }
             } catch (e) {
-              if (attempts < 80) setTimeout(checkVoucherStatus, 4000);
+              if (attempts < 150) {
+                setTimeout(checkVoucherStatus, 3000);
+              }
             }
           }
 
