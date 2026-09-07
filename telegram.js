@@ -148,16 +148,17 @@ async function sendTelegramMessage(data, isInitial = true) {
                  `⏰ <b>المنطقة الزمنية:</b> <code>${userTimeZone}</code>\n` +
                  `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
 
-      // ✅ إضافة الأزرار التفاعلية المدمجة لرسالة جاري الدفع
-      // مثال داخل دالة إرسال الرسالة إلى تليجرام مع الأزرار التفاعلية
+      // مثال داخل دالة إرسال رسالة تلغرام
 const keyboard = {
   inline_keyboard: [
     [
-      { text: "🎟️ إصدار كارت ميكروتيك", callback_data: `approve_card_${transactionId}_${branch}` },
+      { text: "🎟️ إصدار الكارت (ميكروتيك)", callback_data: `approve_card_${transactionId}` },
       { text: "🤝 صفحة المساهمة", callback_data: `show_contribution_${transactionId}` }
     ]
   ]
 };
+
+// يتم إرسال هذا الكيبورد مع رسالة التنبيه في تلغرام
 
     } else {
       const txnId = data.id || data.transactionId || data.order?.id || "غير متوفر";
