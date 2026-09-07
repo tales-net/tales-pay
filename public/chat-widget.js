@@ -6,12 +6,12 @@
     localStorage.setItem("hikayat_client_id", clientId);
   }
 
-  // حقن تصميم وأيقونة الشات في الصفحة
+  // حقن تصميم وأيقونة الشات في الصفحة (تم نقلها إلى اليمين: right: 20px)
   const chatStyle = document.createElement("style");
   chatStyle.innerHTML = `
-    #hikayat-chat-bubble { position: fixed; bottom: 20px; left: 20px; background: #01338D; color: white; width: 55px; height: 55px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 99999; font-size: 24px; transition: transform 0.2s; }
+    #hikayat-chat-bubble { position: fixed; bottom: 20px; right: 20px; background: #01338D; color: white; width: 55px; height: 55px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 99999; font-size: 24px; transition: transform 0.2s; }
     #hikayat-chat-bubble:hover { transform: scale(1.05); }
-    #hikayat-chat-box { position: fixed; bottom: 90px; left: 20px; width: 340px; height: 450px; background: white; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); display: none; flex-direction: column; z-index: 99999; direction: rtl; font-family: Tahoma, Cairo, sans-serif; overflow: hidden; border: 1px solid #e0e0e0; }
+    #hikayat-chat-box { position: fixed; bottom: 90px; right: 20px; width: 340px; height: 450px; background: white; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); display: none; flex-direction: column; z-index: 99999; direction: rtl; font-family: Tahoma, Cairo, sans-serif; overflow: hidden; border: 1px solid #e0e0e0; }
     #hikayat-chat-header { background: #01338D; color: white; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 15px; }
     #hikayat-chat-close { background: none; border: none; color: white; font-size: 18px; cursor: pointer; }
     #hikayat-chat-messages { flex: 1; padding: 12px; overflow-y: auto; background: #f9f9f9; display: flex; flex-direction: column; gap: 8px; }
@@ -193,7 +193,7 @@
   }
 
   // ==========================================
-  // دمج فقاعة الترحيب العائمة (تشبه واتساب)
+  // دمج فقاعة الترحيب العائمة (على اليمين: right: 20px)
   // ==========================================
   if (!document.getElementById('supportWelcomeBubble')) {
     const welcomeBubble = document.createElement('div');
@@ -203,11 +203,11 @@
     Object.assign(welcomeBubble.style, {
       position: 'fixed',
       bottom: '85px',
-      left: '20px', // متوافقة مع مكان أيقونة الشات الخاصة بك في اليسار
+      right: '20px', // تم تغييرها من left إلى right لتتوافق مع مكان الأيقونة في اليمين
       backgroundColor: '#01338D',
       color: '#ffffff',
       padding: '10px 16px',
-      borderRadius: '20px 20px 20px 2px',
+      borderRadius: '20px 20px 2px 20px', // تم تعديل حواف الزاوية لتناسب جهة اليمين
       boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
       fontFamily: 'Segoe UI, Tahoma, Cairo, sans-serif',
       fontSize: '13px',
