@@ -1,7 +1,8 @@
 const axios = require('axios');
 
 /**
- * دالة لإرسال إشعار التليجرام مع زر آمن لتأكيد العملية وتحديث صفحة العميل تلقائياً
+ * دالة لإرسال إشعار التليجرام برابط آمن للمعاملة (بدون كشف الكارت في الرسالة لحمايته من السرقة)،
+ * مع أزرار تفاعلية تعمل بطريقة "البث المباشر" عند الضغط عليها.
  */
 async function sendPaymentNotificationWithButtons(paymentPayload, transactionId) {
   const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -19,41 +20,42 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
   const branchName = paymentPayload.branchName || "حكايات نت";
   const paymentMethod = paymentPayload.payment_method || "wallet";
 
-  // نص رسالة البث المباشر في التليجرام
-  let messageText = `⚡ *طلب دفع جديد (بانتظار التأكيد)*\n\n`;
+  // تصميم رسالة تليجرام تشبه البث المباشر والحالة اللحظية
+  let messageText = `📡 *تنبيه عملية دفع جديدة (قيد المتابعة)*\n\n`;
   messageText += `📱 *رقم الهاتف:* \`${phone}\`\n`;
   messageText += `💰 *المبلغ:* \`${amount} جنيه\`\n`;
-  messageText += `🏷️ *الطريقة:* \`${paymentMethod}\`\n`;
+  messageText += `🏷️ *طريقة الدفع:* \`${paymentMethod}\`\n`;
   messageText += `🌐 *الفرع:* ${branchName}\n`;
-  messageText += `🆔 *المعاملة:* \`${transactionId}\`\n`;
+  messageText += `🆔 *رقم المعاملة:* \`${transactionId}\`\n`;
 
   let inlineKeyboard = [];
 
-  if (amount > 100) {
-    messageText += `\n✨ *نوع العملية:* مساهمة مالية كبرى.`;
+  // إذا كانت معاملة مساهمة (أكبر من 100 جنيه)
+  if (amount > 100 || paymentPayload.isContribution) {
+    messageText += `\n✨ *نوع العملية:* مساهمة مالية ودعم للشبكة.`;
     
-    // زر تأكيد المساهمة وإرسالها لصفحة العميل بسرعة
+    // زر تفاعلي يفتح صفحة المساهمة مباشرة بشكل حي
     inlineKeyboard.push([
       {
-        text: "✅ تأكيد وتفعيل المساهمة لصفحة العميل",
-        url: `${WEBAPP_URL}/api/approve-payment?secret=${process.env.TEST_SECRET_KEY || 'default_secret'}&tx=${transactionId}&amount=${amount}&branch=${branchKey}`
+        text: "🌟 فتح صفحة المساهمة وتحديث حالتها",
+        url: `${WEBAPP_URL}/contribution-success?amount=${amount}&tx=${transactionId}`
       }
     ]);
   } else {
-    // زر إصدار وتأكيد الكارت وإرساله مباشرة لصفحة الانتظار الخاصة بالعميل دون عرضه في التليجرام
+    // الباقات العادية: زر آمن يوجه لصفحة الانتظار (waitPage) التي تجلب الكارت حصرياً بشكل مباشر
     inlineKeyboard.push([
       {
-        text: `🎟️ إصدار الكارت وإرساله لصفحة العميل (${amount} ج)`,
-        url: `${WEBAPP_URL}/api/approve-payment?secret=${process.env.Test_SECRET_KEY || process.env.TEST_SECRET_KEY || 'default_secret'}&tx=${transactionId}&amount=${amount}&branch=${branchKey}`
+        text: `🎫 عرض الكارت المولد وجلب بياناته (فوري)`,
+        url: `${WEBAPP_URL}/wait?id=${transactionId}`
       }
     ]);
   }
 
-  // الزر الثاني: فتح صفحة المساهمة أو متابعة العميل مباشرة
+  // زر إضافي دائم لفتح صفحة الانتظار العامة أو متابعة المعاملة
   inlineKeyboard.push([
     {
-      text: "🌐 متابعة صفحة العميل الحالية",
-      url: `${WEBAPP_URL}/contribution-success?amount=${amount}&tx=${transactionId}`
+      text: "⚡ متابعة حالة الطلب لحظياً (بث مباشر)",
+      url: `${WEBAPP_URL}/wait?id=${transactionId}`
     }
   ]);
 
@@ -69,7 +71,7 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
       }
     });
 
-    console.log(`✅ تم إرسال إشعار التليجرام الآمن بنجاح للمعاملة: ${transactionId}`);
+    console.log(`✅ تم إرسال إشعار التليجرام برابط المعاملة الآمن بنجاح: ${transactionId}`);
     return response.data;
   } catch (error) {
     console.error("❌ فشل في إرسال إشعار تليجرام:", error.response?.data || error.message);
