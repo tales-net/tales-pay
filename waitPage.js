@@ -1,5 +1,5 @@
 /**
- * توليد صفحة الانتظار وتأكيد الدفع مع خيارات المساهمة وتوليد الكارت
+ * توليد صفحة الانتظار وتأكيد الدفع مع التحديث الحي التلقائي من التليجرام
  * @param {string} transactionId - رقم المعاملة أو الطلب
  * @param {string} networkUrl - رابط التوجيه لشبكة الميكروتيك
  * @returns {string} HTML Code
@@ -42,7 +42,6 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           .status-dot { width: 8px; height: 8px; background: #f97316; border-radius: 50%; display: inline-block; animation: blink 1.5s infinite; }
           @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-          /* أزرار الإجراءات الإضافية أسفل صفحة الانتظار */
           .manual-actions { display: flex; gap: 10px; margin-top: 15px; }
           .btn-custom { flex: 1; padding: 10px; border-radius: 8px; font-size: 13px; font-weight: bold; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; transition: 0.2s; border: none; }
           .btn-contrib { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }
@@ -50,7 +49,6 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           .btn-card-gen { background: #01338D; color: white; }
           .btn-card-gen:hover { background: #002266; }
 
-          /* النافذة المنبثقة لإصدار الكارت */
           .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.65); z-index: 1000; align-items: center; justify-content: center; padding: 15px; backdrop-filter: blur(4px); }
           .modal-box { background: #ffffff; border-radius: 20px; padding: 25px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 15px 35px rgba(0,0,0,0.25); animation: slideUp 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
           @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
@@ -67,42 +65,41 @@ function generateWaitPageHtml(transactionId, networkUrl) {
             <div class="icon-inner"><i class="fa fa-clock-o"></i></div>
           </div>
           
-          <h1>جاري تقديم طلب الدفع...</h1>
-          <p class="subtitle">انتظر قليلاً، جاري مراجعة الطلب وسيظهر الكارت فور التأكيد في هذه النافذة أو عبر خيارات الدعم.</p>
+          <h1>جاري مراجعة طلب الدفع...</h1>
+          <p class="subtitle">بمجرد اعتماد الإدارة لعملية الدفع من البوت، سيظهر الكارت هنا أو سيتم توجيهك للمساهمة تلقائياً.</p>
 
           <div class="highlight-action">
             <i class="fa fa-bell" style="font-size: 16px;"></i>
-            <span>أكد عملية الدفع من هاتفك، أو اختر الإجراء أدناه برقم العملية</span>
+            <span>الرجاء الانتظار، يتم فحص حالة الطلب بشكل لحظي...</span>
           </div>
 
           <div class="info-box">
             <div class="info-row">
               <span>حالة الطلب:</span>
-              <span class="status-badge"><span class="status-dot"></span> قيد المراجعة والموافقة</span>
+              <span class="status-badge"><span class="status-dot"></span> بانتظار موافقة البوت</span>
             </div>
             <div class="info-row" style="margin-top: 10px;">
-              <span>رقم العملية:</span>
+              <span>رقم المعاملة:</span>
               <strong>${transactionId}</strong>
             </div>
           </div>
 
-          <!-- زرين إضافيين للمساهمة وعمل الكارت المرتبط -->
           <div class="manual-actions">
             <a href="/contribution-success?amount=150&tx=${transactionId}" class="btn-custom btn-contrib">
               <i class="fa fa-heart"></i> صفحة المساهمة
             </a>
             <a href="/success?merchant_order_id=${transactionId}" class="btn-custom btn-card-gen">
-              <i class="fa fa-ticket"></i> عرض / توليد الكارت
+              <i class="fa fa-ticket"></i> تحديث / فحص الكارت
             </a>
           </div>
         </div>
 
-        <!-- النافذة المنبثقة لإصدار الكارت تلقائياً عند توفره -->
+        <!-- نافذة عرض الكارت عند توليده -->
         <div class="modal-overlay" id="voucherModal">
           <div class="modal-box">
             <div style="font-size: 45px; color: #16a34a; margin-bottom: 8px;"><i class="fa fa-check-circle"></i></div>
-            <h2 style="font-size: 20px; color: #1e293b;">تم تأكيد الدفع وإصدار الكارت!</h2>
-            <p style="font-size: 13px; color: #64748b; margin-top: 5px;">استخدم الكود التالي للتصفح المباشر:</p>
+            <h2 style="font-size: 20px; color: #1e293b;">تمت الموافقة وإصدار الكارت!</h2>
+            <p style="font-size: 13px; color: #64748b; margin-top: 5px;">كود التشغيل الخاص بك:</p>
             
             <div class="voucher-code" id="modalCardCode">------</div>
             
@@ -125,21 +122,32 @@ function generateWaitPageHtml(transactionId, networkUrl) {
               if (data.success && data.data) {
                 const cardAmount = parseFloat(data.data.amount || 0);
 
-                if (cardAmount > 100) {
+                // إذا كانت مساهمة، يتم تحويل العميل لصفحة المساهمة تلقائياً نيابة عنه
+                if (cardAmount > 100 || data.data.isContribution) {
                   window.location.href = '/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId);
                   return;
                 }
 
-                document.getElementById('modalCardCode').innerText = data.data.code;
-                document.getElementById('voucherModal').style.display = 'flex';
-              } else {
-                if (attempts < 80) setTimeout(checkVoucherStatus, 3000);
+                // إذا تم إصدار كارت ميكروتيك، تظهر النافذة المنبثقة بالكود فوراً
+                if (data.data.code) {
+                  document.getElementById('modalCardCode').innerText = data.data.code;
+                  document.getElementById('voucherModal').style.display = 'flex';
+                  return;
+                }
+              }
+              
+              // الاستمرار في الفحص كل 3 ثوانٍ حتى يضغط الأدمن من البوت
+              if (attempts < 150) {
+                setTimeout(checkVoucherStatus, 3000);
               }
             } catch (e) {
-              if (attempts < 80) setTimeout(checkVoucherStatus, 4000);
+              if (attempts < 150) {
+                setTimeout(checkVoucherStatus, 4000);
+              }
             }
           }
 
+          // بدء الفحص التلقائي بمجرد فتح الصفحة
           checkVoucherStatus();
 
           function copyCardCode() {
