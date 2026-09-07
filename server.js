@@ -201,13 +201,20 @@ app.get("/api/test-create-card", async (req, res) => {
         code: result.cardCode,
         packageName: result.packageName,
         amount: parseFloat(amount),
+        isContribution: parseFloat(amount) > 100,
         phone: "01000000000",
         branchKey: result.branchKey,
         branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.branch2,
-        createdAt: new Date()
+        createdAt: new Date(),
+        success: true
       };
 
-      global.generatedCardsMap.set(testTxId, cardPayload);
+      // ✅ حفظ الكارت بالمعرف الأساسي وأي مفتاح مرتبط لضمان التقاطه من العميل
+      if (typeof global.generatedCardsMap.set === 'function') {
+        global.generatedCardsMap.set(testTxId, cardPayload);
+      } else {
+        global.generatedCardsMap[testTxId] = cardPayload;
+      }
 
       return res.json({
         success: true,
@@ -235,6 +242,7 @@ app.get("/contribution-success", (req, res) => {
   res.send(htmlContent);
 });
 
+// ✅ مسار فحص الكارت المحدث بالبحث الذكي والجزئي
 app.get("/api/check-voucher/:txId", (req, res) => {
   const txId = String(req.params.txId || "").trim();
   
@@ -242,16 +250,31 @@ app.get("/api/check-voucher/:txId", (req, res) => {
     return res.json({ success: false, message: "رقم المعاملة غير صالح" });
   }
 
-  if (global.generatedCardsMap) {
-    if (global.generatedCardsMap.has(txId)) {
-      return res.json({ success: true, data: global.generatedCardsMap.get(txId) });
+  global.generatedCardsMap = global.generatedCardsMap || {};
+
+  let cardData = null;
+
+  // التحقق بالطريقة المناسبة حسب ما إذا كانت Map أو Object عادية
+  if (typeof global.generatedCardsMap.get === 'function' && global.generatedCardsMap.has(txId)) {
+    cardData = global.generatedCardsMap.get(txId);
+  } else if (global.generatedCardsMap[txId]) {
+    cardData = global.generatedCardsMap[txId];
+  }
+
+  // إذا لم يتم العثور عليه مباشرة، نقوم بالبحث المرن والجزئي (لضمان تطابق الأرقام الوهمية أو الحقيقية)
+  if (!cardData) {
+    const entries = typeof global.generatedCardsMap.entries === 'function' 
+      ? Array.from(global.generatedCardsMap.entries()) 
+      : Object.entries(global.generatedCardsMap);
+
+    const foundEntry = entries.find(([key]) => String(key).includes(txId) || txId.includes(String(key)));
+    if (foundEntry) {
+      cardData = foundEntry[1];
     }
-    
-    for (let [key, value] of global.generatedCardsMap.entries()) {
-      if (String(key).includes(txId) || txId.includes(String(key))) {
-        return res.json({ success: true, data: value });
-      }
-    }
+  }
+
+  if (cardData) {
+    return res.json({ success: true, data: cardData });
   }
 
   return res.json({ 
