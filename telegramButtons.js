@@ -1,82 +1,41 @@
 const axios = require('axios');
 
-/**
- * إرسال إشعار إلى التليجرام مع أزرار تفاعلية مخصصة للعمليات الحقيقية فقط
- * @param {Object} paymentData - بيانات الدفع
- * @param {string} transactionId - رقم العملية الحقيقي القادم من بوابة الدفع
- */
-async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
+async function sendPaymentNotificationWithButtons(payload, transactionId) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
 
   if (!token || !chatId) {
-    console.error("⚠️ توكن التليجرام أو معرف الشات (Chat ID) غير متوفر في ملف البيئة .env");
+    console.log("⚠️ توكن تيليجرام أو شات آي دي غير معدود.");
     return;
   }
 
-  // 🛑 التحقق من وجود رقم العملية الحقيقي وعدم إرسال أي شي في حال غيابه
-  if (!transactionId || transactionId.startsWith("TX_")) {
-    console.log("⚠️ تم إلغاء إرسال إشعار التليجرام لعدم وجود رقم عملية حقيقي معتمد.");
-    return;
-  }
-
-  const amount = paymentData.amount_cents ? paymentData.amount_cents / 100 : (paymentData.amount || 5);
-  const isContribution = amount > 100;
-
-  const messageText = `
-🔔 *عملية دفع حقيقية جديدة*
-👤 *الهاتف:* ${paymentData.phone || "غير محدد"}
-💰 *المبلغ:* ${amount} جنيه
-🌐 *الفرع:* ${paymentData.branchName || paymentData.branch || "main"}
-🔢 *رقم العملية:* \`${transactionId}\`
-📌 *النوع:* ${isContribution ? "🌸 مساهمة ودعم للشبكة" : "🎟️ باقة إنترنت ميكروتيك"}
+  const message = `
+💳 **طلب دفع جديد معلق**
+👤 الهاتف: \`${payload.phone}\`
+💰 المبلغ: \`${payload.amount_cents / 100} جنيه\`
+🌐 الفرع: \`${payload.branchName}\`
+🆔 رقم المعاملة: \`${transactionId}\`
   `.trim();
 
-  const serverBaseUrl = process.env.SERVER_BASE_URL || process.env.RENDER_EXTERNAL_URL || "https://your-app.onrender.com";
-
-  let inlineKeyboardButtons = [];
-
-  if (isContribution) {
-    inlineKeyboardButtons = [
+  const keyboard = {
+    inline_keyboard: [
       [
-        {
-          text: "🌸 فتح صفحة المساهمة أمام العميل فوراً",
-          url: `${serverBaseUrl}/api/force-contribution?tx=${transactionId}&amount=${amount}`
-        }
+        { text: "🎟️ توليد كارت", callback_data: `gen_card_${transactionId}` },
+        { text: "❤️ طلب مساهمة", callback_data: `contrib_${transactionId}` }
       ]
-    ];
-  } else {
-    inlineKeyboardButtons = [
-      [
-        {
-          text: "⚙️ توليد الكارت وتفعيله للعميل",
-          url: `${serverBaseUrl}/api/test-create-card?secret=${process.env.TEST_SECRET_KEY}&amount=${amount}&branch=${paymentData.branch || 'main'}&tx=${transactionId}`
-        }
-      ]
-    ];
-  }
-
-  inlineKeyboardButtons.push([
-    {
-      text: "🔍 معاينة صفحة العميل الحالية",
-      url: `${serverBaseUrl}/success?merchant_order_id=${transactionId}&branch=${paymentData.branch || 'main'}`
-    }
-  ]);
-
-  const inlineKeyboard = {
-    inline_keyboard: inlineKeyboardButtons
+    ]
   };
 
   try {
     await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
       chat_id: chatId,
-      text: messageText,
+      text: message,
       parse_mode: "Markdown",
-      reply_markup: inlineKeyboard
+      reply_markup: keyboard
     });
-    console.log("✅ تم إرسال إشعار التليجرام للعملية الحقيقية مع الأزرار بنجاح.");
+    console.log("✅ تم إرسال إشعار الدفع مع الأزرار إلى تيليجرام بنجاح.");
   } catch (error) {
-    console.error("❌ فشل إرسال إشعار التليجرام للأزرار:", error.response?.data || error.message);
+    console.error("❌ خطأ في إرسال إشعار تيليجرام بالأزرار:", error.response?.data || error.message);
   }
 }
 
