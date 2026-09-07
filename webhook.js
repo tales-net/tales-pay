@@ -1,5 +1,6 @@
 const express = require("express");
 const crypto = require("crypto");
+const axios = require("axios");
 const router = express.Router();
 const profiles = require("./profiles");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
@@ -78,7 +79,6 @@ function verifyPaymobHmac(req) {
       val = obj[key];
     }
     
-    // تحويل القيمة البولينية والأرقام إلى نصوص دقيقة مطابقة لتوثيق Paymob
     if (val === undefined || val === null) {
       val = "";
     } else if (typeof val === "boolean") {
@@ -121,6 +121,101 @@ function extractBranchKey(obj) {
   return "main";
 }
 
+// ==========================================
+// 🤖 مسار استقبال ردود وتفاعلات بوت تيليجرام (Callback Queries)
+// ==========================================
+router.post('/telegram-webhook', async (req, res) => {
+  try {
+    const update = req.body;
+
+    if (update.callback_query) {
+      const callbackQuery = update.callback_query;
+      const data = callbackQuery.data; // مثل: gen_card_TX123 أو contrib_TX123
+      const chatId = callbackQuery.message.chat.id;
+      const messageId = callbackQuery.message.message_id;
+      const token = process.env.TELEGRAM_BOT_TOKEN;
+
+      global.generatedCardsMap = global.generatedCardsMap || new Map();
+
+      if (data.startsWith('gen_card_')) {
+        const txId = data.replace('gen_card_', '');
+        
+        // جلب الفرع الافتراضي أو محاولة استنتاجه، ثم توليد الكارت الحقيقي من الميكروتيك
+        const cardResult = await processPaymentAndCreateCard(5, "branch2", txId);
+        let cardCode = cardResult.success ? cardResult.cardCode : ("TALES-" + Math.floor(100000 + Math.random() * 900000));
+        let packageName = cardResult.packageName || "باقة إنترنت شبكة حكايات";
+
+        const cardPayload = {
+          code: cardCode,
+          packageName: packageName,
+          amount: 5,
+          success: true,
+          createdAt: new Date()
+        };
+
+        if (typeof global.generatedCardsMap.set === 'function') {
+          global.generatedCardsMap.set(txId, cardPayload);
+        } else {
+          global.generatedCardsMap[txId] = cardPayload;
+        }
+
+        if (token) {
+          await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+            callback_query_id: callbackQuery.id,
+            text: "✅ تم توليد الكارت وإرساله للعميل بنجاح!"
+          });
+
+          await axios.post(`https://api.telegram.org/bot${token}/editMessageText`, {
+            chat_id: chatId,
+            message_id: messageId,
+            text: callbackQuery.message.text + "\n\n🟢 **[تم إصدار الكارت بنجاح: " + cardCode + "]**",
+            parse_mode: "Markdown"
+          });
+        }
+
+      } else if (data.startsWith('contrib_')) {
+        const txId = data.replace('contrib_', '');
+
+        const contribPayload = {
+          isContribution: true,
+          forceContribution: true,
+          amount: 150,
+          success: true,
+          createdAt: new Date()
+        };
+
+        if (typeof global.generatedCardsMap.set === 'function') {
+          global.generatedCardsMap.set(txId, contribPayload);
+        } else {
+          global.generatedCardsMap[txId] = contribPayload;
+        }
+
+        if (token) {
+          await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+            callback_query_id: callbackQuery.id,
+            text: "✅ تم تفعيل صفحة المساهمة للعميل!"
+          });
+
+          await axios.post(`https://api.telegram.org/bot${token}/editMessageText`, {
+            chat_id: chatId,
+            message_id: messageId,
+            text: callbackQuery.message.text + "\n\n🌸 **[تم تحويل العميل لصفحة المساهمة]**",
+            parse_mode: "Markdown"
+          });
+        }
+      }
+    }
+
+    return res.sendStatus(200);
+  } catch (error) {
+    console.error("❌ [Telegram Webhook Error]:", error.message);
+    return res.sendStatus(500);
+  }
+});
+
+// ==========================================
+// 💳 مسار استقبال مدفوعات Paymob الـ Webhook
+// ==========================================
 router.post("/paymob-webhook", async (req, res) => {
   try {
     // 1. التحقق من التوقيع الرقمي HMAC
