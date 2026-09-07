@@ -8,12 +8,12 @@ const multer = require("multer");
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
-const { sendTelegramMessage } = require("./telegram");
+const { sendPaymentNotificationWithButtons } = require("./telegramButtons"); // ✅ استدعاء نظام الأزرار المنفصل لتليجرام
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
-const { generateWaitPageHtml } = require('./waitPage'); // استدعاء ملف صفحة الانتظار
+const { generateWaitPageHtml } = require('./waitPage'); // استدعاء ملف صفحة الانتظار الافتراضية
 
 // استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
@@ -23,7 +23,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://172.16.0.5";
+const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://tales.net";
 
 const BRANCH_NAMES = {
   waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك",
@@ -112,7 +112,7 @@ async function handlePaymentRequest(req, res) {
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
-    const transactionId = "TX_" + Date.now(); // توليد رقم معاملة فريد افتراضي
+    const transactionId = "TX_" + Date.now(); // توليد رقم معاملة فريد
 
     const paymentPayload = {
       phone: userPhone,
@@ -143,8 +143,9 @@ async function handlePaymentRequest(req, res) {
       lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
     };
 
-    if (typeof sendTelegramMessage === "function") {
-      await sendTelegramMessage(paymentPayload, true);
+    // ✅ إرسال إشعار التليجرام المنفصل والمزود بالأزرار التفاعلية فقط
+    if (typeof sendPaymentNotificationWithButtons === "function") {
+      await sendPaymentNotificationWithButtons(paymentPayload, transactionId);
     }
 
     const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
@@ -157,7 +158,7 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      // إرجاع صفحة الانتظار الافتراضية في حالة الدفع الافتراضي
+      // ✅ التوجيه الافتراضي لملف waitPage.js وعرض صفحة الانتظار برقم المعاملة
       return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
     }
   } catch (err) {
@@ -171,6 +172,29 @@ async function handlePaymentRequest(req, res) {
 
 app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
+
+// ✅ مسار تفعيل المساهمة القسري عند الضغط عليها من البوت
+app.get("/api/force-contribution", (req, res) => {
+  const txId = req.query.tx;
+  const amount = req.query.amount || 150;
+
+  if (txId) {
+    const contributionPayload = {
+      amount: parseFloat(amount),
+      isContribution: true,
+      forceContribution: true,
+      createdAt: new Date()
+    };
+
+    if (typeof global.generatedCardsMap.set === 'function') {
+      global.generatedCardsMap.set(txId, contributionPayload);
+    } else {
+      global.generatedCardsMap[txId] = contributionPayload;
+    }
+  }
+
+  res.redirect(`/contribution-success?amount=${amount}&tx=${txId}`);
+});
 
 app.get("/api/test-create-card", async (req, res) => {
   const secretKey = req.query.secret;
@@ -186,7 +210,7 @@ app.get("/api/test-create-card", async (req, res) => {
     const amount = req.query.amount || "5";
     const rawTarget = req.query.branch || req.query.branch_key || "branch2";
     const targetBranch = BRANCH_NAMES[rawTarget] ? rawTarget : "branch2";
-    const testTxId = "TEST_" + Date.now();
+    const testTxId = req.query.tx || "TEST_" + Date.now();
 
     const result = await processPaymentAndCreateCard(amount, targetBranch, testTxId);
 
@@ -195,13 +219,19 @@ app.get("/api/test-create-card", async (req, res) => {
         code: result.cardCode,
         packageName: result.packageName,
         amount: parseFloat(amount),
+        isContribution: parseFloat(amount) > 100,
         phone: "01000000000",
         branchKey: result.branchKey,
         branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.branch2,
-        createdAt: new Date()
+        createdAt: new Date(),
+        success: true
       };
 
-      global.generatedCardsMap.set(testTxId, cardPayload);
+      if (typeof global.generatedCardsMap.set === 'function') {
+        global.generatedCardsMap.set(testTxId, cardPayload);
+      } else {
+        global.generatedCardsMap[testTxId] = cardPayload;
+      }
 
       return res.json({
         success: true,
@@ -236,16 +266,29 @@ app.get("/api/check-voucher/:txId", (req, res) => {
     return res.json({ success: false, message: "رقم المعاملة غير صالح" });
   }
 
-  if (global.generatedCardsMap) {
-    if (global.generatedCardsMap.has(txId)) {
-      return res.json({ success: true, data: global.generatedCardsMap.get(txId) });
+  global.generatedCardsMap = global.generatedCardsMap || {};
+
+  let cardData = null;
+
+  if (typeof global.generatedCardsMap.get === 'function' && global.generatedCardsMap.has(txId)) {
+    cardData = global.generatedCardsMap.get(txId);
+  } else if (global.generatedCardsMap[txId]) {
+    cardData = global.generatedCardsMap[txId];
+  }
+
+  if (!cardData) {
+    const entries = typeof global.generatedCardsMap.entries === 'function' 
+      ? Array.from(global.generatedCardsMap.entries()) 
+      : Object.entries(global.generatedCardsMap);
+
+    const foundEntry = entries.find(([key]) => String(key).includes(txId) || txId.includes(String(key)));
+    if (foundEntry) {
+      cardData = foundEntry[1];
     }
-    
-    for (let [key, value] of global.generatedCardsMap.entries()) {
-      if (String(key).includes(txId) || txId.includes(String(key))) {
-        return res.json({ success: true, data: value });
-      }
-    }
+  }
+
+  if (cardData) {
+    return res.json({ success: true, data: cardData });
   }
 
   return res.json({ 
@@ -268,132 +311,10 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
+// ✅ توجيه مسار النجاح القديم ليعرض صفحة الانتظار الافتراضية برقم المعاملة
 app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "";
-  const queryBranch = req.query.branch || "";
-  
-  let inferredBranch = "waitPage";
-  const upperTx = transactionId.toUpperCase();
-  if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
-  else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
-  else if (upperTx.includes("MAIN")) inferredBranch = "main";
-
-  const activeBranchKey = queryBranch || inferredBranch;
-  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.waitPage;
-
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="ar" dir="rtl">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>تم الدفع بنجاح - شبكة حكايات</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-        <style>
-          body { font-family: 'Segoe UI', Tahoma, Cairo, sans-serif; background: #f0f2f5; text-align: center; padding: 20px 10px; direction: rtl; }
-          .card-container { background: white; max-width: 480px; margin: auto; padding: 25px 20px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
-          .success-badge { color: #27ae60; font-size: 45px; margin-bottom: 5px; }
-          h1 { color: #2c3e50; font-size: 20px; margin-bottom: 15px; }
-          .ticket-card { background: linear-gradient(135deg, #01338D 0%, #001f5c 100%); color: #ffffff; border-radius: 12px; padding: 20px; margin: 20px 0; box-shadow: 0 6px 18px rgba(1, 51, 141, 0.25); text-align: right; }
-          .ticket-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px; margin-bottom: 15px; }
-          .ticket-title { font-size: 16px; font-weight: bold; }
-          .ticket-brand { font-size: 12px; background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 4px; }
-          .code-box { background: #ffffff; color: #01338D; text-align: center; padding: 12px; border-radius: 8px; margin: 15px 0; font-family: monospace; font-size: 24px; font-weight: bold; letter-spacing: 2px; min-height: 50px; display: flex; align-items: center; justify-content: center; }
-          .info-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: #e0e0e0; }
-          .info-row strong { color: #ffffff; }
-          .btn-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px; }
-          .btn { flex: 1; min-width: 140px; padding: 12px; border: none; border-radius: 8px; font-weight: bold; font-size: 14px; cursor: pointer; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; }
-          .btn-print { background: #27ae60; color: white; }
-          .btn-download { background: #01338D; color: white; }
-          .btn-home { background: #e9ecef; color: #333; width: 100%; margin-top: 10px; text-decoration: none; text-align: center; padding: 12px; border-radius: 8px; font-weight: bold; display: block; }
-          .spinner { border: 4px solid rgba(1, 51, 141, 0.2); border-radius: 50%; border-top: 4px solid #01338D; width: 26px; height: 26px; animation: spin 1s linear infinite; margin-left: 10px; display: inline-block; }
-          @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        </style>
-      </head>
-      <body>
-        <div class="card-container">
-          <div class="success-badge"><i class="fa fa-check-circle"></i></div>
-          <h1>تمت عملية الدفع بنجاح</h1>
-          <div class="ticket-card" id="printableCard">
-            <div class="ticket-header">
-              <span class="ticket-title"><i class="fa fa-wifi"></i> كارت إنترنت - <span id="bName">${defaultBranchName}</span></span>
-              <span class="ticket-brand">Hikayat Net</span>
-            </div>
-            <div class="info-row">
-              <span>اسم الباقة:</span>
-              <strong id="pkgName">جاري التحميل...</strong>
-            </div>
-            <div class="code-box" id="codeContainer">
-              <div class="spinner"></div>
-              <span style="font-size: 14px; font-weight: normal;">جاري إصدار الكارت من السيرفر...</span>
-            </div>
-            <div class="info-row">
-              <span>رقم العملية:</span>
-              <strong>${transactionId || "غير محدد"}</strong>
-            </div>
-            <div class="info-row">
-              <span>حالة الدفع:</span>
-              <strong style="color: #2ec771;"><i class="fa fa-shield"></i> مؤكد ومفعل آلياً</strong>
-            </div>
-          </div>
-          <div class="btn-actions">
-            <button onclick="window.print()" class="btn btn-print"><i class="fa fa-print"></i> طباعة / حفظ PDF</button>
-            <button onclick="downloadHTML()" class="btn btn-download"><i class="fa fa-download"></i> تنزيل الكارت</button>
-          </div>
-          <a href="${NETWORK_URL}" class="btn-home"><i class="fa fa-globe"></i> التوجه للتصفح الآن</a>
-        </div>
-        <script>
-          const urlParams = new URLSearchParams(window.location.search);
-          const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
-          let attempts = 0;
-          const maxAttempts = 30;
-
-          async function pollVoucher() {
-            if (!txId || txId === "غير محدد") {
-              document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:14px;'>لم يتم العثور على رقم العملية</span>";
-              document.getElementById('pkgName').innerText = "غير معروف";
-              return;
-            }
-            try {
-              attempts++;
-              const res = await fetch('/api/check-voucher/' + encodeURIComponent(txId));
-              const data = await res.json();
-              if (data.success && data.data) {
-                document.getElementById('codeContainer').innerText = data.data.code;
-                document.getElementById('pkgName').innerText = data.data.packageName || "باقة إنترنت شبكة حكايات";
-                if (data.data.branchName) {
-                  document.getElementById('bName').innerText = data.data.branchName;
-                }
-              } else {
-                if (attempts < maxAttempts) {
-                  setTimeout(pollVoucher, 2000);
-                } else {
-                  document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>⚠️ تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: " + txId + "</span>";
-                  document.getElementById('pkgName').innerText = "انتهت مهلة الانتظار";
-                }
-              }
-            } catch (e) {
-              if (attempts < maxAttempts) {
-                setTimeout(pollVoucher, 2500);
-              } else {
-                document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>خطأ في الاتصال بالسيرفر</span>";
-              }
-            }
-          }
-          pollVoucher();
-
-          function downloadHTML() {
-            const cardElement = document.getElementById('printableCard').outerHTML;
-            const blob = new Blob(['<html><head><meta charset="utf-8"><title>كارت شبكة حكايات</title></head><body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#f0f2f5;font-family:sans-serif;">' + cardElement + '</body></html>'], { type: 'text/html' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = "Hikayat_Card_" + txId + ".html";
-            a.click();
-          }
-        </script>
-      </body>
-    </html>
-  `);
+  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
+  return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
 });
 
 app.get("/fail", (req, res) => {
