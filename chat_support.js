@@ -1,359 +1,344 @@
-const axios = require("axios");
-const FormData = require("form-data");
+(function () {
+  // منع حقن الودجت أكثر من مرة
+  if (window.HikayatChatWidgetLoaded) return;
+  window.HikayatChatWidgetLoaded = true;
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-
-// ذاكرة مؤقتة لتخزين المحادثات وحالاتها
-const chatSessions = global.chatSessions || new Map();
-global.chatSessions = chatSessions;
-
-const chatStatuses = global.chatStatuses || new Map();
-global.chatStatuses = chatStatuses;
-
-// خريطة لربط معرف رسالة التليجرام بمعرف العميل لتسهيل الرد المباشر
-const telegramToClientMap = global.telegramToClientMap || new Map();
-global.telegramToClientMap = telegramToClientMap;
-
-function initSocket(io) {
-  io.on("connection", (socket) => {
-    socket.on("join_chat", (clientId) => {
-      if (clientId) {
-        socket.join(clientId);
-        
-        // إرسال رسالة ترحيبية تلقائية إذا كانت المحادثة جديدة ولا توجد رسائل سابقة
-        if (!chatSessions.has(clientId) || chatSessions.get(clientId).length === 0) {
-          const welcomeMsg = {
-            sender: "admin",
-            text: "مرحباً بك في شبكة حكايات 🌐\nكيف يمكننا مساعدتك اليوم؟ يمكنك إرسال استفسارك أو رفع صورة المشكلة وسيقوم فريق الدعم بالرد عليك في أقرب وقت.",
-            timestamp: new Date()
-          };
-          
-          if (!chatSessions.has(clientId)) {
-            chatSessions.set(clientId, []);
-          }
-          chatSessions.get(clientId).push(welcomeMsg);
-          socket.emit("new_message", welcomeMsg);
-        }
-      }
-    });
-  });
-  global.ioInstance = io;
-}
-
-// معالجة رسالة العميل وإرسالها لتليجرام مع أزرار تفاعلية
-async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
-  try {
-    const clientId = req.body.clientId || req.body.clientID;
-    const messageText = req.body.message || "";
-    const imageFile = req.file;
-
-    if (!clientId) {
-      return res.status(400).json({ success: false, message: "معرف العميل مفقود" });
-    }
-
-    // التحقق هل المحادثة مغلقة؟
-    if (chatStatuses.get(clientId) === "closed") {
-      return res.status(403).json({ 
-        success: false, 
-        closed: true, 
-        message: "تم إغلاق هذه المحادثة من قبل الدعم الفني." 
-      });
-    }
-
-    if (!chatSessions.has(clientId)) {
-      chatSessions.set(clientId, []);
-    }
-
-    let imageUrl = null;
-    let imageBuffer = null;
-
-    if (imageFile) {
-      imageBuffer = imageFile.buffer;
-      imageUrl = `data:${imageFile.mimetype};base64,${imageFile.buffer.toString("base64")}`;
-    }
-
-    const messageObj = {
-      sender: "client",
-      text: messageText,
-      image: imageUrl,
-      timestamp: new Date()
-    };
-
-    chatSessions.get(clientId).push(messageObj);
-
-    // إرسال الإشعار لجروب التليجرام مع أزرار (رد / إغلاق)
-    const telegramMsgId = await sendSupportChatMessageFunc(clientId, messageText, imageBuffer);
-    if (telegramMsgId) {
-      telegramToClientMap.set(String(telegramMsgId), clientId);
-    }
-
-    // بث الرسالة للسوكيت إن وجد
-    if (global.ioInstance) {
-      global.ioInstance.to(clientId).emit("new_message", messageObj);
-    }
-
-    return res.json({ success: true, message: "تم إرسال الرسالة بنجاح" });
-  } catch (err) {
-    console.error("❌ خطأ في معالجة رسالة العميل:", err.message);
-    return res.status(500).json({ success: false, error: err.message });
-  }
-}
-
-// دالة إرسال الرسالة إلى تليجرام مع الأزرار التفاعلية (Inline Keyboards)
-async function sendSupportChatMessage(clientId, messageText, imageBuffer = null) {
-  try {
-    if (!BOT_TOKEN || !CHAT_ID) return null;
-
-    const headerText = `💬 <b>رسالة دعم جديدة من العميل</b>\n` +
-                       `🆔 معرف العميل: <code>${clientId}</code>\n` +
-                       `----------------------------------------\n`;
-
-    const replyMarkup = {
-      inline_keyboard: [
-        [
-          { text: "✍️ أكتب الرد", callback_data: `reply_${clientId}` },
-          { text: "🔒 إغلاق الشات", callback_data: `close_${clientId}` }
-        ]
-      ]
-    };
-
-    let response;
-    if (imageBuffer) {
-      const form = new FormData();
-      form.append("chat_id", CHAT_ID);
-      form.append("photo", imageBuffer, {
-        filename: `support_${clientId}.png`,
-        contentType: "image/png"
-      });
-      form.append("caption", headerText + (messageText ? `📝 النص: ${messageText}` : ""));
-      form.append("parse_mode", "HTML");
-      form.append("reply_markup", JSON.stringify(replyMarkup));
-
-      response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
-        headers: { ...form.getHeaders() }
-      });
-    } else {
-      response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        chat_id: CHAT_ID,
-        text: headerText + (messageText || "صورة مرسلة"),
-        parse_mode: "HTML",
-        reply_markup: replyMarkup
-      });
-    }
-
-    return response.data?.result?.message_id;
-  } catch (err) {
-    console.error("❌ Telegram Send Error:", err.response?.data || err.message);
-    return null;
-  }
-}
-
-// معالجة ردود الآدمن من تليجرام (سواء عبر الأزرار أو الرد النصي)
-async function handleTelegramReply(body) {
-  try {
-    // 1. التعامل مع ضغط الأزرار (Callback Query)
-    if (body.callback_query) {
-      const callbackQuery = body.callback_query;
-      const data = callbackQuery.data;
-      const chatId = callbackQuery.message.chat.id;
-      const messageId = callbackQuery.message.message_id;
-      const originalMessage = callbackQuery.message;
-
-      // أ) الضغط على زر "أكتب الرد" -> إرسال حدث الكتابة للعميل ثم فتح خانة الرد في تليجرام
-      if (data.startsWith("reply_")) {
-        const clientId = data.replace("reply_", "");
-        
-        // إرسال إشعار للعميل عبر الـ Socket بأن الدعم يكتب الآن
-        if (global.ioInstance) {
-          global.ioInstance.to(clientId).emit("typing_status", { isTyping: true });
-        }
-
-        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
-          callback_query_id: callbackQuery.id,
-          text: "✍️ اكتب ردك الآن في المحادثة..."
-        });
-
-        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-          chat_id: chatId,
-          text: `👉 أكتب ردك الآن للعميل (معرف العميل: ${clientId}):\n(قم بالرد مباشرة على هذه الرسالة أو اكتب رسالتك)`,
-          reply_to_message_id: originalMessage.message_id,
-          reply_markup: {
-            force_reply: true,
-            input_field_placeholder: `اكتب الرد للعميل ${clientId}...`
-          }
-        });
-        return;
-      }
-
-      // ب) الضغط على زر "إغلاق الشات"
-      if (data.startsWith("close_")) {
-        const clientId = data.replace("close_", "");
-        chatStatuses.set(clientId, "closed");
-
-        if (global.ioInstance) {
-          global.ioInstance.to(clientId).emit("chat_closed", { message: "تم إغلاق المحادثة من قبل الدعم الفني." });
-        }
-
-        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
-          callback_query_id: callbackQuery.id,
-          text: "🔒 تم إغلاق الشات بنجاح وإيقاف العميل عن الكتابة."
-        });
-
-        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageReplyMarkup`, {
-          chat_id: chatId,
-          message_id: messageId,
-          reply_markup: { inline_keyboard: [[{ text: "🔒 المحادثة مغلقة حالياً", callback_data: "closed" }]] }
-        });
-      }
+  // جلب الـ Socket.io من الصفحة أو تحميله تلقائياً إن لم يكن موجوداً
+  function loadScript(src, callback) {
+    if (document.querySelector(`script[src="${src}"]`)) {
+      if (callback) callback();
       return;
     }
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = callback;
+    document.head.appendChild(script);
+  }
 
-    // 2. التعامل مع ردود الآدمن النصية أو الصور المرسلة من تليجرام
-    const message = body.message;
-    if (!message) return;
-
-    let clientId = null;
-    let replyText = message.text || message.caption || "";
-
-    // استخراج معرف العميل من رسالة الـ Reply أو رسالة الـ Force Reply
-    if (message.reply_to_message) {
-      const repliedMsgId = String(message.reply_to_message.message_id);
-      clientId = telegramToClientMap.get(repliedMsgId);
-
-      if (!clientId && message.reply_to_message.text) {
-        const match = message.reply_to_message.text.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
-        if (match) clientId = match[1];
-      }
-      if (!clientId && message.reply_to_message.caption) {
-        const match = message.reply_to_message.caption.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
-        if (match) clientId = match[1];
-      }
+  function initWidget() {
+    // توليد أو استرجاع معرف فريد للعميل (Client ID)
+    let clientId = localStorage.getItem('hikayat_client_id');
+    if (!clientId) {
+      clientId = 'client_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
+      localStorage.setItem('hikayat_client_id', clientId);
     }
 
-    if (clientId) {
-      if (chatStatuses.get(clientId) === "closed") {
-        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-          chat_id: message.chat.id,
-          text: "⚠️ عذراً، هذه المحادثة مغلقة ولا يمكن إرسال رسائل لها."
-        });
-        return;
+    // حقن التصميم (CSS) الخاص بالودجت والشات والفقاعة
+    const style = document.createElement('style');
+    style.innerHTML = `
+      #hikayat-support-container {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        z-index: 999999;
+        font-family: 'Segoe UI', Tahoma, Cairo, sans-serif;
+        direction: rtl;
+      }
+      #support-btn {
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        position: relative;
+      }
+      #support-bubble {
+        position: absolute;
+        right: 65px;
+        background: #ffffff;
+        color: #01338D;
+        padding: 8px 14px;
+        border-radius: 20px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+        font-size: 13px;
+        font-weight: bold;
+        white-space: nowrap;
+        animation: fadeIn 0.5s ease-in-out;
+        border: 1px solid #e1e8ed;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes fadeOut {
+        from { opacity: 1; transform: translateY(0); }
+        to { opacity: 0; transform: translateY(5px); }
+      }
+      #support-icon {
+        width: 55px;
+        height: 55px;
+        background: #25D366;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 12px rgba(37, 211, 102, 0.4);
+        transition: transform 0.3s ease;
+      }
+      #support-icon:hover {
+        transform: scale(1.1);
+      }
+      #support-icon img {
+        width: 32px;
+        height: 32px;
+        filter: brightness(0) invert(1);
+      }
+      
+      /* نافذة الشات المنبثقة */
+      #hikayat-chat-box {
+        position: fixed;
+        bottom: 90px;
+        right: 20px;
+        width: 350px;
+        max-width: calc(100vw - 40px);
+        height: 480px;
+        background: #ffffff;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        display: none;
+        flex-direction: column;
+        overflow: hidden;
+        border: 1px solid #e1e8ed;
+      }
+      .chat-header {
+        background: #01338D;
+        color: white;
+        padding: 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-weight: bold;
+      }
+      .chat-header .close-chat {
+        background: none;
+        border: none;
+        color: white;
+        font-size: 18px;
+        cursor: pointer;
+      }
+      .chat-body {
+        flex: 1;
+        padding: 15px;
+        overflow-y: auto;
+        background: #f7f9fa;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .chat-message {
+        max-width: 80%;
+        padding: 10px 14px;
+        border-radius: 12px;
+        font-size: 13px;
+        line-height: 1.4;
+        word-break: break-word;
+      }
+      .chat-message.client {
+        background: #01338D;
+        color: white;
+        align-self: flex-start;
+        border-bottom-left-radius: 2px;
+      }
+      .chat-message.admin {
+        background: #e4e6eb;
+        color: #050505;
+        align-self: flex-end;
+        border-bottom-right-radius: 2px;
+      }
+      .chat-message img {
+        max-width: 100%;
+        border-radius: 8px;
+        margin-top: 5px;
+      }
+      .chat-footer {
+        padding: 10px;
+        background: white;
+        border-top: 1px solid #e1e8ed;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .chat-footer input[type="text"] {
+        flex: 1;
+        padding: 10px;
+        border: 1px solid #ccd0d5;
+        border-radius: 20px;
+        outline: none;
+        font-size: 13px;
+      }
+      .chat-footer input[type="file"] {
+        display: none;
+      }
+      .chat-footer label.file-label {
+        cursor: pointer;
+        font-size: 18px;
+        color: #65676b;
+      }
+      .chat-footer button.send-btn {
+        background: #01338D;
+        color: white;
+        border: none;
+        padding: 8px 15px;
+        border-radius: 20px;
+        cursor: pointer;
+        font-weight: bold;
+        font-size: 13px;
+      }
+      .typing-indicator {
+        font-size: 11px;
+        color: #65676b;
+        font-style: italic;
+        padding: 0 5px;
+        display: none;
+      }
+    `;
+    document.head.appendChild(style);
+
+    // حقن HTML الخاص بالودجت في الصفحة
+    const container = document.createElement('div');
+    container.id = 'hikayat-support-container';
+    container.innerHTML = `
+      <div id="support-btn" title="تحدث معنا">
+        <div id="support-bubble">💬 تحدث معنا مباشرا</div>
+        <div id="support-icon">
+          <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="Support">
+        </div>
+      </div>
+
+      <div id="hikayat-chat-box">
+        <div class="chat-header">
+          <span>الدعم الفني - شبكة حكايات</span>
+          <button class="close-chat">&times;</button>
+        </div>
+        <div class="chat-body" id="chatMessagesContainer">
+          <!-- الرسائل تظهر هنا ديناميكياً -->
+        </div>
+        <div class="typing-indicator" id="typingIndicator">الدعم الفني يكتب الآن...</div>
+        <div class="chat-footer">
+          <label class="file-label" for="chatFileInput" title="إرسال صورة">📎</label>
+          <input type="file" id="chatFileInput" accept="image/*">
+          <input type="text" id="chatInputText" placeholder="اكتب رسالتك هنا...">
+          <button class="send-btn" id="chatSendBtn">إرسال</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(container);
+
+    // برمجة إظهار/إخفاء الفقاعة لمدة دقيقة كاملة (60,000 مللي ثانية)
+    const supportBubble = document.getElementById('support-bubble');
+    if (supportBubble) {
+      supportBubble.style.display = "block";
+      setTimeout(() => {
+        supportBubble.style.animation = "fadeOut 0.8s ease-in-out forwards";
+        setTimeout(() => { 
+          supportBubble.style.display = "none"; 
+        }, 800);
+      }, 60000); // دقيقة كاملة
+    }
+
+    // تفعيل تفاعلات فتح وإغلاق صندوق الشات
+    const supportBtn = document.getElementById('support-btn');
+    const chatBox = document.getElementById('hikayat-chat-box');
+    const closeChatBtn = document.querySelector('.close-chat');
+
+    supportBtn.addEventListener('click', () => {
+      chatBox.style.display = chatBox.style.display === 'flex' ? 'none' : 'flex';
+      if (supportBubble) supportBubble.style.display = 'none'; // إخفاء الفقاعة فور فتح الشات
+    });
+
+    closeChatBtn.addEventListener('click', () => {
+      chatBox.style.display = 'none';
+    });
+
+    // الاتصال بالـ Socket.io وإدارة المحادثة الحية
+    loadScript('https://cdn.socket.io/4.5.4/socket.io.min.js', () => {
+      const socket = io();
+
+      socket.emit('join_chat', clientId);
+
+      const messagesContainer = document.getElementById('chatMessagesContainer');
+      const inputTextField = document.getElementById('chatInputText');
+      const sendBtn = document.getElementById('chatSendBtn');
+      const fileInput = document.getElementById('chatFileInput');
+      const typingIndicator = document.getElementById('typingIndicator');
+
+      // استقبال الرسائل الجديدة
+      socket.on('new_message', (msg) => {
+        appendMessage(msg);
+      });
+
+      // مؤشر الكتابة للآدمن
+      socket.on('typing_status', (data) => {
+        if (data.isTyping) {
+          typingIndicator.style.display = 'block';
+        } else {
+          typingIndicator.style.display = 'none';
+        }
+      });
+
+      // إغلاق المحادثة من الإدارة
+      socket.on('chat_closed', (data) => {
+        appendMessage({ sender: 'admin', text: data.message || 'تم إغلاق هذه المحادثة.' });
+        inputTextField.disabled = true;
+        sendBtn.disabled = true;
+      });
+
+      function appendMessage(msg) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `chat-message ${msg.sender === 'client' ? 'client' : 'admin'}`;
+        
+        let content = `<div>${escapeHtml(msg.text || '')}</div>`;
+        if (msg.image) {
+          content += `<img src="${msg.image}" alt="مرفق">`;
+        }
+        msgDiv.innerHTML = content;
+        messagesContainer.appendChild(msgDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
       }
 
-      if (!chatSessions.has(clientId)) {
-        chatSessions.set(clientId, []);
+      function escapeHtml(text) {
+        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+        return text.replace(/[&<>"']/g, function(m) { return map[m]; });
       }
 
-      let adminImageUrl = null;
+      // إرسال الرسالة عبر الـ API
+      async function sendMessageToServer() {
+        const text = inputTextField.value.trim();
+        const file = fileInput.files[0];
 
-      if (message.photo && message.photo.length > 0) {
-        const photoFileId = message.photo[message.photo.length - 1].file_id;
+        if (!text && !file) return;
+
+        const formData = new FormData();
+        formData.append('clientId', clientId);
+        if (text) formData.append('message', text);
+        if (file) formData.append('image', file);
+
+        inputTextField.value = '';
+        fileInput.value = '';
+
         try {
-          const fileRes = await axios.get(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${photoFileId}`);
-          const filePath = fileRes.data.result.file_path;
-          adminImageUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
-        } catch (imgErr) {
-          console.error("❌ خطأ في جلب صورة رد الآدمن:", imgErr.message);
+          const res = await fetch('/api/support/message', {
+            method: 'POST',
+            body: formData
+          });
+          const data = await res.json();
+          if (data.closed) {
+            alert('المحادثة مغلقة.');
+          }
+        } catch (e) {
+          console.error('فشل في إرسال الرسالة:', e);
         }
       }
 
-      const adminMsgObj = {
-        sender: "admin",
-        text: replyText,
-        image: adminImageUrl,
-        timestamp: new Date()
-      };
-
-      chatSessions.get(clientId).push(adminMsgObj);
-
-      // بث رد الآدمن وإيقاف مؤشر الكتابة للعميل فوراً عبر Socket.io
-      if (global.ioInstance) {
-        global.ioInstance.to(clientId).emit("typing_status", { isTyping: false });
-        global.ioInstance.to(clientId).emit("new_message", adminMsgObj);
-      }
-
-      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        chat_id: message.chat.id,
-        reply_to_message_id: message.message_id,
-        text: "✅ تم إرسال الرد إلى العميل بنجاح."
+      sendBtn.addEventListener('click', sendMessageToServer);
+      inputTextField.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessageToServer();
       });
-    }
-  } catch (err) {
-    console.error("❌ خطأ في معالجة رد المحادثة:", err.message);
+    });
   }
-}
 
-function getStoredMessages(clientId) {
-  return chatSessions.get(clientId) || [];
-}
-
-/**
- * دالة لتوليد كود فقاعة الدعم الفني وتنبيهها (تظهر لمدة دقيقة عند بداية الصفحة)
- * يمكن حقنها في صفحات العرض (HTML) للعميل.
- */
-function getSupportWidgetHtml() {
-  return `
-    <!-- زر أو فقاعة الدعم الفني السريعة -->
-    <div id="support-chat-bubble" style="position: fixed; bottom: 20px; left: 20px; z-index: 9999; display: flex; align-items: center; gap: 10px; cursor: pointer; font-family: 'Segoe UI', Tahoma, sans-serif;">
-      <!-- فقاعة التنبيه (الرسالة) -->
-      <div id="chat-notification-popup" style="background: #ffffff; color: #01338D; padding: 10px 15px; border-radius: 20px 20px 4px 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-size: 13px; font-weight: bold; border: 1px solid #e0e0e0; display: flex; align-items: center; gap: 8px; animation: bounceIn 0.5s ease;">
-        <span>💬 تحدث معنا مباشرةً</span>
-        <span style="background: #e74c3c; width: 8px; height: 8px; border-radius: 50%; display: inline-block;"></span>
-      </div>
-
-      <!-- أيقونة زر الدردشة الدائري -->
-      <div style="background: #01338D; color: white; width: 55px; height: 55px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(1, 51, 141, 0.3); font-size: 22px;">
-        <i class="fa fa-comments"></i>
-      </div>
-    </div>
-
-    <style>
-      @keyframes bounceIn {
-        0% { opacity: 0; transform: translateY(20px) scale(0.9); }
-        100% { opacity: 1; transform: translateY(0) scale(1); }
-      }
-    </style>
-
-    <script>
-      document.addEventListener("DOMContentLoaded", function() {
-        const popup = document.getElementById('chat-notification-popup');
-        const bubble = document.getElementById('support-chat-bubble');
-
-        // إظهار الفقاعة عند بدء الصفحة وتأكيد بقائها لمدة دقيقة (60000 مللي ثانية)
-        const displayDuration = 60000; 
-
-        // إخفاء الفقاعة الترحيبية تلقائياً بعد مرور دقيقة كاملة
-        const timer = setTimeout(() => {
-          if (popup) {
-            popup.style.transition = "opacity 0.5s ease, transform 0.5s ease";
-            popup.style.opacity = "0";
-            popup.style.transform = "translateY(10px)";
-            setTimeout(() => popup.style.display = 'none', 500);
-          }
-        }, displayDuration);
-
-        // عند النقر على الفقاعة، يتم فتح نافذة الشات الخاصة بك وإلغاء التايمر
-        bubble.addEventListener('click', function() {
-          clearTimeout(timer);
-          if (popup) popup.style.display = 'none';
-          
-          // يمكنك استدعاء دالة فتح الشات الخاصة بك هنا، مثال: openChatWindow();
-          if (typeof window.openChat === 'function') {
-            window.openChat();
-          } else {
-            console.log("تم النقر على فقاعة الدعم المباشر");
-          }
-        });
-      });
-    </script>
-  `;
-}
-
-module.exports = {
-  initSocket,
-  handleClientMessage,
-  sendSupportChatMessage,
-  handleTelegramReply,
-  getStoredMessages,
-  getSupportWidgetHtml
-};
+  // تشغيل الودجت بمجرد تحميل الصفحة بالكامل
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initWidget);
+  } else {
+    initWidget();
+  }
+})();
