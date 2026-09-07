@@ -15,7 +15,7 @@ const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateWaitPageHtml } = require('./waitPage');
 
-// استدعاء وحدة أزرار تليجرام وصفحة الانتظار
+// استدعاء وحدة أزرار تليجرام وصفحة الانتظار والدعم المباشر
 const waitPageTg = require('./waitPage-telegram');
 const chatSupport = require('./chat_support');
 
@@ -186,6 +186,59 @@ app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
 
 // ==========================================
+// 🧪 مسار الاختبار التجريبي لتوليد الكروت
+// ==========================================
+app.get("/api/test-create-card", async (req, res) => {
+  const secretKey = req.query.secret;
+  
+  if (!secretKey || secretKey !== process.env.TEST_SECRET_KEY) {
+    return res.status(403).json({ 
+      success: false, 
+      message: "⚠️ غير مسموح لك بالوصول لهذا الرابط التجريبي. مفتاح الحماية غير صحيح أو مفقود." 
+    });
+  }
+
+  try {
+    const amount = req.query.amount || "5";
+    const rawTarget = req.query.branch || req.query.branch_key || "branch2";
+    const targetBranch = BRANCH_NAMES[rawTarget] ? rawTarget : "branch2";
+    const testTxId = "TEST_" + Date.now();
+
+    const result = await processPaymentAndCreateCard(amount, targetBranch, testTxId);
+
+    if (result.success && !result.isCustomAmount) {
+      const cardPayload = {
+        code: result.cardCode,
+        packageName: result.packageName,
+        amount: parseFloat(amount),
+        phone: "01000000000",
+        branchKey: result.branchKey,
+        branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.branch2,
+        createdAt: new Date()
+      };
+
+      global.generatedCardsMap.set(testTxId, cardPayload);
+
+      return res.json({
+        success: true,
+        message: `✅ تم إضافة الكارت إلى الميكروتيك بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
+        data: result,
+        successPageLink: `/success?merchant_order_id=${testTxId}&branch=${result.branchKey}`
+      });
+    } else {
+      return res.json({
+        success: false,
+        message: "⚠️ فشل توليد الكارت من الميكروتيك",
+        details: result
+      });
+    }
+  } catch (error) {
+    console.error("❌ [TEST ERROR]:", error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==========================================
 // 🌸 مسار عرض صفحة المساهمة الاحترافية المباشرة
 // ==========================================
 app.get("/contribution-success", (req, res) => {
@@ -237,7 +290,7 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-// مسار صفحة النجاح أو الانتظار التقليدية
+// مسار صفحة النجاح (تعرض صفحة الانتظار الحية المتوافقة مع النظام)
 app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
   return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
@@ -275,7 +328,7 @@ app.get("/fail", (req, res) => {
 
 app.use("/", webhookRouter);
 
-// ربط غرف Socket.io لكل معاملة على حدة
+// ربط غرف Socket.io لكل معاملة على حدة لتفعيل التحديث اللحظي
 io.on('connection', (socket) => {
   socket.on('join_transaction', (txId) => {
     if (txId) {
