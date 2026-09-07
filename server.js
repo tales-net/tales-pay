@@ -12,13 +12,13 @@ const { sendTelegramMessage } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
-const { generateContributionHtmlPage } = require('./contributionMessages');
-const { generateWaitPageHtml } = require('./waitPage'); // استدعاء ملف صفحة الانتظار
+const { generateContributionHtmlPage } = require('./contributionMessages'); // 🌸 ملف رسائل وأدعية المساهمة
+const { generateWaitPageHtml } = require('./waitPage'); // ⏳ صفحة الانتظار
 
-// استدعاء ملف التحكم في أزرار تليجرام لصفحة الانتظار والمساهمة
+// 🤖 استدعاء ملف التحكم في أزرار تليجرام لصفحة الانتظار والمساهمة
 const waitPageTg = require('./waitPage-telegram');
 
-// استدعاء ملف الدعم المباشر (Chat Support)
+// 💬 استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
 
 const app = express();
@@ -75,8 +75,6 @@ function getClientPublicIP(req) {
 // ==========================================
 // 🤖 استقبال ضغطات الأزرار من بوت تليجرام (Callback Query)
 // ==========================================
-// ملاحظة: تأكد من أنك تستخدم مكتبة تليجرام (مثل node-telegram-bot-api) وتعرف الـ bot لديك هنا، أو استقبلها عبر Webhook
-// إذا كنت تستخدم مكتبة Telegram Bot كمتغير باسم bot، اترك الكود التالي كما هو:
 if (typeof bot !== 'undefined' && bot) {
   bot.on('callback_query', async (query) => {
     await waitPageTg.handleTelegramCallback(query, io);
@@ -96,8 +94,8 @@ app.get('/api/support/messages/:clientId', (req, res) => {
   res.json({ success: true, messages });
 });
 
+// استقبال الـ Webhook من تليجرام (لمعالجة الأزرار والردود)
 app.post('/telegram-webhook', async (req, res) => {
-  // يمكنك هنا أيضاً معالجة الـ callback_query لو كنت تستخدم Webhook لتليجرام
   if (req.body && req.body.callback_query) {
     await waitPageTg.handleTelegramCallback(req.body.callback_query, io);
   }
@@ -130,7 +128,7 @@ async function handlePaymentRequest(req, res) {
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
-    const transactionId = "TX_" + Date.now(); // توليد رقم معاملة فريد افتراضي
+    const transactionId = "TX_" + Date.now();
 
     const paymentPayload = {
       phone: userPhone,
@@ -161,7 +159,7 @@ async function handlePaymentRequest(req, res) {
       lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
     };
 
-    // إرسال الإشعار لتليجرام باستخدام ملف الأزرار المحدث
+    // إرسال الإشعار لتليجرام مع الأزرار التفاعلية
     if (typeof waitPageTg.sendPaymentNotificationWithButtons === "function") {
       await waitPageTg.sendPaymentNotificationWithButtons(paymentPayload, transactionId);
     } else if (typeof sendTelegramMessage === "function") {
@@ -178,7 +176,7 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      // ✅ التوجيه الافتراضي لملف waitPage.js وعرض صفحة الانتظار برقم المعاملة
+      // توجيه العميل لصفحة الانتظار المجهزة بالـ Socket.io برقم المعاملة
       return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
     }
   } catch (err) {
@@ -246,9 +244,12 @@ app.get("/api/test-create-card", async (req, res) => {
   }
 });
 
+// ==========================================
+// 🌸 مسار عرض صفحة المساهمة والدعاء للعميل
+// ==========================================
 app.get("/contribution-success", (req, res) => {
   const amount = req.query.amount || req.query.price || 150;
-  const transactionId = req.query.tx || req.query.id || req.query.order || 'TRX-DEFAULT';
+  const transactionId = req.query.tx || req.query.id || req.query.order || '';
   const htmlContent = generateContributionHtmlPage(amount, transactionId);
   res.send(htmlContent);
 });
@@ -300,8 +301,6 @@ app.post("/api/disable-queue", async (req, res) => {
 // ==========================================
 app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
-  
-  // استدعاء صفحة الانتظار الافتراضية من waitPage.js وعرضها مباشرة للعميل
   return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
 });
 
@@ -337,7 +336,7 @@ app.get("/fail", (req, res) => {
 
 app.use("/", webhookRouter);
 
-// تفعيل اتصال Socket.io لربط الغرف لكل معاملة
+// تفعيل اتصال Socket.io وربط الغرف لكل معاملة بناءً على الـ txId
 io.on('connection', (socket) => {
   socket.on('join_transaction', (txId) => {
     if (txId) {
