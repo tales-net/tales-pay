@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 /**
- * إرسال إشعار إلى التليجرام مع أزرار تفاعلية مخصصة حسب قيمة المبلغ (مساهمة أو كارت ميكروتيك)
+ * إرسال إشعار إلى التليجرام مع أزرار تفاعلية مخصصة (مساهمة فورية أو كارت ميكروتيك)
  * @param {Object} paymentData - بيانات الدفع
  * @param {string} transactionId - رقم المعاملة الفريد
  */
@@ -22,7 +22,7 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
 👤 *الهاتف:* ${paymentData.phone || "غير محدد"}
 💰 *المبلغ:* ${amount} جنيه
 🌐 *الفرع:* ${paymentData.branchName || paymentData.branch || "main"}
-🔢 *رقم المعاملة:<code>${txnId}</code>\n` +
+🔢 *رقم المعاملة:* \`${transactionId}\`
 📌 *النوع:* ${isContribution ? "🌸 مساهمة ودعم للشبكة" : "🎟️ باقة إنترنت ميكروتيك"}
   `.trim();
 
@@ -31,17 +31,17 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
   let inlineKeyboardButtons = [];
 
   if (isContribution) {
-    // إذا كان المبلغ مساهمة (> 100)
+    // 🌸 عند الضغط هنا من البوت، يتم تفعيل حالة المساهمة وتوجيه العميل تلقائياً أمام شاشته مع عرض المبلغ
     inlineKeyboardButtons = [
       [
         {
-          text: "🌸 فتح صفحة المساهمة نيابة عن العميل",
-          url: `${serverBaseUrl}/contribution-success?amount=${amount}&tx=${transactionId}`
+          text: "🌸 فتح صفحة المساهمة أمام العميل فوراً",
+          url: `${serverBaseUrl}/api/force-contribution?tx=${transactionId}&amount=${amount}`
         }
       ]
     ];
   } else {
-    // إذا كان المبلغ باقة إنترنت عادية (توليد الكارت وتفعيله تلقائياً وإظهاره للعميل)
+    // 🎟️ إذا كان المبلغ باقة إنترنت عادية (توليد الكارت وتفعيله وإظهاره للعميل)
     inlineKeyboardButtons = [
       [
         {
@@ -52,7 +52,7 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
     ];
   }
 
-  // زر إضافي لمعاينة صفحة الانتظار أو النجاح باستخدام رقم المعاملة الصحيح
+  // زر إضافي لمعاينة صفحة العميل الحالية
   inlineKeyboardButtons.push([
     {
       text: "🔍 معاينة صفحة العميل الحالية",
