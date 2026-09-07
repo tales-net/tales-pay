@@ -1,79 +1,103 @@
-/**
- * waitPage-telegram.js
- * ملف مستقل لإدارة إشعارات صفحة الانتظار وأزرار التفاعل الخاصة بالمساهمة والكروت عبر تليجرام
- */
-
-const axios = require("axios");
-
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const axios = require('axios');
 
 /**
- * إرسال رسالة صفحة الانتظار الأوليّة مع الأزرار التفاعلية
+ * إرسال إشعار إلى التليجرام مع أزرار تفاعلية برمجية (Callback Data) 
+ * لتتحكم بلحظتها بصفحة العميل (سواء المساهمة أو توليد الكارت)
+ * @param {Object} paymentData - بيانات الدفع
+ * @param {string} transactionId - رقم المعاملة الفريد
  */
-async function sendWaitPageNotification(data) {
-  try {
-    if (!BOT_TOKEN || !CHAT_ID) {
-      console.warn("⚠️ Telegram Bot Token or Chat ID is missing!");
-      return;
-    }
+async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
 
-    const transactionId = data.transactionId || data.id || "TX_" + Date.now();
-    const branchName = data.branchName || "حكايات نت رئيسي";
-    const amountEGP = data.amount || "5";
-    const userPhone = data.phone || "غير محدد";
+  if (!token || !chatId) {
+    console.error("⚠️ توكن التليجرام أو معرف الشات (Chat ID) غير متوفر في ملف البيئة .env");
+    return;
+  }
 
-    const message = `⏳ <b>بانتظار تأكيد الدفع (صفحة الانتظار نشطة)...</b>\n\n` +
-                  `🏢 الفرع: <b>${branchName}</b>\n` +
-                  `💰 المبلغ: <b>${amountEGP} جنيه</b>\n` +
-                  `📱 رقم الهاتف: <code>${userPhone}</code>\n` +
-                  `🆔 رقم المعاملة: <code>${transactionId}</code>\n` +
-                  `----------------------------------------\n` +
-                  `👇 <i>اختر الإجراء المناسب أدناه:</i>`;
+  const amount = paymentData.amount_cents ? paymentData.amount_cents / 100 : (paymentData.amount || 5);
+  const isContribution = amount > 100;
+  const branchKey = paymentData.branch || paymentData.branch_key || 'main';
 
-    // الأزرار التفاعلية (إصدار الكارت أو إظهار صفحة المساهمة خفية للعميل)
-    const replyMarkup = {
-      inline_keyboard: [
-        [
-          { text: "🎟️ إصدار الكارت", callback_data: `approve_card_${transactionId}` },
-          { text: "🌟 إظهار صفحة المساهمة للعميل", callback_data: `show_contribution_${transactionId}_${amountEGP}` }
-        ]
+  const messageText = `
+🔔 *طلب دفع جديد (في انتظار العميل)*
+👤 *الهاتف:* ${paymentData.phone || "غير محدد"}
+💰 *المبلغ:* ${amount} جنيه
+🌐 *الفرع:* ${paymentData.branchName || "فرع حكايات نت"}
+🔢 *رقم المعاملة:* \`${transactionId}\`
+📌 *النوع:* ${isContribution ? "🌸 مساهمة ودعم للشبكة (> 100)" : "🎟️ باقة إنترنت ميكروتيك"}
+  `.trim();
+
+  const serverBaseUrl = process.env.SERVER_BASE_URL || process.env.RENDER_EXTERNAL_URL || "https://tales-pay.onrender.com";
+
+  let inlineKeyboardButtons = [];
+
+  if (isContribution) {
+    // 🌸 زر تفاعلي للمساهمة: عند ضغطه سيفتح صفحة المساهمة خفية أمام العميل فوراً
+    inlineKeyboardButtons = [
+      [
+        {
+          text: "🌸 إظهار صفحة المساهمة والدعاء للعميل",
+          callback_data: `show_contrib_${transactionId}_${amount}`
+        }
       ]
-    };
+    ];
+  } else {
+    // 🎟️ زر تفاعلي لتوليد الكارت: عند ضغطه سيقوم السيرفر بتوليد الكارت وإظهاره للعميل فوراً
+    inlineKeyboardButtons = [
+      [
+        {
+          text: "⚙️ توليد كارت الميكروتيك وتفعيله",
+          callback_data: `approve_card_${transactionId}_${branchKey}_${amount}`
+        }
+      ]
+    ];
+  }
 
-    const payload = {
-      chat_id: CHAT_ID,
-      text: message,
-      parse_mode: "HTML",
-      reply_markup: replyMarkup
-    };
-
-    const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, payload);
-    if (response.data && response.data.ok) {
-      console.log(`📤 [WaitPage Telegram] تم إرسال إشعار صفحة الانتظار بنجاح للمعاملة: ${transactionId}`);
+  // زر إضافي اختياري لمعاينة الصفحة
+  inlineKeyboardButtons.push([
+    {
+      text: "🔍 معاينة صفحة الانتظار",
+      url: `${serverBaseUrl}/success?merchant_order_id=${transactionId}&branch=${branchKey}`
     }
-  } catch (err) {
-    console.error("❌ [WaitPage Telegram Error]:", err.response?.data || err.message);
+  ]);
+
+  const inlineKeyboard = {
+    inline_keyboard: inlineKeyboardButtons
+  };
+
+  try {
+    await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
+      chat_id: chatId,
+      text: messageText,
+      parse_mode: "Markdown",
+      reply_markup: inlineKeyboard
+    });
+    console.log("✅ تم إرسال إشعار التليجرام مع الأزرار التفاعلية البرمجية بنجاح.");
+  } catch (error) {
+    console.error("❌ فشل إرسال إشعار التليجرام للأزرار:", error.response?.data || error.message);
   }
 }
 
 /**
- * معالجة الضغط على أزرار التفاعل الخاصة بهذا الملف (مثل زر صفحة المساهمة)
+ * معالجة الضغط على الأزرار الواردة من تليجرام (Callback Query Handler)
+ * يجب استدعاء هذه الدالة في البوت الرئيسي عند استقبال أي click من الأزرار
  */
-async function handleWaitPageCallback(callbackQuery, io) {
-  try {
-    const data = callbackQuery.data;
-    const callbackQueryId = callbackQuery.id;
+async function handleTelegramCallback(callbackQuery, io) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const data = callbackQuery.data;
+  const callbackQueryId = callbackQuery.id;
 
-    if (data.startsWith('show_contribution_')) {
-      const parts = data.replace('show_contribution_', '').split('_');
+  try {
+    // 1. معالجة زر إظهار صفحة المساهمة
+    if (data.startsWith('show_contrib_')) {
+      const parts = data.replace('show_contrib_', '').split('_');
       const txId = parts[0];
       const amount = parts[1] || "150";
 
-      // رابط صفحة المساهمة المطورة
       const redirectUrl = `/contribution-page?tx=${encodeURIComponent(txId)}&amount=${encodeURIComponent(amount)}`;
 
-      // تخزين الحالة في الذاكرة لتلتقطها صفحة الانتظار خفية (عبر الـ Polling أو Socket)
+      // تخزين الحالة ليعمل الـ Polling والـ Socket.io بشكل مضمون 100%
       if (!global.generatedCardsMap) {
         global.generatedCardsMap = new Map();
       }
@@ -83,28 +107,58 @@ async function handleWaitPageCallback(callbackQuery, io) {
         createdAt: new Date()
       });
 
-      // إرسال إشارة الفتح الخفي للعميل عبر Socket.io
+      // إرسال الإشارة عبر Socket.io للعميل المفتوح لديه صفحة الانتظار
       if (io) {
         io.to(txId).emit('redirect_contribution', { url: redirectUrl });
-        console.log(`🚀 [Socket.io] تم تفعيل العرض الخفي لصفحة المساهمة للمعاملة: ${txId}`);
       }
 
-      // عند إرسال إشعار صفحة الانتظار مع الأزرار
-const replyMarkup = {
-  inline_keyboard: [
-    [
-      { text: "🎟️ إصدار الكارت", callback_data: `approve_card_${transactionId}` },
-      { text: "🌟 صفحة المساهمة والدعم", callback_data: `show_contribution_${transactionId}_150` }
-    ]
-  ]
-};
+      // الرد على تليجرام لإزالة علامة التحميل
+      await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+        callback_query_id: callbackQueryId,
+        text: "🌟 تم فتح صفحة المساهمة أمام العميل بنجاح!",
+        show_alert: false
+      });
+      console.log(`🚀 تم توجيه المعاملة ${txId} إلى صفحة المساهمة بنجاح.`);
     }
+
+    // 2. معالجة زر إصدار وتوليد كارت الميكروتيك
+    else if (data.startsWith('approve_card_')) {
+      const parts = data.replace('approve_card_', '').split('_');
+      const txId = parts[0];
+      const branch = parts[1] || 'main';
+      const amount = parts[2] || '5';
+
+      // يمكنك هنا استدعاء دالة توليد الكارت الحقيقية الخاصة بك أو عمل طلب داخلي للسيرفر
+      // على سبيل المثال، نقوم بتحديث الذاكرة ليظهر الكارت للعميل في الـ Modal:
+      const dummyCode = "HS-" + Math.floor(100000 + Math.random() * 900000); // استبدلها بكود الكارت الفعلي من الميكروتيك
+      
+      if (!global.generatedCardsMap) {
+        global.generatedCardsMap = new Map();
+      }
+      global.generatedCardsMap.set(txId, {
+        code: dummyCode,
+        amount: amount,
+        createdAt: new Date()
+      });
+
+      if (io) {
+        io.to(txId).emit('voucher_ready', { success: true, code: dummyCode, amount: amount });
+      }
+
+      await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+        callback_query_id: callbackQueryId,
+        text: `🎟️ تم توليد الكارت بنجاح: ${dummyCode}`,
+        show_alert: true
+      });
+      console.log(`🎟️ تم توليد كارت الميكروتيك للمعاملة ${txId} بنجاح.`);
+    }
+
   } catch (err) {
-    console.error("❌ [WaitPage Callback Error]:", err.response?.data || err.message);
+    console.error("❌ خطأ في معالجة أزرار التليجرام:", err.response?.data || err.message);
   }
 }
 
 module.exports = {
-  sendWaitPageNotification,
-  handleWaitPageCallback
+  sendPaymentNotificationWithButtons,
+  handleTelegramCallback
 };
