@@ -3,7 +3,7 @@ const axios = require('axios');
 /**
  * إرسال إشعار إلى التليجرام مع أزرار تفاعلية مخصصة (مساهمة فورية أو كارت ميكروتيك)
  * @param {Object} paymentData - بيانات الدفع
- * @param {string} transactionId - رقم المعاملة الفريد
+ * @param {string} transactionId - رقم العملية الفريد
  */
 async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -22,7 +22,7 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
 👤 *الهاتف:* ${paymentData.phone || "غير محدد"}
 💰 *المبلغ:* ${amount} جنيه
 🌐 *الفرع:* ${paymentData.branchName || paymentData.branch || "main"}
-🔢 *رقم المعاملة:* \`${transactionId}\`
+🔢 *رقم العملية:* \`${transactionId}\`
 📌 *النوع:* ${isContribution ? "🌸 مساهمة ودعم للشبكة" : "🎟️ باقة إنترنت ميكروتيك"}
   `.trim();
 
@@ -31,7 +31,6 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
   let inlineKeyboardButtons = [];
 
   if (isContribution) {
-    // 🌸 عند الضغط هنا من البوت، يتم تفعيل حالة المساهمة وتوجيه العميل تلقائياً أمام شاشته مع عرض المبلغ
     inlineKeyboardButtons = [
       [
         {
@@ -41,7 +40,6 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
       ]
     ];
   } else {
-    // 🎟️ إذا كان المبلغ باقة إنترنت عادية (توليد الكارت وتفعيله وإظهاره للعميل)
     inlineKeyboardButtons = [
       [
         {
@@ -52,7 +50,6 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
     ];
   }
 
-  // زر إضافي لمعاينة صفحة العميل الحالية
   inlineKeyboardButtons.push([
     {
       text: "🔍 معاينة صفحة العميل الحالية",
