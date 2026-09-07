@@ -84,12 +84,13 @@ async function handleTelegramCallback(callbackQuery, io) {
       global.generatedCardsMap = new Map();
     }
 
-    // 1. معالجة زر إظهار صفحة المساهمة
+    // 1. معالجة زر إظهار صفحة المساهمة (الآن تخبرك بـ "تم التفعيل" بصورة منبثقة واضحة)
     if (data.startsWith('show_contrib_')) {
       const parts = data.replace('show_contrib_', '').split('_');
       const txId = parts[0];
       const amount = parts[1] || "150";
 
+      // توجيه العميل إلى مسار صفحة المساهمة الفعلية التي تستخدم contributionMessages.js
       const redirectUrl = `/contribution-success?amount=${encodeURIComponent(amount)}&tx=${encodeURIComponent(txId)}`;
 
       // تخزين الحالة للـ Polling
@@ -100,15 +101,16 @@ async function handleTelegramCallback(callbackQuery, io) {
         createdAt: new Date()
       });
 
-      // إرسال تنبيه فوري عبر Socket.io للمتصفح المفتوح لنفس رقم المعاملة
+      // إرسال تنبيه فوري عبر Socket.io للمتصفح المفتوح لنفس رقم المعاملة ليتحول تلقائياً
       if (io) {
         io.to(txId).emit('force_redirect', { url: redirectUrl });
       }
 
+      // إخبار المسؤول في تليجرام بنجاح العملية عبر نافذة منبثقة (Alert)
       await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
         callback_query_id: callbackQueryId,
-        text: "🌟 تم توجيه العميل لصفحة المساهمة فوراً!",
-        show_alert: false
+        text: `✅ تم التفعيل بنجاح! تم فتح صفحة المساهمة (${amount} ج) أمام العميل الآن.`,
+        show_alert: true // ستظهر نافذة منبثقة للمشرف تؤكد التفعيل
       });
       console.log(`🚀 تم توجيه المعاملة ${txId} إلى صفحة المساهمة بنجاح.`);
     }
@@ -120,7 +122,6 @@ async function handleTelegramCallback(callbackQuery, io) {
       const branch = parts[1] || 'main';
       const amount = parts[2] || '5';
 
-      // يمكنك هنا ربطها بكود الميكروتيك الحقيقي لديك بدلاً من الكود التجريبي
       const voucherCode = "HS-" + Math.floor(100000 + Math.random() * 900000);
 
       // تخزين الكارت للـ Polling
@@ -137,7 +138,7 @@ async function handleTelegramCallback(callbackQuery, io) {
 
       await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
         callback_query_id: callbackQueryId,
-        text: `🎟️ تم إصدار الكارت بنجاح: ${voucherCode}`,
+        text: `✅ تم التفعيل بنجاح! كود الكارت: ${voucherCode}`,
         show_alert: true
       });
       console.log(`🎟️ تم توليد كارت الميكروتيك للمعاملة ${txId}: ${voucherCode}`);
