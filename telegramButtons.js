@@ -22,7 +22,7 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
 👤 *الهاتف:* ${paymentData.phone || "غير محدد"}
 💰 *المبلغ:* ${amount} جنيه
 🌐 *الفرع:* ${paymentData.branchName || paymentData.branch || "main"}
-🔢 *رقم المعاملة:* \`${transactionId}\`
+🔢 *رقم المعاملة:<code>${txnId}</code>\n` +
 📌 *النوع:* ${isContribution ? "🌸 مساهمة ودعم للشبكة" : "🎟️ باقة إنترنت ميكروتيك"}
   `.trim();
 
