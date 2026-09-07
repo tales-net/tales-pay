@@ -17,10 +17,9 @@ async function sendTelegramManualButtons(paymentData, transactionId) {
   const amount = paymentData.amount_cents ? paymentData.amount_cents / 100 : (paymentData.amount || 5);
   const branch = paymentData.branch || paymentData.branchKey || "main";
   const phone = paymentData.phone || "غير محدد";
-  const serverBaseUrl = process.env.SERVER_BASE_URL || "https://tales-pay.onrender.com";
 
   const messageText = `
-⚠️ طلب دفع جديد / فشلت المحفظة (تدوي)
+⚠️ طلب دفع جديد / فشلت المحفظة (يدوي)
 ------------------------------------
 📱 الهاتف: ${phone}
 💰 المبلغ: ${amount} جنيه
@@ -30,17 +29,17 @@ async function sendTelegramManualButtons(paymentData, transactionId) {
 (اختر الإجراء المناسب يدويًا)
   `.trim();
 
-  // أزرار تفاعلية ترسل بيانات نظيفة بدون رموز تكسر الماركداون
+  // استخدام صيغة بسيطة ومستقرة لـ callback_data بدون تقطيع معقد
   const inlineKeyboard = {
     inline_keyboard: [
       [
         {
           text: "🌟 صفحة المساهمة",
-          callback_data: `action_contrib_${amount}_${transactionId}`
+          callback_data: `contrib|${amount}|${transactionId}`
         },
         {
           text: "💳 إصدار الكارت المرتبط",
-          callback_data: `action_card_${amount}_${branch}_${transactionId}`
+          callback_data: `card|${amount}|${branch}|${transactionId}`
         }
       ]
     ]
@@ -59,7 +58,7 @@ async function sendTelegramManualButtons(paymentData, transactionId) {
 }
 
 /**
- * معالجة ضغطات الأزرار القادمة من تليجرام وتحديث شاشة العميل فورا
+ * معالجة ضغطات الأزرار القادمة من تليجرام وتحديث شاشة العميل فوراً
  */
 async function handleTelegramCallback(botIo, callbackQuery) {
   const data = callbackQuery.data;
@@ -70,11 +69,10 @@ async function handleTelegramCallback(botIo, callbackQuery) {
   if (!data) return;
 
   try {
-    if (data.startsWith('action_contrib_')) {
-      const parts = data.split('_');
-      const txId = parts[parts.length - 1]; // استخراج رقم المعاملة بدقة من الأخير
-      const amountStr = parts[2];
-      const amount = parseFloat(amountStr);
+    if (data.startsWith('contrib|')) {
+      const parts = data.split('|');
+      const amount = parseFloat(parts[1]);
+      const txId = parts[2];
 
       const htmlContent = generateContributionHtmlPage(amount, txId);
 
@@ -98,12 +96,11 @@ async function handleTelegramCallback(botIo, callbackQuery) {
         text: callbackQuery.message.text + "\n\n[تم اختيار: صفحة المساهمة بنجاح ✅]"
       });
 
-    } else if (data.startsWith('action_card_')) {
-      const parts = data.split('_');
-      const txId = parts[parts.length - 1]; // رقم المعاملة الأخير
-      const branch = parts[parts.length - 2]; // الفرع قبل الأخير
-      const amountStr = parts[2];
-      const amount = parseFloat(amountStr);
+    } else if (data.startsWith('card|')) {
+      const parts = data.split('|');
+      const amount = parseFloat(parts[1]);
+      const branch = parts[2];
+      const txId = parts[3];
 
       const result = await processPaymentAndCreateCard(amount, branch, txId);
 
