@@ -63,6 +63,7 @@
   }
 
   let queueInterval = null;
+  let isWaitingInQueue = false;
 
   function initSocketConnection() {
     const socket = io();
@@ -70,10 +71,12 @@
 
     socket.on("new_message", (data) => {
       hideTypingIndicator();
+      
+      // نتأكد ألا يتم عرض رسالة العميل مرتين إذا تم بثها من السوكت
       appendMessage(data.sender, data.text, data.image);
       
-      // إذا كان المرسل هو الآدمن (وليس رسالة الترحيب التلقائية)
-      if (data.sender === "admin" && !data.text.includes("مرحباً بك في شبكة حكايات")) {
+      // التحقق هل الرسالة الحالية رد حقيقي من الآدمن ( وليست رسالة الترحيب التلقائية )
+      if (data.sender === "admin" && data.text && !data.text.includes("مرحباً بك في شبكة حكايات")) {
         stopQueueTimer("🟢 تم توصيلك بممثل الدعم الفني بنجاح.");
       }
     });
@@ -81,7 +84,9 @@
     socket.on("typing_status", (data) => {
       if (data.isTyping) {
         showTypingIndicator();
-        stopQueueTimer("🟢 ممثل الدعم الفني يكتب لك الآن...");
+        if (isWaitingInQueue) {
+          stopQueueTimer("🟢 ممثل الدعم الفني يكتب لك الآن...");
+        }
       } else {
         hideTypingIndicator();
       }
@@ -92,6 +97,7 @@
       lockChatInterface(data.message || "تم إغلاق المحادثة بواسطة الدعم الفني.");
     });
 
+    // فحص الرسائل السابقة عند فتح الصفحة
     fetch(`/api/support/messages/${clientId}`)
       .then(res => res.json())
       .then(data => {
@@ -107,7 +113,7 @@
             }
           });
 
-          // إذا أرسل العميل رسالة ولم يرد الآدمن رد حقيقي بعد، نستأنف العداد
+          // إذا أرسل العميل رسالة مسبقاً ولم يرد الآدمن، نظهر العداد
           if (hasClientMsg && !hasRealAdminReply) {
             startFakeQueue();
           } else if (hasRealAdminReply) {
@@ -149,22 +155,26 @@
   }
 
   function startFakeQueue() {
-    if (queueInterval) return;
+    if (queueInterval || isWaitingInQueue && queueBanner.style.display === "block") return;
     
+    isWaitingInQueue = true;
     queueBanner.style.display = "block";
+    queueBanner.style.backgroundColor = "#fff3cd";
+    queueBanner.style.color = "#856404";
     
     let currentQueue = localStorage.getItem("hikayat_q_num_" + clientId);
     if (!currentQueue) {
-      // عشوائي بين 5 و 20
+      // رقم عشوائي بين 5 و 20
       currentQueue = Math.floor(Math.random() * (20 - 5 + 1)) + 5;
       localStorage.setItem("hikayat_q_num_" + clientId, currentQueue);
     } else {
       currentQueue = parseInt(currentQueue);
     }
     
+    if (currentQueue <= 0) currentQueue = 5;
     queueNumberSpan.innerText = currentQueue;
 
-    // ينقص رقم كل 35 ثانية
+    // تناقص الرقم تدريجياً (كل 35 ثانية)
     queueInterval = setInterval(() => {
       if (currentQueue > 0) {
         currentQueue--;
@@ -173,12 +183,13 @@
       }
       
       if (currentQueue <= 0) {
-        stopQueueTimer("⚠️ نظراً لضغط العمل، سيتم الرد عليك في أقرب وقت ممكن.");
+        stopQueueTimer("⚠️ نظراً لضغط العمل، يتم الآن تحويلك لأقرب ممثل متاح.");
       }
     }, 35000);
   }
 
   function stopQueueTimer(customText) {
+    isWaitingInQueue = false;
     if (queueInterval) {
       clearInterval(queueInterval);
       queueInterval = null;
@@ -193,6 +204,7 @@
     }
   }
 
+  // منع تكرار طباعة نفس الرسالة إذا كانت موجودة في الشاشة مسبقاً
   function appendMessage(sender, text, imageUrl) {
     const div = document.createElement("div");
     div.className = `hikayat-msg ${sender}`;
@@ -233,7 +245,7 @@
       if (data.closed) {
         lockChatInterface(data.message);
       } else if (data.success) {
-        // بعد إرسال رسالة العميل، يبدأ العداد التنازلي الوهمي
+        // بعد إرسال رسالة العميل، يبدأ العداد التنازلي الوهمي فوراً
         startFakeQueue();
       } else {
         alert("فشل إرسال الرسالة");
