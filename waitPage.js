@@ -1,5 +1,5 @@
 /**
- * توليد صفحة الانتظار وتأكيد الدفع (بدون أزرار داخلية)
+ * توليد صفحة الانتظار وتأكيد الدفع 
  * @param {string} transactionId - رقم المعاملة أو الطلب
  * @param {string} networkUrl - رابط التوجيه لشبكة الميكروتيك
  * @returns {string} HTML Code
@@ -108,7 +108,7 @@ function generateWaitPageHtml(transactionId, networkUrl) {
               if (data.success && data.data) {
                 const cardAmount = parseFloat(data.data.amount || 0);
 
-                if (cardAmount > 100) {
+                if (cardAmount > 100 || data.data.isContribution) {
                   window.location.href = '/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId);
                   return;
                 }
