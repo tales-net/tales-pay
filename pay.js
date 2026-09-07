@@ -45,7 +45,7 @@ async function createOrder(authToken, amountCents, branchData = {}) {
     };
 
     const response = await axios.post("https://accept.paymob.com/api/ecommerce/orders", payload);
-    return response.data.id; // يُرجع رقم الـ Order الحقيقي من Paymob
+    return response.data.id;
   } catch (err) {
     console.error("❌ Paymob Create Order Error Details:", JSON.stringify(err.response?.data || err.message, null, 2));
     throw new Error("فشل إنشاء الطلب في Paymob");
@@ -152,7 +152,6 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
 
     const token = await getAuthToken();
     
-    // ✅ إنشاء الطلب والحصول على رقم العملية (Order ID) الحقيقي من Paymob
     const orderId = await createOrder(token, amountCents, {
       branch: selectedBranch,
       branch_name: branchDisplayName
@@ -180,8 +179,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       if (!redirectUrl) {
         throw new Error("لم يتم استرجاع رابط إعادة توجيه المحفظة من Paymob");
       }
-      // ✅ تمرير رقم العملية الحقيقي (transactionId) مع النتيجة
-      return { type: 'redirect', url: redirectUrl, transactionId: orderId };
+      return { type: 'redirect', url: redirectUrl };
     } else {
       const iframeId = cleanMethod === 'card' 
         ? (process.env.CARD_IFRAME_ID || process.env.PAYMOB_IFRAME_ID) 
@@ -193,13 +191,11 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
 
       if (typeof getCheckoutPage === 'function') {
         const htmlPage = getCheckoutPage(paymentKey, iframeId);
-        // ✅ تمرير رقم العملية الحقيقي مع صفحة الـ HTML
-        return { type: 'html', content: htmlPage, transactionId: orderId };
+        return { type: 'html', content: htmlPage };
       }
       
       const iframeUrl = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymentKey}`;
-      // ✅ تمرير رقم العملية الحقيقي مع الرابط
-      return { type: 'redirect', url: iframeUrl, transactionId: orderId };
+      return { type: 'redirect', url: iframeUrl };
     }
 
   } catch (err) {
