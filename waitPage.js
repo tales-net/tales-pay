@@ -1,5 +1,5 @@
 /**
- * توليد صفحة الانتظار وتأكيد الدفع
+ * توليد صفحة الانتظار وتأكيد الدفع مع خيارات الانتقال والتتبع
  * @param {string} transactionId - رقم المعاملة أو الطلب
  * @param {string} networkUrl - رابط التوجيه لشبكة الميكروتيك
  * @returns {string} HTML Code
@@ -11,7 +11,7 @@ function generateWaitPageHtml(transactionId, networkUrl) {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>جاري تقديم الطلب - شبكة حكايات</title>
+        <title>صفحة الانتظار وتأكيد الدفع - شبكة حكايات</title>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -42,7 +42,13 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           .status-dot { width: 8px; height: 8px; background: #f97316; border-radius: 50%; display: inline-block; animation: blink 1.5s infinite; }
           @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-          /* النافذة الظاهرة (Pop-up Modal) عند إصدار الكارت */
+          .manual-actions { display: flex; gap: 10px; margin-top: 15px; }
+          .btn-custom { flex: 1; padding: 10px; border-radius: 8px; font-size: 13px; font-weight: bold; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; transition: 0.2s; border: none; }
+          .btn-contrib { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }
+          .btn-contrib:hover { background: #e2e8f0; }
+          .btn-card-gen { background: #01338D; color: white; }
+          .btn-card-gen:hover { background: #002266; }
+
           .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.65); z-index: 1000; align-items: center; justify-content: center; padding: 15px; backdrop-filter: blur(4px); }
           .modal-box { background: #ffffff; border-radius: 20px; padding: 25px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 15px 35px rgba(0,0,0,0.25); animation: slideUp 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
           @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
@@ -60,11 +66,11 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           </div>
           
           <h1>جاري تقديم طلب الدفع...</h1>
-          <p class="subtitle">انتظر قليلاً، جاري مراجعة الطلب وسيظهر الكارت فور التأكيد في هذه النافذة دون الحاجة للخروج.</p>
+          <p class="subtitle">انتظر قليلاً، جاري مراجعة الطلب وسيظهر الكارت فور التأكيد في هذه النافذة.</p>
 
           <div class="highlight-action">
             <i class="fa fa-bell" style="font-size: 16px;"></i>
-            <span>واقبل طلب الدفع فور وصول الإشعار على هاتفك</span>
+            <span>أكد عملية الدفع من محفظتك، أو انتظر التفعيل الآلي</span>
           </div>
 
           <div class="info-box">
@@ -77,9 +83,17 @@ function generateWaitPageHtml(transactionId, networkUrl) {
               <strong>${transactionId}</strong>
             </div>
           </div>
+
+          <div class="manual-actions">
+            <a href="/contribution-success?amount=150&tx=${transactionId}" class="btn-custom btn-contrib">
+              <i class="fa fa-heart"></i> صفحة المساهمة
+            </a>
+            <a href="/success?merchant_order_id=${transactionId}" class="btn-custom btn-card-gen">
+              <i class="fa fa-ticket"></i> عرض / توليد الكارت
+            </a>
+          </div>
         </div>
 
-        <!-- النافذة المنبثقة لإصدار الكارت -->
         <div class="modal-overlay" id="voucherModal">
           <div class="modal-box">
             <div style="font-size: 45px; color: #16a34a; margin-bottom: 8px;"><i class="fa fa-check-circle"></i></div>
@@ -105,20 +119,18 @@ function generateWaitPageHtml(transactionId, networkUrl) {
               const data = await res.json();
               
               if (data.success && data.data) {
-                const cardAmount = parseFloat(data.data.amount || 0);
-
-                if (cardAmount > 100) {
-                  window.location.href = '/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId);
+                if (data.data.isContribution || data.data.forceContribution) {
+                  window.location.href = '/contribution-success?amount=' + (data.data.amount || 150) + '&tx=' + encodeURIComponent(txId);
                   return;
                 }
 
                 document.getElementById('modalCardCode').innerText = data.data.code;
                 document.getElementById('voucherModal').style.display = 'flex';
               } else {
-                if (attempts < 80) setTimeout(checkVoucherStatus, 3000);
+                if (attempts < 100) setTimeout(checkVoucherStatus, 3000);
               }
             } catch (e) {
-              if (attempts < 80) setTimeout(checkVoucherStatus, 4000);
+              if (attempts < 100) setTimeout(checkVoucherStatus, 4000);
             }
           }
 
