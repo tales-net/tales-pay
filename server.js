@@ -157,10 +157,17 @@ app.post('/telegram-webhook', async (req, res) => {
         const txId = parts[0];
         const amount = parts[1] || "150";
 
-        // ✅ توجيه العميل فوراً لصفحة المساهمة عبر Socket.io
-        io.to(txId).emit('redirect_contribution', { 
-          url: `/contribution-success?amount=${amount}&tx=${encodeURIComponent(txId)}` 
+        const redirectUrl = `/contribution-success?amount=${amount}&tx=${encodeURIComponent(txId)}`;
+
+        // ✅ تخزين الحالة في الخريطة لكي يتمكن الـ Polling من استشعارها فوراً
+        global.generatedCardsMap.set(txId, {
+          action: 'contribution',
+          redirectUrl: redirectUrl,
+          createdAt: new Date()
         });
+
+        // ✅ توجيه العميل فوراً لصفحة المساهمة عبر Socket.io
+        io.to(txId).emit('redirect_contribution', { url: redirectUrl });
 
         // ✅ الرد على بوت تليجرام
         if (BOT_TOKEN) {
