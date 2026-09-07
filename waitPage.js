@@ -1,195 +1,154 @@
 /**
- * توليد صفحة الانتظار وتأكيد الدفع مع الاستجابة الفورية لقرارات البوت (كارت أو مساهمة)
- * @param {string} transactionId - رقم المعاملة أو الطلب
- * @param {string} networkUrl - رابط التوجيه لشبكة الميكروتيك
- * @returns {string} HTML Code
+ * توليد صفحة الانتظار للعميل مع الاستماع لأوامر تليجرام (سواء لتوليد كارت أو فتح صفحة المساهمة)
  */
 function generateWaitPageHtml(transactionId, networkUrl) {
   return `
     <!DOCTYPE html>
     <html lang="ar" dir="rtl">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>جاري تقديم الطلب - شبكة حكايات</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-        <!-- استدعاء مكتبة Socket.io للاستجابة اللحظية -->
-        <script src="/socket.io/socket.io.js"></script>
-        <style>
-          * { box-sizing: border-box; margin: 0; padding: 0; }
-          body { font-family: 'Segoe UI', Tahoma, Cairo, sans-serif; background: #f4f7fb; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px 15px; direction: rtl; }
-          .card-container { background: #ffffff; max-width: 460px; width: 100%; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); padding: 30px 25px; text-align: center; border: 1px solid #eef2f7; position: relative; }
-          
-          .icon-wrapper { position: relative; width: 85px; height: 85px; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; }
-          .pulse-circle { position: absolute; width: 100%; height: 100%; border-radius: 50%; background: rgba(1, 51, 141, 0.12); animation: pulse 2s infinite ease-in-out; }
-          .icon-inner { position: relative; font-size: 38px; color: #01338D; z-index: 1; }
-          
-          @keyframes pulse {
-            0% { transform: scale(0.95); opacity: 0.8; }
-            50% { transform: scale(1.18); opacity: 0.25; }
-            100% { transform: scale(0.95); opacity: 0.8; }
-          }
-
-          h1 { color: #1e293b; font-size: 21px; font-weight: 700; margin-bottom: 12px; }
-          p.subtitle { color: #475569; font-size: 14.5px; line-height: 1.7; margin-bottom: 20px; font-weight: 500; }
-
-          .highlight-action { background: #eff6ff; border: 1px dashed #3b82f6; color: #1d4ed8; padding: 12px 15px; border-radius: 12px; font-size: 14px; font-weight: 700; margin-bottom: 22px; display: flex; align-items: center; justify-content: center; gap: 8px; }
-
-          .info-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; margin-bottom: 20px; text-align: right; }
-          .info-row { display: flex; justify-content: space-between; font-size: 13.5px; margin-bottom: 8px; color: #475569; }
-          .info-row:last-child { margin-bottom: 0; }
-          .info-row strong { color: #0f172a; font-weight: 600; }
-
-          .status-badge { display: inline-flex; align-items: center; gap: 8px; background: #fff7ed; color: #c2410c; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; border: 1px solid #ffedd5; }
-          .status-dot { width: 8px; height: 8px; background: #f97316; border-radius: 50%; display: inline-block; animation: blink 1.5s infinite; }
-          @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-
-          .manual-actions { display: flex; gap: 10px; margin-top: 15px; }
-          .btn-custom { flex: 1; padding: 10px; border-radius: 8px; font-size: 13px; font-weight: bold; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; transition: 0.2s; border: none; }
-          .btn-contrib { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }
-          .btn-contrib:hover { background: #e2e8f0; }
-          .btn-card-gen { background: #01338D; color: white; }
-          .btn-card-gen:hover { background: #002266; }
-
-          .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.65); z-index: 1000; align-items: center; justify-content: center; padding: 15px; backdrop-filter: blur(4px); }
-          .modal-box { background: #ffffff; border-radius: 20px; padding: 25px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 15px 35px rgba(0,0,0,0.25); animation: slideUp 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-          @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-          
-          .voucher-code { background: #f0f9ff; color: #0369a1; font-size: 26px; font-weight: bold; font-family: monospace; padding: 14px; border-radius: 12px; margin: 15px 0; letter-spacing: 2px; border: 1px dashed #0284c7; }
-          .btn-copy { background: #01338D; color: white; border: none; padding: 13px; width: 100%; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 14.5px; transition: 0.2s; }
-          .btn-copy:hover { background: #002266; }
-        </style>
-      </head>
-      <body>
-        <div class="card-container">
-          <div class="icon-wrapper">
-            <div class="pulse-circle"></div>
-            <div class="icon-inner"><i class="fa fa-clock-o"></i></div>
-          </div>
-          
-          <h1>جاري مراجعة طلب الدفع...</h1>
-          <p class="subtitle">انتظر قليلاً، سيتم اعتماد طلبك من الإدارة وفتح صفحة الدعم أو الكارت تلقائياً أمامك.</p>
-
-          <div class="highlight-action">
-            <i class="fa fa-bell" style="font-size: 16px;"></i>
-            <span>جاري فحص حالة الطلب بشكل لحظي...</span>
-          </div>
-
-          <div class="info-box">
-            <div class="info-row">
-              <span>حالة الطلب:</span>
-              <span class="status-badge"><span class="status-dot"></span> بانتظار قرار الإدارة</span>
-            </div>
-            <div class="info-row" style="margin-top: 10px;">
-              <span>رقم المعاملة:</span>
-              <strong>${transactionId}</strong>
-            </div>
-          </div>
-
-          <div class="manual-actions">
-            <a href="#" id="contribBtn" class="btn-custom btn-contrib">
-              <i class="fa fa-heart"></i> صفحة المساهمة
-            </a>
-            <a href="/success?merchant_order_id=${transactionId}" class="btn-custom btn-card-gen">
-              <i class="fa fa-ticket"></i> تحديث الحالة
-            </a>
-          </div>
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>جاري معالجة الدفع - شبكة حكايات</title>
+      <!-- مكتبة Socket.io للربط اللحظي مع السيرفر -->
+      <script src="/socket.io/socket.io.js"></script>
+      <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          background: linear-gradient(135deg, #1d2671, #c33764);
+          color: #ffffff;
+          min-height: 100vh;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          padding: 20px;
+          text-align: center;
+        }
+        .card {
+          background: rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(12px);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          border-radius: 20px;
+          padding: 40px 30px;
+          max-width: 450px;
+          width: 100%;
+          box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+        }
+        .spinner {
+          width: 60px;
+          height: 60px;
+          border: 6px solid rgba(255, 255, 255, 0.3);
+          border-top: 6px solid #f1c40f;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+          margin: 0 auto 25px auto;
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        h2 { color: #f1c40f; margin-bottom: 15px; font-size: 24px; }
+        p { color: #e0e0e0; font-size: 16px; line-height: 1.6; margin-bottom: 20px; }
+        .tx-id { font-size: 13px; color: #b2bec3; margin-top: 15px; }
+        
+        /* زر الانتقال اليدوي للمساهمة في حال رغب العميل بالضغط عليه */
+        .action-box {
+          display: none;
+          margin-top: 20px;
+          animation: fadeIn 0.5s ease-in-out;
+        }
+        .btn-contrib {
+          display: inline-block;
+          background: linear-gradient(45deg, #f1c40f, #f39c12);
+          color: #111;
+          padding: 12px 25px;
+          border-radius: 30px;
+          text-decoration: none;
+          font-weight: bold;
+          font-size: 16px;
+          box-shadow: 0 5px 15px rgba(241, 196, 15, 0.4);
+          transition: transform 0.2s;
+        }
+        .btn-contrib:hover {
+          transform: scale(1.05);
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div id="loading-section">
+          <div class="spinner"></div>
+          <h2>جاري تأكيد عملية الدفع...</h2>
+          <p>يرجى الانتظار قليلاً، يتم الآن التحقق من محفظتك وتفعيل الخدمة أو المساهمة بواسطة الإدارة.</p>
+          <div class="tx-id">رقم المعاملة: #${transactionId}</div>
         </div>
 
-        <!-- نافذة عرض الكارت عند توفره -->
-        <div class="modal-overlay" id="voucherModal">
-          <div class="modal-box">
-            <div style="font-size: 45px; color: #16a34a; margin-bottom: 8px;"><i class="fa fa-check-circle"></i></div>
-            <h2 style="font-size: 20px; color: #1e293b;">تمت الموافقة وإصدار الكارت!</h2>
-            <p style="font-size: 13px; color: #64748b; margin-top: 5px;">كود التشغيل الخاص بك:</p>
-            
-            <div class="voucher-code" id="modalCardCode">------</div>
-            
-            <button class="btn-copy" onclick="copyCardCode()"><i class="fa fa-clone"></i> نسخ كود الكارت</button>
-            <a href="${networkUrl}" style="display: block; margin-top: 14px; color: #64748b; text-decoration: none; font-size: 13px; font-weight: 600;">التوجه للتصفح الآن <i class="fa fa-arrow-left"></i></a>
-          </div>
+        <!-- قسم يظهر فور تفعيل المساهمة من تليجرام ويحتوي على زر مباشر -->
+        <div id="success-action-section" class="action-box">
+          <h2>🎉 تم اعتماد مساهمتك بنجاح!</h2>
+          <p>شكراً لدعمك الكريم، اضغط على الزر أدناه لعرض رسالة الشكر والدعاء:</p>
+          <a id="contrib-link" href="#" class="btn-contrib">عرض صفحة الدعاء والمساهمة 🌸</a>
         </div>
+      </div>
 
-        <script>
-          const txId = "${transactionId}";
-          
-          // 1. الاتصال اللحظي عبر Socket.io (سرعة فائقة)
-          const socket = io();
-          
-          // الانضمام لغرفة المعاملة الخاصة بهذا العميل فقط
-          if (txId && txId !== "غير محدد") {
-            socket.on('connect', () => {
-              // إذا كان السيرفر ينظم الغرف بناءً على الـ txId أو يتم بثه مباشرة
-              console.log("Connected to real-time server");
-            });
+      <script>
+        const txId = "${transactionId}";
+        const socket = io();
 
-            // الاستماع لتوجيه المساهمة الفوري
-            socket.on('force_redirect', (data) => {
-              if (data && data.url) {
-                window.location.href = data.url;
-              }
-            });
+        // الانضمام لغرفة المعاملة الخاصة بهذا العميل
+        socket.emit('join_transaction', txId);
 
-            // الاستماع لجاهزية الكارت الفورية
-            socket.on('voucher_ready', (data) => {
-              if (data && data.code) {
-                document.getElementById('modalCardCode').innerText = data.code;
-                document.getElementById('voucherModal').style.display = 'flex';
-              }
-            });
+        // 1. الاستماع لأمر التوجيه الإجباري القادم من تليجرام (عبر الـ Backend)
+        socket.on('force_redirect', function(data) {
+          if (data && data.url) {
+            window.location.href = data.url;
           }
+        });
 
-          // 2. نظام احتياطي (Polling) يتأكد من الحالة كل 3 ثوانٍ تحسباً لأي انقطاع في الـ Socket
-          let attempts = 0;
-          async function checkVoucherStatus() {
-            if (!txId || txId === "غير محدد") return;
-            try {
-              attempts++;
-              const res = await fetch('/api/check-voucher/' + encodeURIComponent(txId));
-              const data = await res.json();
-              
-              if (data.success && data.data) {
-                const cardAmount = parseFloat(data.data.amount || 0);
+        // 2. الاستماع لو حدث تفعيل ككارت ميكروتيك عادي
+        socket.on('voucher_ready', function(data) {
+          window.location.href = "/success?merchant_order_id=" + txId;
+        });
 
-                if (cardAmount > 0) {
-                  document.getElementById('contribBtn').href = '/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId);
-                }
-
-                // إذا كان طلب مساهمة
-                if (data.data.isContribution || cardAmount > 100) {
-                  window.location.href = data.data.redirectUrl || ('/contribution-success?amount=' + (cardAmount || 150) + '&tx=' + encodeURIComponent(txId));
-                  return;
-                }
-
-                // إذا تم إصدار كارت
-                if (data.data.code) {
-                  document.getElementById('modalCardCode').innerText = data.data.code;
-                  document.getElementById('voucherModal').style.display = 'flex';
-                  return;
-                }
-              }
-              
-              if (attempts < 150) {
-                setTimeout(checkVoucherStatus, 3000);
-              }
-            } catch (e) {
-              if (attempts < 150) {
-                setTimeout(checkVoucherStatus, 4000);
+        // 3. آلية احتياطية (Polling) تسأل السيرفر كل 3 ثوانٍ للاطمئنان على حالة الطلب
+        setInterval(async () => {
+          try {
+            const response = await fetch('/api/check-voucher/' + txId);
+            const result = await response.json();
+            
+            if (result.success && result.data) {
+              // إذا كانت مساهمة وتم تفعيلها
+              if (result.data.isContribution && result.data.redirectUrl) {
+                // إظهار زر الانتقال أو التحويل التلقائي مباشرة
+                document.getElementById('loading-section').style.display = 'none';
+                const actionBox = document.getElementById('success-action-section');
+                actionBox.style.display = 'block';
+                document.getElementById('contrib-link').href = result.data.redirectUrl;
+                
+                // تحويل تلقائي بعد ثانية إذا رغبت
+                setTimeout(() => {
+                  window.location.href = result.data.redirectUrl;
+                }, 1500);
+              } 
+              // إذا كان كارت إنترنت عادي وتم توليده
+              else if (result.data.code) {
+                window.location.href = "/success?merchant_order_id=" + txId;
               }
             }
+          } catch (e) {
+            console.error("فحص الحالة...", e);
           }
-
-          checkVoucherStatus();
-
-          function copyCardCode() {
-            const code = document.getElementById('modalCardCode').innerText;
-            navigator.clipboard.writeText(code);
-            alert("تم نسخ كود الكارت بنجاح!");
-          }
-        </script>
-      </body>
+        }, 3000);
+      </script>
+    </body>
     </html>
   `;
 }
 
-module.exports = { generateWaitPageHtml };
+module.exports = {
+  generateWaitPageHtml
+};
