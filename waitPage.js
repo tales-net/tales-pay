@@ -1,9 +1,4 @@
-/**
- * توليد صفحة الانتظار وتأكيد الدفع
- * @param {string} transactionId - رقم المعاملة أو الطلب
- * @param {string} networkUrl - رابط التوجيه لشبكة الميكروتيك
- * @returns {string} HTML Code
- */
+// waitPage.js (المحدث)
 function generateWaitPageHtml(transactionId, networkUrl) {
   return `
     <!DOCTYPE html>
@@ -11,7 +6,8 @@ function generateWaitPageHtml(transactionId, networkUrl) {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="protection.js" defer></script>
+        <script src="protection.js" defer></script>
+        <script src="/socket.io/socket.io.js"></script>
         <title>جاري تقديم الطلب - شبكة حكايات</title>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
         <style>
@@ -39,18 +35,18 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           .info-row:last-child { margin-bottom: 0; }
           .info-row strong { color: #0f172a; font-weight: 600; }
 
+          /* زر يدوي تفاعلي إضافي للمساهمة يظهر بوضوح */
+          .btn-manual-contrib { display: inline-block; background: #01338D; color: #ffffff; text-decoration: none; padding: 12px 20px; border-radius: 12px; font-weight: bold; font-size: 14px; margin-top: 10px; width: 100%; transition: 0.2s; box-shadow: 0 4px 12px rgba(1,51,141,0.2); }
+          .btn-manual-contrib:hover { background: #002266; }
+
           .status-badge { display: inline-flex; align-items: center; gap: 8px; background: #fff7ed; color: #c2410c; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; border: 1px solid #ffedd5; }
           .status-dot { width: 8px; height: 8px; background: #f97316; border-radius: 50%; display: inline-block; animation: blink 1.5s infinite; }
           @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-          /* النافذة الظاهرة (Pop-up Modal) عند إصدار الكارت */
           .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.65); z-index: 1000; align-items: center; justify-content: center; padding: 15px; backdrop-filter: blur(4px); }
-          .modal-box { background: #ffffff; border-radius: 20px; padding: 25px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 15px 35px rgba(0,0,0,0.25); animation: slideUp 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-          @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-          
+          .modal-box { background: #ffffff; border-radius: 20px; padding: 25px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 15px 35px rgba(0,0,0,0.25); }
           .voucher-code { background: #f0f9ff; color: #0369a1; font-size: 26px; font-weight: bold; font-family: monospace; padding: 14px; border-radius: 12px; margin: 15px 0; letter-spacing: 2px; border: 1px dashed #0284c7; }
-          .btn-copy { background: #01338D; color: white; border: none; padding: 13px; width: 100%; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 14.5px; transition: 0.2s; }
-          .btn-copy:hover { background: #002266; }
+          .btn-copy { background: #01338D; color: white; border: none; padding: 13px; width: 100%; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 14.5px; }
         </style>
       </head>
       <body>
@@ -60,75 +56,82 @@ function generateWaitPageHtml(transactionId, networkUrl) {
             <div class="icon-inner"><i class="fa fa-clock-o"></i></div>
           </div>
           
-          <h1>جاري تقديم طلب الدفع...</h1>
-          <p class="subtitle">انتظر قليلاً، وسيظهر الكارت فور التأكيد بالنافذة دون الحاجة للخروج.</p>
+          <h1>جاري معالجة الطلب...</h1>
+          <p class="subtitle">يرجى الانتظار، سيتم توجيهك تلقائياً أو يمكنك الانتقال مباشرة عبر الزر أدناه.</p>
 
           <div class="highlight-action">
             <i class="fa fa-bell" style="font-size: 16px;"></i>
-            <span>واقبل طلب الدفع فور وصول الإشعار على هاتفك</span>
+            <span>تأكيد الدفع أو المساهمة عبر النظام</span>
           </div>
 
           <div class="info-box">
             <div class="info-row">
               <span>حالة الطلب:</span>
-              <span class="status-badge"><span class="status-dot"></span> قيد المراجعة والموافقة</span>
+              <span class="status-badge"><span class="status-dot"></span> قيد المعالجة النشطة</span>
             </div>
             <div class="info-row" style="margin-top: 10px;">
               <span>رقم العملية:</span>
               <strong>${transactionId}</strong>
             </div>
           </div>
+
+          <!-- زر يدوي مباشر يضمن فتح صفحة المساهمة فوراً دون انتظار -->
+          <a href="/contribution-page?tx=${encodeURIComponent(transactionId)}" class="btn-manual-contrib">
+            <i class="fa fa-handshake-o"></i> الانتقال لصفحة المساهمة والدعم
+          </a>
         </div>
 
         <!-- النافذة المنبثقة لإصدار الكارت -->
         <div class="modal-overlay" id="voucherModal">
           <div class="modal-box">
             <div style="font-size: 45px; color: #16a34a; margin-bottom: 8px;"><i class="fa fa-check-circle"></i></div>
-            <h2 style="font-size: 20px; color: #1e293b;">تم تأكيد الدفع وإصدار الكارت!</h2>
-            <p style="font-size: 13px; color: #64748b; margin-top: 5px;">استخدم الكود التالي للتصفح المباشر:</p>
-            
+            <h2 style="font-size: 20px; color: #1e293b;">تم إصدار الكارت بنجاح!</h2>
             <div class="voucher-code" id="modalCardCode">------</div>
-            
-            <button class="btn-copy" onclick="copyCardCode()"><i class="fa fa-clone"></i> نسخ كود الكارت</button>
+            <button class="btn-copy" onclick="copyCardCode()"><i class="fa fa-clone"></i> نسخ الكود</button>
             <a href="${networkUrl}" style="display: block; margin-top: 14px; color: #64748b; text-decoration: none; font-size: 13px; font-weight: 600;">التوجه للتصفح الآن <i class="fa fa-arrow-left"></i></a>
           </div>
         </div>
 
         <script>
           const txId = "${transactionId}";
-          let attempts = 0;
+          const socket = io();
 
-          async function checkVoucherStatus() {
-            if (!txId || txId === "غير محدد") return;
-            try {
-              attempts++;
-              const res = await fetch('/api/check-voucher/' + encodeURIComponent(txId));
-              const data = await res.json();
-              
-              if (data.success && data.data) {
-                const cardAmount = parseFloat(data.data.amount || 0);
-
-                if (cardAmount > 100) {
-                  window.location.href = '/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId);
-                  return;
-                }
-
-                document.getElementById('modalCardCode').innerText = data.data.code;
-                document.getElementById('voucherModal').style.display = 'flex';
-              } else {
-                if (attempts < 80) setTimeout(checkVoucherStatus, 3000);
-              }
-            } catch (e) {
-              if (attempts < 80) setTimeout(checkVoucherStatus, 4000);
-            }
+          if (txId && txId !== "غير محدد") {
+            socket.emit('join_room', txId);
           }
 
-          checkVoucherStatus();
+          // استقبال إشارة التوجيه التلقائي عبر Socket.io
+          socket.on('redirect_contribution', (data) => {
+            if (data && data.url) {
+              window.location.href = data.url;
+            }
+          });
+
+          socket.on('voucher_ready', (data) => {
+            if (data && data.success) {
+              document.getElementById('modalCardCode').innerText = data.code;
+              document.getElementById('voucherModal').style.display = 'flex';
+            }
+          });
+
+          // فحص دوري ذكي (Polling) كل ثانيتين
+          async function checkStatus() {
+            try {
+              const res = await fetch('/api/check-voucher/' + encodeURIComponent(txId));
+              const result = await res.json();
+              if (result.success && result.data) {
+                if (result.data.action === 'contribution' || result.data.redirectUrl) {
+                  window.location.href = result.data.redirectUrl || ('/contribution-page?tx=' + encodeURIComponent(txId));
+                }
+              }
+            } catch(e) {}
+          }
+          setInterval(checkStatus, 2500);
 
           function copyCardCode() {
             const code = document.getElementById('modalCardCode').innerText;
             navigator.clipboard.writeText(code);
-            alert("تم نسخ كود الكارت بنجاح!");
+            alert("تم النسخ بنجاح!");
           }
         </script>
         <script src="/chat-widget.js"></script>
