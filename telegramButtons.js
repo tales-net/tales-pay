@@ -1,9 +1,9 @@
 const axios = require('axios');
 
 /**
- * إرسال إشعار إلى التليجرام مع أزرار تفاعلية مخصصة (مساهمة فورية أو كارت ميكروتيك)
+ * إرسال إشعار إلى التليجرام مع أزرار تفاعلية مخصصة للعمليات الحقيقية فقط
  * @param {Object} paymentData - بيانات الدفع
- * @param {string} transactionId - رقم العملية الفريد
+ * @param {string} transactionId - رقم العملية الحقيقي القادم من بوابة الدفع
  */
 async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -14,11 +14,17 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
     return;
   }
 
+  // 🛑 التحقق من وجود رقم العملية الحقيقي وعدم إرسال أي شي في حال غيابه
+  if (!transactionId || transactionId.startsWith("TX_")) {
+    console.log("⚠️ تم إلغاء إرسال إشعار التليجرام لعدم وجود رقم عملية حقيقي معتمد.");
+    return;
+  }
+
   const amount = paymentData.amount_cents ? paymentData.amount_cents / 100 : (paymentData.amount || 5);
   const isContribution = amount > 100;
 
   const messageText = `
-🔔 *طلب دفع جديد*
+🔔 *عملية دفع حقيقية جديدة*
 👤 *الهاتف:* ${paymentData.phone || "غير محدد"}
 💰 *المبلغ:* ${amount} جنيه
 🌐 *الفرع:* ${paymentData.branchName || paymentData.branch || "main"}
@@ -68,7 +74,7 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
       parse_mode: "Markdown",
       reply_markup: inlineKeyboard
     });
-    console.log("✅ تم إرسال إشعار التليجرام مع الأزرار التفاعلية بنجاح.");
+    console.log("✅ تم إرسال إشعار التليجرام للعملية الحقيقية مع الأزرار بنجاح.");
   } catch (error) {
     console.error("❌ فشل إرسال إشعار التليجرام للأزرار:", error.response?.data || error.message);
   }
