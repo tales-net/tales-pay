@@ -1,79 +1,87 @@
 const axios = require('axios');
 
 /**
- * إرسال إشعار إلى التليجرام مع زر يوجه لصفحة الانتظار (WaitPage) الخاصة بالمعاملة
- * @param {Object} paymentData - بيانات الدفع
- * @param {string} transactionId - رقم المعاملة الفريد
+ * دالة لإرسال إشعار التليجرام مع زرين تفاعليين (Inline Keyboard)
+ * زر لتوليد كارت الإنترنت للفرع، وزر لصفحة المساهمة والدعم.
  */
-async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
+async function sendPaymentNotificationWithButtons(paymentPayload, transactionId) {
+  const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+  const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+  const WEBAPP_URL = process.env.RENDER_EXTERNAL_URL || "https://tales-pay.onrender.com";
 
-  if (!token || !chatId) {
-    console.error("⚠️ توكن التليجرام أو معرف الشات (Chat ID) غير متوفر في ملف البيئة .env");
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    console.warn("⚠️ توكن بوت التليجرام أو معرف الشات (Chat ID) غير متوفر في ملف البيئة.");
     return;
   }
 
-  const amount = paymentData.amount_cents ? paymentData.amount_cents / 100 : 5;
-  const isContribution = amount > 100;
+  const amount = parseFloat(paymentPayload.amount_cents) / 100;
+  const phone = paymentPayload.phone || "غير محدد";
+  const branchKey = paymentPayload.branch || "branch2";
+  const branchName = paymentPayload.branchName || "حكايات نت";
+  const paymentMethod = paymentPayload.payment_method || "wallet";
 
-  const messageText = `
-🔔 *طلب دفع جديد*
-👤 *الهاتف:* ${paymentData.phone || "غير محدد"}
-💰 *المبلغ:* ${amount} جنيه
-🌐 *الفرع:* ${paymentData.branchName || "فرع غير محدد"}
-🔢 *رقم المعاملة:* \`${transactionId}\`
-📌 *النوع:* ${isContribution ? "🌸 مساهمة ودعم للشبكة" : "🎟️ باقة إنترنت ميكروتيك"}
-  `.trim();
+  // بناء نص الرسالة الاحترافية للتليجرام
+  let messageText = `🔔 *عملية دفع جديدة قيد المعالجة*\n\n`;
+  messageText += `📱 *رقم الهاتف:* \`${phone}\`\n`;
+  messageText += `💰 *المبلغ:* \`${amount} جنيه\`\n`;
+  messageText += `🏷️ *طريقة الدفع:* \`${paymentMethod}\`\n`;
+  messageText += `🌐 *الفرع:* ${branchName}\n`;
+  messageText += `🆔 *رقم المعاملة:* \`${transactionId}\`\n`;
 
-  const serverBaseUrl = process.env.SERVER_BASE_URL || process.env.RENDER_EXTERNAL_URL || "https://your-app.onrender.com";
+  // تحديد نوع الزر بناءً على المبلغ (هل هو باقة عادية أم مساهمة كبرى)
+  let inlineKeyboard = [];
 
-  let inlineKeyboardButtons = [];
-
-  // الزر الرئيسي الذي يوجه لصفحة الانتظار الافتراضية المرتبطة بالمعاملة
-  if (isContribution) {
-    inlineKeyboardButtons = [
+  if (amount > 100) {
+    // إذا كان المبلغ مساهمة أكبر من 100 جنيه، نعرض زر التوجه لصفحة المساهمة والدعاء
+    messageText += `\n✨ *نوع العملية:* مساهمة مباركة ودعم للشبكة.`;
+    
+    inlineKeyboard = [
       [
         {
-          text: "🌸 فتح صفحة الانتظار / المساهمة",
-          url: `${serverBaseUrl}/wait?tx=${transactionId}`
+          text: "🌟 عرض صفحة المساهمة والدعاء",
+          url: `${WEBAPP_URL}/contribution-success?amount=${amount}&tx=${transactionId}`
         }
       ]
     ];
   } else {
-    inlineKeyboardButtons = [
+    // الباقات العادية: زر توليد الكارت المباشر للفرع المختار
+    inlineKeyboard = [
       [
         {
-          text: "⏳ فتح صفحة الانتظار وتوليد الكارت",
-          url: `${serverBaseUrl}/wait?tx=${transactionId}`
+          text: `🎫 توليد كارت (${amount} جنيه) - ${branchName}`,
+          url: `${WEBAPP_URL}/api/test-create-card?secret=${process.env.TEST_SECRET_KEY || 'default_secret'}&amount=${amount}&branch=${branchKey}`
         }
       ]
     ];
   }
 
-  // زر إضافي احتياطي لمعاينة الكارت أو الصفحة مباشرة
-  inlineKeyboardButtons.push([
+  // إضافة زر دائم لصفحة الانتظار أو الدعم إن أردت (الزر الثاني الإضافي)
+  inlineKeyboard.push([
     {
-      text: "🔍 معاينة حالة العميل المباشرة",
-      url: `${serverBaseUrl}/success?merchant_order_id=${transactionId}&branch=${paymentData.branch || 'main'}`
+      text: "⏳ متابعة صفحة الانتظار للعميل",
+      url: `${WEBAPP_URL}/success?id=${transactionId}&branch=${branchKey}`
     }
   ]);
 
-  const inlineKeyboard = {
-    inline_keyboard: inlineKeyboardButtons
-  };
+  const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
 
   try {
-    await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
-      chat_id: chatId,
+    const response = await axios.post(telegramApiUrl, {
+      chat_id: TELEGRAM_CHAT_ID,
       text: messageText,
       parse_mode: "Markdown",
-      reply_markup: inlineKeyboard
+      reply_markup: {
+        inline_keyboard: inlineKeyboard
+      }
     });
-    console.log("✅ تم إرسال إشعار التليجرام مع الأزرار التفاعلية المحدثة بنجاح.");
+
+    console.log(`✅ تم إرسال إشعار التليجرام مع الأزرار بنجاح للمعاملة: ${transactionId}`);
+    return response.data;
   } catch (error) {
-    console.error("❌ فشل إرسال إشعار التليجرام للأزرار:", error.response?.data || error.message);
+    console.error("❌ فشل في إرسال إشعار تليجرام مع الأزرار:", error.response?.data || error.message);
   }
 }
 
-module.exports = { sendPaymentNotificationWithButtons };
+module.exports = {
+  sendPaymentNotificationWithButtons
+};
