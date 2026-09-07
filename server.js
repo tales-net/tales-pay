@@ -9,14 +9,12 @@ require("dotenv").config();
 
 const { processPayment } = require("./pay");
 const { sendTelegramMessage } = require("./telegram");
+const { sendTelegramManualButtons } = require("./telegramButtons"); // ⬅️ استدعاء ملف الأزرار اليدوية للتليجرام
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateWaitPageHtml } = require('./waitPage'); // استدعاء ملف صفحة الانتظار
-
-// استدعاء ملف دالة التعامل مع أزرار تليجرام التفاعلية
-const { handleTelegramCallback } = require('./telegramButtons');
 
 // استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
@@ -38,32 +36,19 @@ const BRANCH_NAMES = {
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
 // ==========================================
-// 🔌 إعدادات Socket.io والربط الفوري للعملاء وتليجرام
+// 🔌 إعدادات Socket.io والربط الفوري
 // ==========================================
+// تهيئة Socket.io للدعم المباشر
 chatSupport.initSocket(io);
 
+// إدارة غرف معاملات الدفع والتحديث الفوري لتليجرام
 io.on('connection', (socket) => {
-  // الانضمام لغرفة المعاملة الخاصة بالعميل لتلقي الأكواد أو صفحة المساهمة فوراً
   socket.on('join-transaction', (txId) => {
     if (txId && txId !== "غير محدد") {
       socket.join(txId);
-      console.log(`🔗 Client joined transaction room: ${txId}`);
+      console.log(`Client joined transaction room: ${txId}`);
     }
   });
-});
-
-// استقبال Webhook الخاص بضغطات أزرار تليجرام التفاعلية (Callback Queries)
-app.post('/telegram-callback-webhook', async (req, res) => {
-  try {
-    if (req.body && req.body.callback_query) {
-      // إرسال كائنات الـ io والـ callbackQuery لمعالجتها وتحديث شاشة العميل فورا
-      await handleTelegramCallback(io, req.body.callback_query);
-    }
-    res.sendStatus(200);
-  } catch (error) {
-    console.error("❌ خطأ في استقبال تليجرام كالاباك:", error.message);
-    res.sendStatus(500);
-  }
 });
 
 // إعداد Multer لاستقبال الصور والملفات المرفوعة في الشات
@@ -117,7 +102,7 @@ app.post('/telegram-webhook', async (req, res) => {
 });
 
 // ==========================================
-// 🕹️ مسار معالجة إصدار الكارت يدوياً عبر زر التليجرام (Fallback الاحتياطي)
+// 🕹️ مسار معالجة إصدار الكارت يدوياً عبر زر التليجرام
 // ==========================================
 app.get('/api/manual-create-card', async (req, res) => {
   try {
@@ -126,9 +111,11 @@ app.get('/api/manual-create-card', async (req, res) => {
     const branchKey = branch || 'main';
 
     if (numAmount > 100) {
+      // إذا كان المبلغ مساهمة، يوجه مباشرة لصفحة المساهمة
       return res.send(generateContributionHtmlPage(numAmount, tx));
     }
 
+    // توليد الكارت عبر ميكروتيك للرقم والفرع المحدد
     const result = await processPaymentAndCreateCard(numAmount, branchKey, tx);
 
     if (result.isContribution) {
@@ -213,7 +200,16 @@ async function handlePaymentRequest(req, res) {
     };
 
     if (typeof sendTelegramMessage === "function") {
-      await sendTelegramMessage(paymentPayload, true, transactionId); // تمرير رقم المعاملة للإشعارات والأزرار اليدوية
+      await sendTelegramMessage(paymentPayload, true);
+    }
+
+    // ✅ إرسال الأزرار لتليجرام يدوياً وفورياً قبل الانتقال لصفحة الانتظار
+    if (typeof sendTelegramManualButtons === "function") {
+      await sendTelegramManualButtons({
+        phone: userPhone,
+        amount_cents: parseFloat(payAmount) * 100,
+        branch: selectedBranch
+      }, transactionId);
     }
 
     const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
@@ -226,6 +222,7 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
+      // ✅ التوجيه الافتراضي لملف waitPage.js وعرض صفحة الانتظار برقم المعاملة
       return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
     }
   } catch (err) {
@@ -336,8 +333,20 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-app.get("/success", (req, res) => {
+app.get("/success", async (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
+  const queryBranch = req.query.branch || "branch2";
+
+  // ✅ إرسال الإشعار والأزرار لتليجرام أيضاً عند الدخول لرابط النجاح/الانتظار المباشر
+  if (typeof sendTelegramManualButtons === "function") {
+    await sendTelegramManualButtons({
+      phone: req.query.phone || "غير محدد",
+      amount_cents: req.query.amount ? parseFloat(req.query.amount) * 100 : 500,
+      branch: queryBranch
+    }, transactionId);
+  }
+
+  // استدعاء صفحة الانتظار الافتراضية من waitPage.js وعرضها مباشرة للعميل
   return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
 });
 
@@ -373,7 +382,6 @@ app.get("/fail", (req, res) => {
 
 app.use("/", webhookRouter);
 
-// تشغيل الخادم عبر server (ليعمل معه Socket.io بكفاءة)
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
