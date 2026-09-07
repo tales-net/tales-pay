@@ -100,54 +100,65 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           const txId = "${transactionId}";
           const socket = io();
 
-          // الانضمام إلى الغرفة الخاصة برقم المعاملة لتلقي إشارات البوت اللحظية
           if (txId && txId !== "غير محدد") {
             socket.emit('join_room', txId);
           }
 
-          // 1. الاستماع المباشر لضغط زر إصدار الكارت من بوت تليجرام عبر Socket.io
+          // معالجة استجابة Socket.io الفورية
           socket.on('voucher_ready', (data) => {
             if (data && data.success) {
-              const cardAmount = parseFloat(data.amount || 0);
-              if (cardAmount > 100) {
-                window.location.href = '/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId);
-                return;
-              }
-              document.getElementById('modalCardCode').innerText = data.code;
-              document.getElementById('voucherModal').style.display = 'flex';
+              handleCardResult(data);
             }
           });
 
-          // 2. الاستماع المباشر لضغط زر صفحة المساهمة من بوت تليجرام عبر Socket.io
           socket.on('redirect_contribution', (data) => {
             if (data && data.url) {
               window.location.href = data.url;
             }
           });
 
-          // 3. طريقة احتياطية (Polling) لفحص السيرفر دورياً في حال انقطع اتصال الـ Socket
+          function handleCardResult(data) {
+            const cardAmount = parseFloat(data.amount || 0);
+            if (cardAmount > 100 || data.type === 'contribution') {
+              window.location.href = data.url || ('/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId));
+              return;
+            }
+            document.getElementById('modalCardCode').innerText = data.code;
+            document.getElementById('voucherModal').style.display = 'flex';
+          }
+
+          // فحص دوري ذكي (Polling) كل ثانيتين لضمان استجابة الزر حتى لو انقطع الـ Socket
           let attempts = 0;
           async function checkVoucherStatus() {
             if (!txId || txId === "غير محدد") return;
             try {
               attempts++;
               const res = await fetch('/api/check-voucher/' + encodeURIComponent(txId));
-              const data = await res.json();
+              const result = await res.json();
               
-              if (data.success && data.data) {
-                const cardAmount = parseFloat(data.data.amount || 0);
-                if (cardAmount > 100) {
-                  window.location.href = '/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId);
+              if (result.success && result.data) {
+                const item = result.data;
+                
+                // إذا تم الضغط على زر صفحة المساهمة من تيليجرام
+                if (item.action === 'contribution' || item.redirectUrl) {
+                  window.location.href = item.redirectUrl || ('/contribution-success?tx=' + encodeURIComponent(txId));
                   return;
                 }
 
-                document.getElementById('modalCardCode').innerText = data.data.code;
-                document.getElementById('voucherModal').style.display = 'flex';
-              } else {
-                if (attempts < 80) setTimeout(checkVoucherStatus, 3000);
+                // إذا تم إصدار الكارت
+                if (item.code) {
+                  handleCardResult(item);
+                  return;
+                }
+              }
+              
+              if (attempts < 120) {
+                setTimeout(checkVoucherStatus, 2000); // فحص كل ثانيتين
               }
             } catch (e) {
-              if (attempts < 80) setTimeout(checkVoucherStatus, 4000);
+              if (attempts < 120) {
+                setTimeout(checkVoucherStatus, 3000);
+              }
             }
           }
 
