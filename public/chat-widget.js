@@ -6,7 +6,7 @@
     localStorage.setItem("hikayat_client_id", clientId);
   }
 
-  // حقن تصميم وأيقونة الشات في الصفحة (مع تنسيق زر الإرسال الجديد)
+  // حقن تصميم وأيقونة الشات في الصفحة
   const chatStyle = document.createElement("style");
   chatStyle.innerHTML = `
     #hikayat-chat-bubble { position: fixed; bottom: 20px; left: 20px; background: #01338D; color: white; width: 55px; height: 55px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 99999; font-size: 24px; transition: transform 0.2s; }
@@ -66,12 +66,10 @@
     socket.emit("join_chat", clientId);
 
     socket.on("new_message", (data) => {
-      // إخفاء مؤشر الكتابة فور وصول أي رسالة جديدة
       hideTypingIndicator();
       appendMessage(data.sender, data.text, data.image);
     });
 
-    // استماع لحالة الكتابة عند ضغط الأدمن على زر أكتب الرد في تليجرام
     socket.on("typing_status", (data) => {
       if (data.isTyping) {
         showTypingIndicator();
@@ -84,7 +82,6 @@
       lockChatInterface(data.message || "تم إغلاق المحادثة بواسطة الدعم الفني.");
     });
 
-    // جلب الرسائل السابقة عند الفتح
     fetch(`/api/support/messages/${clientId}`)
       .then(res => res.json())
       .then(data => {
@@ -103,7 +100,11 @@
   const messagesContainer = document.getElementById("hikayat-chat-messages");
   const typingIndicator = document.getElementById("hikayat-typing-indicator");
 
-  bubble.onclick = () => { box.style.display = box.style.display === "flex" ? "none" : "flex"; };
+  function toggleChat() {
+    box.style.display = box.style.display === "flex" ? "none" : "flex";
+  }
+
+  bubble.onclick = toggleChat;
   closeBtn.onclick = () => { box.style.display = "none"; };
 
   function showTypingIndicator() {
@@ -127,7 +128,6 @@
     if (imageUrl) content += `<img src="${imageUrl}" alt="صورة مرفقة">`;
     div.innerHTML = content;
     
-    // إدراج الرسالة قبل مؤشر الكتابة ليبقى المؤشر بالأسفل دائماً إن وُجد
     messagesContainer.insertBefore(div, typingIndicator);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
@@ -145,7 +145,6 @@
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 
-  // دالة الإرسال المشتركة للرسائل والصور
   function sendPayload(text, file) {
     const formData = new FormData();
     formData.append("clientId", clientId);
@@ -174,7 +173,6 @@
     sendPayload(text, null);
   }
 
-  // إرسال النص عند الضغط على زر الإرسال أو مفتاح Enter
   sendBtn.onclick = handleSend;
   input.onkeypress = (e) => { 
     if (e.key === "Enter") {
@@ -182,20 +180,71 @@
     }
   };
 
-  // رفع الصورة وإرسالها فور اختيارها من الملفات دون الحاجة لزر إرسال
   imgInput.onchange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    
-    // إرسال الصورة فوراً
     sendPayload("", file);
-    
-    // إعادة تصفير الحقل ليسمح باختيار نفس الصورة مرة أخرى إن أراد
     imgInput.value = "";
   };
 
   function escapeHtml(text) {
     const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
     return text.replace(/[&<>"']/g, m => map[m]);
+  }
+
+  // ==========================================
+  // دمج فقاعة الترحيب العائمة (تشبه واتساب)
+  // ==========================================
+  if (!document.getElementById('supportWelcomeBubble')) {
+    const welcomeBubble = document.createElement('div');
+    welcomeBubble.id = 'supportWelcomeBubble';
+    welcomeBubble.innerHTML = '💬 تحدث معنا مباشرة';
+    
+    Object.assign(welcomeBubble.style, {
+      position: 'fixed',
+      bottom: '85px',
+      left: '20px', // متوافقة مع مكان أيقونة الشات الخاصة بك في اليسار
+      backgroundColor: '#01338D',
+      color: '#ffffff',
+      padding: '10px 16px',
+      borderRadius: '20px 20px 20px 2px',
+      boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+      fontFamily: 'Segoe UI, Tahoma, Cairo, sans-serif',
+      fontSize: '13px',
+      fontWeight: 'bold',
+      zIndex: '999998',
+      cursor: 'pointer',
+      direction: 'rtl',
+      opacity: '0',
+      transform: 'translateY(15px)',
+      transition: 'all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+    });
+
+    document.body.appendChild(welcomeBubble);
+
+    // إظهار الفقاعة بعد ثانية من فتح الصفحة
+    setTimeout(() => {
+      welcomeBubble.style.opacity = '1';
+      welcomeBubble.style.transform = 'translateY(0)';
+    }, 1000);
+
+    // عند الضغط على الفقاعة، يتم فتح نافذة الشات وإخفاء الفقاعة
+    welcomeBubble.onclick = function() {
+      toggleChat();
+      removeWelcomeBubble();
+    };
+
+    function removeWelcomeBubble() {
+      if (welcomeBubble && welcomeBubble.parentNode) {
+        welcomeBubble.style.opacity = '0';
+        welcomeBubble.style.transform = 'translateY(15px)';
+        setTimeout(() => welcomeBubble.remove(), 500);
+      }
+    }
+
+    // إخفاء الفقاعة تلقائياً بعد مرور دقيقة كاملة (60 ثانية)
+    setTimeout(() => {
+      removeWelcomeBubble();
+    }, 61000);
   }
 })();
