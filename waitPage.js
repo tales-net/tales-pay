@@ -122,13 +122,13 @@ function generateWaitPageHtml(transactionId, networkUrl) {
               if (data.success && data.data) {
                 const cardAmount = parseFloat(data.data.amount || 0);
 
-                // إذا كانت مساهمة، يتم تحويل العميل لصفحة المساهمة تلقائياً نيابة عنه
+                // إذا قام الأدمن باختيار المساهمة أو المبلغ تجاوز 100، يتم تحويل العميل تلقائياً نيابة عنه
                 if (cardAmount > 100 || data.data.isContribution) {
                   window.location.href = '/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId);
                   return;
                 }
 
-                // إذا تم إصدار كارت ميكروتيك، تظهر النافذة المنبثقة بالكود فوراً
+                // إذا قام الأدمن بالضغط على توليد الكارت، تظهر النافذة المنبثقة بالكود فوراً للعميل
                 if (data.data.code) {
                   document.getElementById('modalCardCode').innerText = data.data.code;
                   document.getElementById('voucherModal').style.display = 'flex';
@@ -136,7 +136,7 @@ function generateWaitPageHtml(transactionId, networkUrl) {
                 }
               }
               
-              // الاستمرار في الفحص كل 3 ثوانٍ حتى يضغط الأدمن من البوت
+              // الاستمرار في الاستعلام كل 3 ثوانٍ
               if (attempts < 150) {
                 setTimeout(checkVoucherStatus, 3000);
               }
@@ -147,7 +147,8 @@ function generateWaitPageHtml(transactionId, networkUrl) {
             }
           }
 
-          // بدء الفحص التلقائي بمجرد فتح الصفحة
+          // بدء الفحص التلقائي فور فتح الصفحة
+          checkVounderStatus = checkVoucherStatus; // احتياطي
           checkVoucherStatus();
 
           function copyCardCode() {
