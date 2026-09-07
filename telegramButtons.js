@@ -1,45 +1,43 @@
 const axios = require('axios');
-const { processPaymentAndCreateCard } = require('./mikrotikService');
-const { generateContributionHtmlPage } = require('./contributionMessages');
 
 /**
- * إرسال إشعار تليجرام مع زرين تفاعليين يدويين مرتبطين برقم المعاملة الحقيقي
+ * إرسال إشعار الدفع إلى التليجرام مع زرين تفاعليين (صفحة المساهمة وتوليد الكارت يدويًا)
+ * @param {Object} paymentData - بيانات عملية الدفع
+ * @param {string} transactionId - رقم المعاملة الفريد
  */
-async function sendTelegramManualButtons(paymentData, transactionId) {
+async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
 
   if (!token || !chatId) {
-    console.warn("⚠️ توكن تليجرام أو معرف الشات غير متاح للإشعارات اليدوية.");
+    console.error("⚠️ توكن التليجرام أو معرف الشات (Chat ID) غير متوفر في ملف البيئة .env");
     return;
   }
 
-  const amount = paymentData.amount_cents ? paymentData.amount_cents / 100 : (paymentData.amount || 5);
-  const branch = paymentData.branch || paymentData.branchKey || "main";
-  const phone = paymentData.phone || "غير محدد";
-
+  const amountValue = paymentData.amount_cents ? paymentData.amount_cents / 100 : "5";
+  
   const messageText = `
-⚠️ طلب دفع جديد / فشلت المحفظة (يدوي)
-------------------------------------
-📱 الهاتف: ${phone}
-💰 المبلغ: ${amount} جنيه
-🌐 الفرع: ${branch}
-🔢 رقم العملية: ${transactionId}
-------------------------------------
-(اختر الإجراء المناسب يدويًا)
+🔔 *طلب دفع جديد / كارت إنترنت غير متوفر*
+👤 *الهاتف:* ${paymentData.phone || "غير محدد"}
+💰 *المبلغ:* ${amountValue} جنيه
+🌐 *الفرع:* ${paymentData.branchName || "فرع غير محدد"}
+🔢 *رقم المعاملة:* \`${transactionId}\`
   `.trim();
 
-  // استخدام صيغة بسيطة ومستقرة لـ callback_data بدون تقطيع معقد
+  // جلب رابط السيرفر الأساسي من البيئة أو افتراضي
+  const serverBaseUrl = process.env.SERVER_BASE_URL || "http://localhost:3000";
+
+  // الأزرار الشفافة (Inline Keyboard) لتليجرام
   const inlineKeyboard = {
     inline_keyboard: [
       [
         {
-          text: "🌟 صفحة المساهمة",
-          callback_data: `contrib|${amount}|${transactionId}`
+          text: "💳 صفحة المساهمة",
+          url: `${serverBaseUrl}/api/force-contribution?tx=${transactionId}&amount=${amountValue}`
         },
         {
-          text: "💳 إصدار الكارت المرتبط",
-          callback_data: `card|${amount}|${branch}|${transactionId}`
+          text: "⚙️ توليد الكارت يدويًا",
+          url: `${serverBaseUrl}/api/test-create-card?secret=${process.env.TEST_SECRET_KEY}&amount=${amountValue}&branch=${paymentData.branch || 'branch2'}&tx=${transactionId}`
         }
       ]
     ]
@@ -49,115 +47,13 @@ async function sendTelegramManualButtons(paymentData, transactionId) {
     await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
       chat_id: chatId,
       text: messageText,
+      parse_mode: "Markdown",
       reply_markup: inlineKeyboard
     });
-    console.log(`✅ تم إرسال رسالة الأزرار اليدوية لتليجرام برقم العملية: ${transactionId}`);
+    console.log("✅ تم إرسال إشعار التليجرام مع الأزرار التفاعلية بنجاح.");
   } catch (error) {
-    console.error("❌ خطأ في إرسال الأزرار اليدوية لتليجرام:", error.response?.data || error.message);
+    console.error("❌ فشل إرسال إشعار التليجرام للأزرار:", error.response?.data || error.message);
   }
 }
 
-/**
- * معالجة ضغطات الأزرار القادمة من تليجرام وتحديث شاشة العميل فوراً عبر السوكيت
- */
-async function handleTelegramCallback(botIo, callbackQuery) {
-  const data = callbackQuery.data;
-  const chatId = callbackQuery.message.chat.id;
-  const messageId = callbackQuery.message.message_id;
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-
-  if (!data) return;
-
-  try {
-    if (data.startsWith('contrib|')) {
-      const parts = data.split('|');
-      const amount = parseFloat(parts[1]);
-      const txId = parts[2];
-
-      const htmlContent = generateContributionHtmlPage(amount, txId);
-
-      // إرسال صفحة المساهمة عبر السوكيت للغرفة الخاصة برقم المعاملة الحقيقي
-      if (botIo) {
-        botIo.to(txId).emit('telegram-action-result', {
-          success: true,
-          isContribution: true,
-          htmlContent: htmlContent
-        });
-        console.log(`📡 تم إرسال حدث المساهمة عبر Socket للغرفة: ${txId}`);
-      }
-
-      await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
-        callback_query_id: callbackQuery.id,
-        text: "✅ تم توجيه العميل لصفحة المساهمة بنجاح",
-        show_alert: false
-      });
-
-      await axios.post(`https://api.telegram.org/bot${token}/editMessageText`, {
-        chat_id: chatId,
-        message_id: messageId,
-        text: callbackQuery.message.text + "\n\n[تم اختيار: صفحة المساهمة بنجاح ✅]"
-      });
-
-    } else if (data.startsWith('card|')) {
-      const parts = data.split('|');
-      const amount = parseFloat(parts[1]);
-      const branch = parts[2];
-      const txId = parts[3];
-
-      const result = await processPaymentAndCreateCard(amount, branch, txId);
-
-      if (result.isContribution) {
-        const htmlContent = generateContributionHtmlPage(amount, txId);
-        if (botIo) {
-          botIo.to(txId).emit('telegram-action-result', {
-            success: true,
-            isContribution: true,
-            htmlContent: htmlContent
-          });
-        }
-      } else {
-        if (global.generatedCardsMap) {
-          global.generatedCardsMap.set(txId, {
-            code: result.cardCode,
-            packageName: result.packageName,
-            amount: amount,
-            branchKey: branch,
-            createdAt: new Date()
-          });
-        }
-
-        // إرسال الكارت عبر السوكيت للغرفة الخاصة برقم المعاملة الحقيقي لتظهر بالنافذة المنبثقة
-        if (botIo) {
-          botIo.to(txId).emit('telegram-action-result', {
-            success: true,
-            isContribution: false,
-            cardCode: result.cardCode,
-            packageName: result.packageName
-          });
-          console.log(`📡 تم إرسال كارت الميكروتيك عبر Socket للغرفة: ${txId}`);
-        }
-      }
-
-      await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
-        callback_query_id: callbackQuery.id,
-        text: "✅ تم إصدار الكارت وإرساله لشاشة العميل",
-        show_alert: false
-      });
-
-      await axios.post(`https://api.telegram.org/bot${token}/editMessageText`, {
-        chat_id: chatId,
-        message_id: messageId,
-        text: callbackQuery.message.text + `\n\n[تم إصدار الكارت: ${result.cardCode || 'مساهمة'} ✅]`
-      });
-    }
-  } catch (error) {
-    console.error("❌ خطأ في معالجة ضغطة زر تليجرام:", error.response?.data || error.message);
-    await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
-      callback_query_id: callbackQuery.id,
-      text: "❌ حدث خطأ أثناء تنفيذ الطلب: " + (error.message || ""),
-      show_alert: true
-    }).catch(() => {});
-  }
-}
-
-module.exports = { sendTelegramManualButtons, handleTelegramCallback };
+module.exports = { sendPaymentNotificationWithButtons };
