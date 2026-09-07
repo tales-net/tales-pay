@@ -61,7 +61,7 @@ function getFormattedDateTime() {
 }
 
 /**
- * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام
+ * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام مع الأزرار التفاعلية
  */
 async function sendTelegramMessage(data, isInitial = true) {
   try {
@@ -90,9 +90,12 @@ async function sendTelegramMessage(data, isInitial = true) {
                         "غير محدد";
 
     let message = "";
+    let replyMarkup = null;
 
     if (isInitial) {
       const clientID = data.clientID || data.clientId || "غير متوفر";
+      // استخراج أو توليد رقم المعاملة لربطه بالأزرار
+      const transactionId = data.transactionId || data.id || "TX_" + Date.now();
 
       let locationText = data.geoCity && data.geoCountry ? `${data.geoCity}، ${data.geoCountry}` : null;
       let ispText = data.ispProvider || data.isp || null;
@@ -145,6 +148,16 @@ async function sendTelegramMessage(data, isInitial = true) {
                  `⏰ <b>المنطقة الزمنية:</b> <code>${userTimeZone}</code>\n` +
                  `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
 
+      // ✅ إضافة الأزرار التفاعلية المدمجة لرسالة جاري الدفع
+      replyMarkup = {
+        inline_keyboard: [
+          [
+            { text: "🎟️ إصدار الكارت (ميكروتيك)", callback_data: `approve_card_${transactionId}` },
+            { text: "🤝 صفحة المساهمة", callback_data: `show_contribution_${transactionId}` }
+          ]
+        ]
+      };
+
     } else {
       const txnId = data.id || data.transactionId || data.order?.id || "غير متوفر";
       const voucher = data.voucher_code || data.cardCode || "غير متوفر";
@@ -164,11 +177,17 @@ async function sendTelegramMessage(data, isInitial = true) {
                 `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
     }
 
-    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    const payload = {
       chat_id: CHAT_ID,
       text: message,
       parse_mode: "HTML"
-    });
+    };
+
+    if (replyMarkup) {
+      payload.reply_markup = replyMarkup;
+    }
+
+    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, payload);
 
   } catch (err) {
     console.error("❌ [Telegram Error]:", err.response?.data || err.message);
@@ -176,7 +195,7 @@ async function sendTelegramMessage(data, isInitial = true) {
 }
 
 /**
- * 2. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام (مصلحة بالكامل)
+ * 2. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام
  */
 async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   try {
@@ -193,7 +212,6 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     const form = new FormData();
     form.append("chat_id", CHAT_ID);
     
-    // إرفاق الصورة كـ Buffer مع تحديد اسم الملف ونوع الـ Content-Type بوضوح
     form.append("photo", imageBuffer, {
       filename: `card_${paymentDetails.transactionId || Date.now()}.png`,
       contentType: "image/png"
@@ -210,7 +228,6 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     form.append("caption", caption);
     form.append("parse_mode", "HTML");
 
-    // إرسال الطلب مع إضافة ترويسات الـ Form Data المناسبة
     const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
       headers: {
         ...form.getHeaders()
