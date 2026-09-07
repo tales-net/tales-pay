@@ -178,6 +178,31 @@ async function handlePaymentRequest(req, res) {
 app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
 
+// ✅ مسار تفعيل المساهمة القسري عند الضغط عليها من البوت وتمريرها للعميل
+app.get("/api/force-contribution", (req, res) => {
+  const txId = req.query.tx;
+  const amount = req.query.amount || 150;
+
+  if (txId) {
+    // حفظ حالة المساهمة في الذاكرة المؤقتة لكي تلتقطها صفحة الانتظار وتفتحها فوراً
+    const contributionPayload = {
+      amount: parseFloat(amount),
+      isContribution: true,
+      forceContribution: true,
+      createdAt: new Date()
+    };
+
+    if (typeof global.generatedCardsMap.set === 'function') {
+      global.generatedCardsMap.set(txId, contributionPayload);
+    } else {
+      global.generatedCardsMap[txId] = contributionPayload;
+    }
+  }
+
+  // توجيه المتصفح مباشرة لصفحة المساهمة بالمبلغ الدقيق ورقم المعاملة
+  res.redirect(`/contribution-success?amount=${amount}&tx=${txId}`);
+});
+
 app.get("/api/test-create-card", async (req, res) => {
   const secretKey = req.query.secret;
   
