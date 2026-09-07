@@ -15,7 +15,7 @@ const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateWaitPageHtml } = require('./waitPage'); // استدعاء ملف صفحة الانتظار
 
-// 📥 استدعاء ملف تليجرام المخصص لصفحة الانتظار والأزرار التفاعلية (Callback / Buttons)
+// استدعاء ملف التحكم في أزرار تليجرام لصفحة الانتظار والمساهمة
 const waitPageTg = require('./waitPage-telegram');
 
 // استدعاء ملف الدعم المباشر (Chat Support)
@@ -26,7 +26,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://tales.net";
+const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://192.168.88.1/login";
 
 const BRANCH_NAMES = {
   waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك",
@@ -73,6 +73,17 @@ function getClientPublicIP(req) {
 }
 
 // ==========================================
+// 🤖 استقبال ضغطات الأزرار من بوت تليجرام (Callback Query)
+// ==========================================
+// ملاحظة: تأكد من أنك تستخدم مكتبة تليجرام (مثل node-telegram-bot-api) وتعرف الـ bot لديك هنا، أو استقبلها عبر Webhook
+// إذا كنت تستخدم مكتبة Telegram Bot كمتغير باسم bot، اترك الكود التالي كما هو:
+if (typeof bot !== 'undefined' && bot) {
+  bot.on('callback_query', async (query) => {
+    await waitPageTg.handleTelegramCallback(query, io);
+  });
+}
+
+// ==========================================
 // 💬 مسارات الدعم الفني المباشر (Chat Support API)
 // ==========================================
 app.post('/api/support/message', upload.single('image'), (req, res) => {
@@ -86,14 +97,11 @@ app.get('/api/support/messages/:clientId', (req, res) => {
 });
 
 app.post('/telegram-webhook', async (req, res) => {
-  // 1. فحص إذا كانت الرسالة عبارة عن ضغطة زر تفاعلي (Callback Query) من أزرار تليجرام
+  // يمكنك هنا أيضاً معالجة الـ callback_query لو كنت تستخدم Webhook لتليجرام
   if (req.body && req.body.callback_query) {
     await waitPageTg.handleTelegramCallback(req.body.callback_query, io);
   }
-  
-  // 2. معالجة ردود الشات الدعم الفني المباشر
   await chatSupport.handleTelegramReply(req.body);
-  
   res.sendStatus(200);
 });
 
@@ -153,7 +161,7 @@ async function handlePaymentRequest(req, res) {
       lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
     };
 
-    // الإرسال الأساسي للتليجرام مع الأزرار البرمجية الجديدة لصفحة الانتظار
+    // إرسال الإشعار لتليجرام باستخدام ملف الأزرار المحدث
     if (typeof waitPageTg.sendPaymentNotificationWithButtons === "function") {
       await waitPageTg.sendPaymentNotificationWithButtons(paymentPayload, transactionId);
     } else if (typeof sendTelegramMessage === "function") {
@@ -199,7 +207,7 @@ app.get("/api/test-create-card", async (req, res) => {
     const amount = req.query.amount || "5";
     const rawTarget = req.query.branch || req.query.branch_key || "branch2";
     const targetBranch = BRANCH_NAMES[rawTarget] ? rawTarget : "branch2";
-    const testTxId = "TEST_" + Date.now();
+    const testTxId = req.query.tx || ("TEST_" + Date.now());
 
     const result = await processPaymentAndCreateCard(amount, targetBranch, testTxId);
 
@@ -215,6 +223,9 @@ app.get("/api/test-create-card", async (req, res) => {
       };
 
       global.generatedCardsMap.set(testTxId, cardPayload);
+
+      // بث الكارت لحظياً للمتصفح المفتوح عبر Socket.io
+      io.to(testTxId).emit('voucher_ready', { code: result.cardCode, amount: amount });
 
       return res.json({
         success: true,
@@ -242,10 +253,13 @@ app.get("/contribution-success", (req, res) => {
   res.send(htmlContent);
 });
 
+// ==========================================
+// 🔍 مسار فحص الحالة (API الـ Polling الاحتياطي)
+// ==========================================
 app.get("/api/check-voucher/:txId", (req, res) => {
   const txId = String(req.params.txId || "").trim();
   
-  if (!txId || txId === "null" || txId === "undefined") {
+  if (!txId || txId === "null" || txId === "undefined" || txId === "غير محدد") {
     return res.json({ success: false, message: "رقم المعاملة غير صالح" });
   }
 
@@ -281,6 +295,9 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
+// ==========================================
+// ⏳ مسار عرض صفحة الانتظار للعميل
+// ==========================================
 app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
   
@@ -319,6 +336,15 @@ app.get("/fail", (req, res) => {
 });
 
 app.use("/", webhookRouter);
+
+// تفعيل اتصال Socket.io لربط الغرف لكل معاملة
+io.on('connection', (socket) => {
+  socket.on('join_transaction', (txId) => {
+    if (txId) {
+      socket.join(txId);
+    }
+  });
+});
 
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
