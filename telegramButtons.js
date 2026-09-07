@@ -52,7 +52,7 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
     ];
   }
 
-  // زر إضافي لمعاينة صفحة الانتظار أو النجاح
+  // زر إضافي لمعاينة صفحة الانتظار أو النجاح باستخدام رقم المعاملة الصحيح
   inlineKeyboardButtons.push([
     {
       text: "🔍 معاينة صفحة العميل الحالية",
