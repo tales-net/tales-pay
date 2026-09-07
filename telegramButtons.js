@@ -3,7 +3,7 @@ const { processPaymentAndCreateCard } = require('./mikrotikService');
 const { generateContributionHtmlPage } = require('./contributionMessages');
 
 /**
- * إرسال إشعار تليجرام مع زرين تفاعليين يدويين مرتبطين برقم المعاملة
+ * إرسال إشعار تليجرام مع زرين تفاعليين يدويين مرتبطين برقم المعاملة الحقيقي
  */
 async function sendTelegramManualButtons(paymentData, transactionId) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -58,7 +58,7 @@ async function sendTelegramManualButtons(paymentData, transactionId) {
 }
 
 /**
- * معالجة ضغطات الأزرار القادمة من تليجرام وتحديث شاشة العميل فوراً
+ * معالجة ضغطات الأزرار القادمة من تليجرام وتحديث شاشة العميل فوراً عبر السوكيت
  */
 async function handleTelegramCallback(botIo, callbackQuery) {
   const data = callbackQuery.data;
@@ -76,12 +76,14 @@ async function handleTelegramCallback(botIo, callbackQuery) {
 
       const htmlContent = generateContributionHtmlPage(amount, txId);
 
+      // إرسال صفحة المساهمة عبر السوكيت للغرفة الخاصة برقم المعاملة الحقيقي
       if (botIo) {
         botIo.to(txId).emit('telegram-action-result', {
           success: true,
           isContribution: true,
           htmlContent: htmlContent
         });
+        console.log(`📡 تم إرسال حدث المساهمة عبر Socket للغرفة: ${txId}`);
       }
 
       await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
@@ -124,6 +126,7 @@ async function handleTelegramCallback(botIo, callbackQuery) {
           });
         }
 
+        // إرسال الكارت عبر السوكيت للغرفة الخاصة برقم المعاملة الحقيقي لتظهر بالنافذة المنبثقة
         if (botIo) {
           botIo.to(txId).emit('telegram-action-result', {
             success: true,
@@ -131,6 +134,7 @@ async function handleTelegramCallback(botIo, callbackQuery) {
             cardCode: result.cardCode,
             packageName: result.packageName
           });
+          console.log(`📡 تم إرسال كارت الميكروتيك عبر Socket للغرفة: ${txId}`);
         }
       }
 
