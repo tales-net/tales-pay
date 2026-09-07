@@ -111,6 +111,7 @@ function generateWaitPageHtml(transactionId, networkUrl) {
             }
           });
 
+          // الاستماع المباشر لحدث توجيه صفحة المساهمة
           socket.on('redirect_contribution', (data) => {
             if (data && (data.url || data.redirectUrl)) {
               window.location.href = data.url || data.redirectUrl;
@@ -120,14 +121,16 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           function handleCardResult(data) {
             const cardAmount = parseFloat(data.amount || 0);
             
-            // إذا كانت الحالة مساهمة، أو المبلغ أكبر من 100، أو تم طلب التوجيه، وجهه لصفحة المساهمة مباشرة
-            if (cardAmount > 100 || data.type === 'contribution' || data.action === 'contribution' || data.redirectUrl) {
+            // التوجيه لصفحة المساهمة في حال طُلب ذلك أو تطابقت شروط المساهمة
+            if (data.action === 'contribution' || data.redirectUrl || cardAmount > 100 || data.type === 'contribution') {
               window.location.href = data.redirectUrl || ('/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId));
               return;
             }
             
-            document.getElementById('modalCardCode').innerText = data.code;
-            document.getElementById('voucherModal').style.display = 'flex';
+            if (data.code) {
+              document.getElementById('modalCardCode').innerText = data.code;
+              document.getElementById('voucherModal').style.display = 'flex';
+            }
           }
 
           // فحص دوري ذكي (Polling) كل ثانيتين لضمان استجابة الزر حتى لو انقطع الـ Socket
@@ -142,8 +145,9 @@ function generateWaitPageHtml(transactionId, networkUrl) {
               if (result.success && result.data) {
                 const item = result.data;
                 
-                // الاعتماد على دالة handleCardResult الموحدة لمعالجة الـ Polling والـ Sockets معاً
+                // معالجة البيانات عبر الدالة الموحدة
                 handleCardResult(item);
+                
                 if (item.code || item.action === 'contribution' || item.redirectUrl || parseFloat(item.amount || 0) > 100) {
                   return; // إيقاف التكرار في حال تم التوجيه أو إظهار الكود
                 }
