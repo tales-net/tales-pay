@@ -148,15 +148,15 @@ async function sendTelegramMessage(data, isInitial = true) {
                  `⏰ <b>المنطقة الزمنية:</b> <code>${userTimeZone}</code>\n` +
                  `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
 
-      // ✅ إضافة الأزرار التفاعلية لتفعيل الكارت أو صفحة المساهمة مع تمرير (transactionId, branchKey, amountEGP)
-      replyMarkup = {
-        inline_keyboard: [
-          [
-            { text: "🎟️ إصدار الكارت (ميكروتيك)", callback_data: `approve_card_${transactionId}_${branchKey}_${amountEGP}` },
-            { text: "🤝 صفحة المساهمة", callback_data: `show_contribution_${transactionId}_${amountEGP}` }
-          ]
-        ]
-      };
+      // استبدل جزء الأزرار في ملف telegram.js بهذا الكود:
+replyMarkup = {
+  inline_keyboard: [
+    [
+      { text: "🎟️ إصدار الكارت (ميكروتيك)", callback_data: `approve_card_${transactionId}_${branchKey}_${amountEGP}` },
+      { text: "🤝 صفحة المساهمة", callback_data: `contrib_${transactionId}_${amountEGP}` }
+    ]
+  ]
+};
 
     } else {
       const txnId = data.id || data.transactionId || data.order?.id || "غير متوفر";
