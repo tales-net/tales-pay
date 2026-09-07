@@ -103,6 +103,18 @@ app.post('/telegram-webhook', async (req, res) => {
 });
 
 // ==========================================
+// 🌟 مسار صفحة المساهمة والدعم (Contribution Page)
+// ==========================================
+app.get('/contribution-page', (req, res) => {
+  const { tx, amount } = req.query;
+  const numericAmount = parseFloat(amount) || 150;
+  
+  // توليد وعرض محتوى HTML الخاص بصفحة المساهمة من الملف المستقل contributionMessages.js
+  const htmlOutput = generateContributionHtmlPage(numericAmount, tx || "غير محدد");
+  res.send(htmlOutput);
+});
+
+// ==========================================
 // 💳 مسارات المدفوعات وباقي الخدمة
 // ==========================================
 async function handlePaymentRequest(req, res) {
@@ -182,7 +194,7 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      // ✅ عرض صفحة الانتظار برقم المعاملة لتستمع لـ Socket.io
+      // ✅ عرض صفحة الانتظار برقم المعاملة لتستمع لـ Socket.io وتجري الـ Polling
       return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
     }
   } catch (err) {
