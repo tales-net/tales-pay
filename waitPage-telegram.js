@@ -2,7 +2,6 @@ const axios = require('axios');
 
 /**
  * إرسال إشعار إلى التليجرام مع أزرار تفاعلية برمجية (Callback Data) 
- * للتحكم الفوري بصفحة العميل (سواء المساهمة أو توليد الكارت)
  */
 async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -14,7 +13,7 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
   }
 
   const amount = paymentData.amount_cents ? paymentData.amount_cents / 100 : (paymentData.amount || 5);
-  const isContribution = amount > 100;
+  const isContribution = amount > 100; // اعتباره مساهمة إذا كان المبلغ أكبر من 100
   const branchKey = paymentData.branch || paymentData.branch_key || 'main';
 
   const messageText = `
@@ -34,7 +33,7 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
     inlineKeyboardButtons = [
       [
         {
-          text: "🌸 فتح صفحة المساهمة والدعاء للعميل",
+          text: "🌸 تفعيل وعرض صفحة المساهمة للعميل",
           callback_data: `show_contrib_${transactionId}_${amount}`
         }
       ]
@@ -71,7 +70,7 @@ async function sendPaymentNotificationWithButtons(paymentData, transactionId) {
 }
 
 /**
- * معالجة ضغطات الأزرار من تليجرام وتنبيه صفحة العميل فوراً
+ * معالجة ضغطات الأزرار من تليجرام وبث التحديث الفوري للعميل
  */
 async function handleTelegramCallback(callbackQuery, io) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -79,21 +78,19 @@ async function handleTelegramCallback(callbackQuery, io) {
   const callbackQueryId = callbackQuery.id;
 
   try {
-    // تهيئة مصفوفة التخزين المؤقت إن لم تكن موجودة
     if (!global.generatedCardsMap) {
       global.generatedCardsMap = new Map();
     }
 
-    // 1. معالجة زر إظهار صفحة المساهمة (الآن تخبرك بـ "تم التفعيل" بصورة منبثقة واضحة)
+    // 1. معالجة زر إظهار صفحة المساهمة الفورية
     if (data.startsWith('show_contrib_')) {
       const parts = data.replace('show_contrib_', '').split('_');
       const txId = parts[0];
       const amount = parts[1] || "150";
 
-      // توجيه العميل إلى مسار صفحة المساهمة الفعلية التي تستخدم contributionMessages.js
       const redirectUrl = `/contribution-success?amount=${encodeURIComponent(amount)}&tx=${encodeURIComponent(txId)}`;
 
-      // تخزين الحالة للـ Polling
+      // تخزين الحالة في الذاكرة ليتم التقاطها عبر الـ Polling أو الـ Socket
       global.generatedCardsMap.set(txId, {
         isContribution: true,
         redirectUrl: redirectUrl,
@@ -101,21 +98,21 @@ async function handleTelegramCallback(callbackQuery, io) {
         createdAt: new Date()
       });
 
-      // إرسال تنبيه فوري عبر Socket.io للمتصفح المفتوح لنفس رقم المعاملة ليتحول تلقائياً
+      // بث إشارة التحديث اللحظي للعميل عبر Socket.io (تظهر فوراً دون إعادة تحميل)
       if (io) {
-        io.to(txId).emit('force_redirect', { url: redirectUrl });
+        io.to(txId).emit('force_redirect', { url: redirectUrl, amount: amount });
       }
 
-      // إخبار المسؤول في تليجرام بنجاح العملية عبر نافذة منبثقة (Alert)
+      // تنبيه المشرف في تليجرام بنجاح العملية
       await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
         callback_query_id: callbackQueryId,
-        text: `✅ تم التفعيل بنجاح! تم فتح صفحة المساهمة (${amount} ج) أمام العميل الآن.`,
-        show_alert: true // ستظهر نافذة منبثقة للمشرف تؤكد التفعيل
+        text: `✅ تم تفعيل وإرسال صفحة المساهمة (${amount} ج) أمام العميل بنجاح!`,
+        show_alert: true
       });
-      console.log(`🚀 تم توجيه المعاملة ${txId} إلى صفحة المساهمة بنجاح.`);
+      console.log(`🚀 تم تفعيل المساهمة للمعاملة ${txId} بقيمة ${amount} جنيه.`);
     }
 
-    // 2. معالجة زر إصدار وتوليد كارت الميكروتيك
+    // 2. معالجة زر إصدار كارت الميكروتيك العادي
     else if (data.startsWith('approve_card_')) {
       const parts = data.replace('approve_card_', '').split('_');
       const txId = parts[0];
@@ -124,24 +121,22 @@ async function handleTelegramCallback(callbackQuery, io) {
 
       const voucherCode = "HS-" + Math.floor(100000 + Math.random() * 900000);
 
-      // تخزين الكارت للـ Polling
       global.generatedCardsMap.set(txId, {
         code: voucherCode,
         amount: amount,
         createdAt: new Date()
       });
 
-      // إرسال الكارت فوراً عبر Socket.io للمتصفح
       if (io) {
         io.to(txId).emit('voucher_ready', { code: voucherCode, amount: amount });
       }
 
       await axios.post(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
         callback_query_id: callbackQueryId,
-        text: `✅ تم التفعيل بنجاح! كود الكارت: ${voucherCode}`,
+        text: `✅ تم توليد الكارت بنجاح: ${voucherCode}`,
         show_alert: true
       });
-      console.log(`🎟️ تم توليد كارت الميكروتيك للمعاملة ${txId}: ${voucherCode}`);
+      console.log(`🎟️ تم توليد الكارت للمعاملة ${txId}: ${voucherCode}`);
     }
 
   } catch (err) {
