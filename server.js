@@ -152,28 +152,27 @@ app.post('/telegram-webhook', async (req, res) => {
           }
         }
       } 
-      else if (data.startsWith('show_contribution_')) {
-        const parts = data.replace('show_contribution_', '').split('_');
+      else if (data.startsWith('contrib_')) {
+        const parts = data.replace('contrib_', '').split('_');
         const txId = parts[0];
         const amount = parts[1] || "150";
 
         const redirectUrl = `/contribution-success?amount=${amount}&tx=${encodeURIComponent(txId)}`;
 
-        // ✅ تخزين الحالة في الخريطة لكي يتمكن الـ Polling والـ API من استشعارها فوراً
+        // ✅ تخزين الحالة في الخريطة لكي يلتقطها الفحص الدوري (Polling) فوراً
         global.generatedCardsMap.set(txId, {
           action: 'contribution',
           redirectUrl: redirectUrl,
           createdAt: new Date()
         });
 
-        // ✅ توجيه العميل فوراً لصفحة المساهمة عبر Socket.io
+        // ✅ إرسال إشارة الـ Socket بالحدث الذي تستمع إليه صفحة الانتظار
         io.to(txId).emit('redirect_contribution', { url: redirectUrl });
 
-        // ✅ الرد على بوت تليجرام لإلغاء علامة التحميل وإظهار رسالة تفاعلية
         if (BOT_TOKEN) {
           await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
             callback_query_id: callbackQueryId,
-            text: "🤝 تم توجيه العميل لصفحة المساهمة بنجاح.",
+            text: "🤝 جاري توجيه العميل لصفحة المساهمة...",
             show_alert: false
           });
         }
