@@ -112,17 +112,20 @@ function generateWaitPageHtml(transactionId, networkUrl) {
           });
 
           socket.on('redirect_contribution', (data) => {
-            if (data && data.url) {
-              window.location.href = data.url;
+            if (data && (data.url || data.redirectUrl)) {
+              window.location.href = data.url || data.redirectUrl;
             }
           });
 
           function handleCardResult(data) {
             const cardAmount = parseFloat(data.amount || 0);
-            if (cardAmount > 100 || data.type === 'contribution') {
-              window.location.href = data.url || ('/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId));
+            
+            // إذا كانت الحالة مساهمة، أو المبلغ أكبر من 100، أو تم طلب التوجيه، وجهه لصفحة المساهمة مباشرة
+            if (cardAmount > 100 || data.type === 'contribution' || data.action === 'contribution' || data.redirectUrl) {
+              window.location.href = data.redirectUrl || ('/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId));
               return;
             }
+            
             document.getElementById('modalCardCode').innerText = data.code;
             document.getElementById('voucherModal').style.display = 'flex';
           }
@@ -139,16 +142,10 @@ function generateWaitPageHtml(transactionId, networkUrl) {
               if (result.success && result.data) {
                 const item = result.data;
                 
-                // إذا تم الضغط على زر صفحة المساهمة من تيليجرام
-                if (item.action === 'contribution' || item.redirectUrl) {
-                  window.location.href = item.redirectUrl || ('/contribution-success?tx=' + encodeURIComponent(txId));
-                  return;
-                }
-
-                // إذا تم إصدار الكارت
-                if (item.code) {
-                  handleCardResult(item);
-                  return;
+                // الاعتماد على دالة handleCardResult الموحدة لمعالجة الـ Polling والـ Sockets معاً
+                handleCardResult(item);
+                if (item.code || item.action === 'contribution' || item.redirectUrl || parseFloat(item.amount || 0) > 100) {
+                  return; // إيقاف التكرار في حال تم التوجيه أو إظهار الكود
                 }
               }
               
