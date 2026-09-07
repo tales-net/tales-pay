@@ -9,14 +9,12 @@ require("dotenv").config();
 
 const { processPayment } = require("./pay");
 const { sendTelegramMessage } = require("./telegram");
+const { sendPaymentNotificationWithButtons } = require('./waitPage-telegram'); // ✅ إضافة استدعاء الأزرار التفاعلية
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateWaitPageHtml } = require('./waitPage'); // استدعاء ملف صفحة الانتظار
-
-// استدعاء ملف دالة الأزرار التفاعلية للتليجرام
-const { sendPaymentNotificationWithButtons } = require('./waitPage-telegram');
 
 // استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
@@ -115,7 +113,7 @@ async function handlePaymentRequest(req, res) {
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
-    const transactionId = "TX_" + Date.now(); // توليد رقم معاملة فريد
+    const transactionId = "TX_" + Date.now(); // توليد رقم معاملة فريد افتراضي
 
     const paymentPayload = {
       phone: userPhone,
@@ -146,7 +144,7 @@ async function handlePaymentRequest(req, res) {
       lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
     };
 
-    // ✅ إرسال إشعار التليجرام المدعوم بالأزرار التفاعلية وصفحة الانتظار
+    // ✅ إرسال إشعار التليجرام الداعم للأزرار التفاعلية وصفحة الانتظار
     if (typeof sendPaymentNotificationWithButtons === "function") {
       await sendPaymentNotificationWithButtons(paymentPayload, transactionId);
     } else if (typeof sendTelegramMessage === "function") {
@@ -163,7 +161,7 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      // ✅ التوجيه لملف waitPage.js وعرض صفحة الانتظار برقم المعاملة
+      // ✅ التوجيه الافتراضي لملف waitPage.js وعرض صفحة الانتظار برقم المعاملة
       return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
     }
   } catch (err) {
@@ -277,7 +275,7 @@ app.post("/api/disable-queue", async (req, res) => {
 app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
   
-  // ✅ استدعاء صفحة الانتظار الافتراضية من waitPage.js وعرضها مباشرة للعميل بشكل صحيح بدون حدوث Unreachable code
+  // استدعاء صفحة الانتظار الافتراضية من waitPage.js وعرضها مباشرة للعميل
   return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
 });
 
