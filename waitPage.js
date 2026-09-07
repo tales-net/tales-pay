@@ -1,212 +1,205 @@
 /**
- * توليد صفحة الانتظار للعميل مع خاصية التحديث الفوري (Live Update) 
- * لتتحول إلى صفحة المساهمة فور ضغط الإدارة في تليجرام دون إعادة تحميل الصفحة.
+ * توليد صفحة الانتظار وتأكيد الدفع مع خيارات المساهمة وتوليد الكارت بشكل ديناميكي حقيقي
+ * @param {string} transactionId - رقم المعاملة أو الطلب
+ * @param {number|string} amount - المبلغ الحقيقي للمعاملة
+ * @param {string} networkUrl - رابط التوجيه لشبكة الميكروتيك
+ * @returns {string} HTML Code
  */
-function generateWaitPageHtml(transactionId, networkUrl) {
+function generateWaitPageHtml(transactionId, amount = 0, networkUrl = '#') {
+  const displayAmount = amount || 150;
+
   return `
     <!DOCTYPE html>
     <html lang="ar" dir="rtl">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>جاري معالجة الدفع - شبكة حكايات</title>
-      <script src="/socket.io/socket.io.js"></script>
-      <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-          background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
-          color: #ffffff;
-          min-height: 100vh;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          padding: 20px;
-          text-align: center;
-        }
-        .card {
-          background: rgba(255, 255, 255, 0.05);
-          backdrop-filter: blur(12px);
-          border: 1px solid rgba(241, 196, 15, 0.3);
-          border-radius: 20px;
-          padding: 40px 30px;
-          max-width: 550px;
-          width: 100%;
-          box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5);
-          transition: all 0.5s ease-in-out;
-        }
-        .spinner {
-          width: 60px;
-          height: 60px;
-          border: 6px solid rgba(255, 255, 255, 0.3);
-          border-top: 6px solid #f1c40f;
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-          margin: 0 auto 25px auto;
-        }
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        h2 { color: #f1c40f; margin-bottom: 15px; font-size: 24px; }
-        p { color: #e0e0e0; font-size: 16px; line-height: 1.6; margin-bottom: 20px; }
-        .tx-id { font-size: 13px; color: #b2bec3; margin-top: 15px; }
-
-        .icon-box {
-          font-size: 60px;
-          margin-bottom: 20px;
-          animation: bounce 2s infinite;
-        }
-        @keyframes bounce {
-          0%, 20%, 50%, 80%, 100% {transform: translateY(0);}
-          40% {transform: translateY(-10px);}
-          60% {transform: translateY(-5px);}
-        }
-        .amount-badge {
-          display: inline-block;
-          background: linear-gradient(45deg, #f1c40f, #f39c12);
-          color: #111;
-          font-size: 20px;
-          font-weight: bold;
-          padding: 8px 22px;
-          border-radius: 50px;
-          margin: 15px 0;
-          box-shadow: 0 5px 15px rgba(241, 196, 15, 0.4);
-        }
-        .message-box {
-          background: rgba(0, 0, 0, 0.25);
-          border-right: 5px solid #2ecc71;
-          padding: 20px;
-          border-radius: 10px;
-          margin: 20px 0;
-          font-size: 17px;
-          line-height: 1.8;
-          color: #ecf0f1;
-          text-align: right;
-        }
-        .footer-note {
-          margin-top: 20px;
-          font-size: 15px;
-          color: #2ecc71;
-          font-weight: bold;
-          border-top: 1px dashed rgba(255, 255, 255, 0.2);
-          padding-top: 15px;
-        }
-        .btn-home {
-          display: inline-block;
-          margin-top: 20px;
-          background: transparent;
-          border: 2px solid #f1c40f;
-          color: #f1c40f;
-          padding: 10px 30px;
-          border-radius: 30px;
-          text-decoration: none;
-          font-weight: bold;
-          transition: all 0.3s ease;
-        }
-        .btn-home:hover {
-          background: #f1c40f;
-          color: #111;
-        }
-        .hidden { display: none !important; }
-      </style>
-    </head>
-    <body>
-      <div class="card" id="main-card">
-        
-        <!-- حالة الانتظار الافتراضية -->
-        <div id="loading-state">
-          <div class="spinner"></div>
-          <h2>جاري تأكيد عملية الدفع...</h2>
-          <p id="status-text">يرجى الانتظار، يتم الآن مراجعة المعاملة وتوثيقها من الإدارة...</p>
-          <div class="tx-id">رقم المعاملة: #${transactionId}</div>
-        </div>
-
-        <!-- حالة نجاح المساهمة -->
-        <div id="contribution-state" class="hidden">
-          <div class="icon-box">🌟</div>
-          <h2>✨ مساهمة مباركة ودعم كريم ✨</h2>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>جاري تقديم الطلب - شبكة حكايات</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: 'Segoe UI', Tahoma, Cairo, sans-serif; background: #f4f7fb; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px 15px; direction: rtl; }
+          .card-container { background: #ffffff; max-width: 460px; width: 100%; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); padding: 30px 25px; text-align: center; border: 1px solid #eef2f7; position: relative; }
           
-          <div class="amount-badge" id="contrib-amount-text">
-            مبلغ المساهمة: جاري التحميل...
-          </div>
-
-          <div class="message-box">
-            <p id="contrib-message">جاري جلب الدعاء والرسالة...</p>
-          </div>
-
-          <div class="tx-id">رقم المعاملة: #${transactionId}</div>
-
-          <div class="footer-note">
-            دمتم سباقين للخير، بارك الله في مالكم وأهليكم، لا تنسي الدعاء لوالدي
-          </div>
-
-          <div>
-            <a href="/" class="btn-home">العودة للرئيسية</a>
-          </div>
-        </div>
-
-      </div>
-
-      <script>
-        const txId = "${transactionId}";
-        const socket = io();
-
-        const blessings = [
-          "جزاكم الله خيراً وجعل هذه المساهمة الطيبة في ميزان حسناتكم، وبارك لكم في مالكم وأهليكم.",
-          "تقبل الله منا ومنكم صالح الأعمال، نسأل الله أن يبارك في عطائكم ويجعله صدقة جارية ونوراً في دربكم.",
-          "بارك الله في جهودكم الكريمة ودعمكم المستمر، وجعل الله التوفيق والنجاح حليفكم دائماً وأبداً.",
-          "نشكر لكم مساهمتكم المباركة، نسأل الله أن يخلف عليكم خيراً وأن يرزقكم من حيث لا تحتسبون."
-        ];
-
-        socket.emit('join_transaction', txId);
-
-        function showContribution(amount) {
-          document.getElementById('loading-state').classList.add('hidden');
-          document.getElementById('contribution-state').classList.remove('hidden');
-          document.getElementById('contrib-amount-text').innerText = "مبلغ المساهمة: " + amount + " جنيه";
+          .icon-wrapper { position: relative; width: 85px; height: 85px; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; }
+          .pulse-circle { position: absolute; width: 100%; height: 100%; border-radius: 50%; background: rgba(1, 51, 141, 0.12); animation: pulse 2s infinite ease-in-out; }
+          .icon-inner { position: relative; font-size: 38px; color: #01338D; z-index: 1; }
           
-          const randomMsg = blessings[Math.floor(Math.random() * blessings.length)];
-          document.getElementById('contrib-message').innerText = randomMsg;
-          document.getElementById('main-card').style.borderColor = '#2ecc71';
-        }
-
-        socket.on('force_redirect', function(data) {
-          if (data) {
-            const amt = data.amount || '150';
-            showContribution(amt);
+          @keyframes pulse {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.18); opacity: 0.25; }
+            100% { transform: scale(0.95); opacity: 0.8; }
           }
-        });
 
-        socket.on('voucher_ready', function(data) {
-          window.location.href = "/success?merchant_order_id=" + txId;
-        });
+          h1 { color: #1e293b; font-size: 21px; font-weight: 700; margin-bottom: 12px; }
+          p.subtitle { color: #475569; font-size: 14.5px; line-height: 1.7; margin-bottom: 20px; font-weight: 500; }
 
-        setInterval(async () => {
-          try {
-            const response = await fetch('/api/check-voucher/' + txId);
-            const result = await response.json();
+          .highlight-action { background: #eff6ff; border: 1px dashed #3b82f6; color: #1d4ed8; padding: 12px 15px; border-radius: 12px; font-size: 14px; font-weight: 700; margin-bottom: 22px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+
+          .info-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; margin-bottom: 20px; text-align: right; }
+          .info-row { display: flex; justify-content: space-between; font-size: 13.5px; margin-bottom: 8px; color: #475569; }
+          .info-row:last-child { margin-bottom: 0; }
+          .info-row strong { color: #0f172a; font-weight: 600; }
+
+          .status-badge { display: inline-flex; align-items: center; gap: 8px; background: #fff7ed; color: #c2410c; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; border: 1px solid #ffedd5; }
+          .status-dot { width: 8px; height: 8px; background: #f97316; border-radius: 50%; display: inline-block; animation: blink 1.5s infinite; }
+          @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+          .manual-actions { display: flex; gap: 10px; margin-top: 15px; }
+          .btn-custom { flex: 1; padding: 10px; border-radius: 8px; font-size: 13px; font-weight: bold; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; transition: 0.2s; border: none; }
+          .btn-contrib { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }
+          .btn-contrib:hover { background: #e2e8f0; }
+          .btn-card-gen { background: #01338D; color: white; }
+          .btn-card-gen:hover { background: #002266; }
+
+          .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.65); z-index: 1000; align-items: center; justify-content: center; padding: 15px; backdrop-filter: blur(4px); }
+          .modal-box { background: #ffffff; border-radius: 20px; padding: 25px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 15px 35px rgba(0,0,0,0.25); animation: slideUp 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+          @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+          
+          .voucher-code { background: #f0f9ff; color: #0369a1; font-size: 26px; font-weight: bold; font-family: monospace; padding: 14px; border-radius: 12px; margin: 15px 0; letter-spacing: 2px; border: 1px dashed #0284c7; }
+          .btn-copy { background: #01338D; color: white; border: none; padding: 13px; width: 100%; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 14.5px; transition: 0.2s; }
+          .btn-copy:hover { background: #002266; }
+        </style>
+      </head>
+      <body>
+        <div class="card-container">
+          <div class="icon-wrapper">
+            <div class="pulse-circle"></div>
+            <div class="icon-inner"><i class="fa fa-clock-o"></i></div>
+          </div>
+          
+          <h1>جاري تقديم طلب الدفع...</h1>
+          <p class="subtitle">انتظر قليلاً، جاري مراجعة الطلب وسيظهر الكارت فور التأكيد في هذه النافذة أو عبر خيارات الدعم.</p>
+
+          <div class="highlight-action">
+            <i class="fa fa-bell" style="font-size: 16px;"></i>
+            <span>أكد عملية الدفع من هاتفك، أو اختر الإجراء أدناه برقم العملية</span>
+          </div>
+
+          <div class="info-box">
+            <div class="info-row">
+              <span>حالة الطلب:</span>
+              <span class="status-badge"><span class="status-dot"></span> قيد المراجعة والموافقة</span>
+            </div>
+            <div class="info-row" style="margin-top: 10px;">
+              <span>المبلغ المطلوب:</span>
+              <strong id="displayAmountText">${displayAmount} جنيه</strong>
+            </div>
+            <div class="info-row" style="margin-top: 8px;">
+              <span>رقم العملية:</span>
+              <strong>${transactionId}</strong>
+            </div>
+          </div>
+
+          <div class="manual-actions">
+            <a href="/contribution-success?amount=${displayAmount}&tx=${transactionId}" id="contribLinkBtn" class="btn-custom btn-contrib">
+              <i class="fa fa-heart"></i> صفحة المساهمة
+            </a>
+            <a href="/success?merchant_order_id=${transactionId}" class="btn-custom btn-card-gen">
+              <i class="fa fa-ticket"></i> عرض / توليد الكارت
+            </a>
+          </div>
+        </div>
+
+        <!-- النافذة المنبثقة لإصدار الكارت تلقائياً -->
+        <div class="modal-overlay" id="voucherModal">
+          <div class="modal-box">
+            <div style="font-size: 45px; color: #16a34a; margin-bottom: 8px;"><i class="fa fa-check-circle"></i></div>
+            <h2 style="font-size: 20px; color: #1e293b;">تم تأكيد الدفع وإصدار الكارت!</h2>
+            <p style="font-size: 13px; color: #64748b; margin-top: 5px;">استخدم الكود التالي للتصفح المباشر:</p>
             
-            if (result.success && result.data) {
-              if (result.data.isContribution) {
-                const amt = result.data.amount || '150';
-                showContribution(amt);
-              } else if (result.data.code) {
-                window.location.href = "/success?merchant_order_id=" + txId;
-              }
-            } else {
-              document.getElementById('status-text').innerText = "جاري مراجعة الإدارة وتجهيز رسالة الشكر والمساهمة...";
+            <div class="voucher-code" id="modalCardCode">------</div>
+            
+            <button class="btn-copy" onclick="copyCardCode()"><i class="fa fa-clone"></i> نسخ كود الكارت</button>
+            <a href="${networkUrl}" style="display: block; margin-top: 14px; color: #64748b; text-decoration: none; font-size: 13px; font-weight: 600;">التوجه للتصفح الآن <i class="fa fa-arrow-left"></i></a>
+          </div>
+        </div>
+
+        <script src="/socket.io/socket.io.js"></script>
+        <script>
+          const txId = "${transactionId}";
+          let attempts = 0;
+
+          // معالجة بيانات الرد الموحدة
+          function processResponseData(data) {
+            if (!data) return false;
+            
+            const cardAmount = parseFloat(data.amount || data.data?.amount || ${displayAmount});
+            
+            // تحديث واجهة المستخدم بالمبلغ الحقيقي إن وجد
+            if (cardAmount > 0) {
+              document.getElementById('displayAmountText').innerText = cardAmount + ' جنيه';
+              document.getElementById('contribLinkBtn').href = '/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId);
             }
-          } catch (e) {
-            console.error("Polling error...", e);
+
+            // إذا كانت مساهمة (أكبر من 100 أو مسجلة كمساهمة)
+            if (cardAmount > 100 || data.isContribution || data.data?.isContribution || data.redirectUrl || data.data?.redirectUrl) {
+              const targetUrl = data.redirectUrl || data.data?.redirectUrl || ('/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId));
+              window.location.href = targetUrl;
+              return true;
+            }
+
+            // إذا تم توليد كارت ميكروتيك
+            const code = data.code || data.cardCode || data.data?.code;
+            if (code) {
+              document.getElementById('modalCardCode').innerText = code;
+              document.getElementById('voucherModal').style.display = 'flex';
+              return true;
+            }
+            return false;
           }
-        }, 3000);
-      </script>
-    </body>
+
+          // تفعيل الاتصال اللحظي عبر السوكيت إن وجد
+          if (typeof io !== 'undefined') {
+            const socket = io();
+            socket.on('connect', () => {
+              socket.emit('join_room', txId);
+            });
+            socket.on('force_redirect', (data) => {
+              if (data && data.url) window.location.href = data.url;
+            });
+            socket.on('voucher_ready', (data) => {
+              processResponseData(data);
+            });
+            socket.on('telegram-action-result', (data) => {
+              processResponseData(data);
+            });
+          }
+
+          // فحص الحالة بشكل تلقائي (Polling)
+          async function checkVoucherStatus() {
+            if (!txId || txId === "غير محدد") return;
+            try {
+              attempts++;
+              const res = await fetch('/api/check-voucher/' + encodeURIComponent(txId));
+              const result = await res.json();
+              
+              if (result.success && result.data) {
+                const handled = processResponseData(result.data);
+                if (handled) return;
+              }
+              
+              if (attempts < 80) {
+                setTimeout(checkVoucherStatus, 3000);
+              }
+            } catch (e) {
+              if (attempts < 80) {
+                setTimeout(checkVoucherStatus, 4000);
+              }
+            }
+          }
+
+          checkVoucherStatus();
+
+          function copyCardCode() {
+            const code = document.getElementById('modalCardCode').innerText;
+            navigator.clipboard.writeText(code);
+            alert("تم نسخ كود الكارت بنجاح!");
+          }
+        </script>
+      </body>
     </html>
   `;
 }
 
-module.exports = {
-  generateWaitPageHtml
-};
+module.exports = { generateWaitPageHtml };
