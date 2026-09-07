@@ -12,13 +12,11 @@ const { sendTelegramMessage } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
-const { generateContributionHtmlPage } = require('./contributionMessages'); // 🌸 ملف رسائل وأدعية المساهمة
-const { generateWaitPageHtml } = require('./waitPage'); // ⏳ صفحة الانتظار
+const { generateContributionHtmlPage } = require('./contributionMessages');
+const { generateWaitPageHtml } = require('./waitPage');
 
-// 🤖 استدعاء ملف التحكم في أزرار تليجرام لصفحة الانتظار والمساهمة
+// استدعاء وحدة أزرار تليجرام وصفحة الانتظار
 const waitPageTg = require('./waitPage-telegram');
-
-// 💬 استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
 
 const app = express();
@@ -39,8 +37,6 @@ global.generatedCardsMap = global.generatedCardsMap || new Map();
 
 // تهيئة Socket.io للدعم المباشر
 chatSupport.initSocket(io);
-
-// إعداد Multer لاستقبال الصور والملفات المرفوعة في الشات
 const upload = multer();
 
 // تنظيف دوري للذاكرة المؤقتة كل نصف ساعة
@@ -73,16 +69,23 @@ function getClientPublicIP(req) {
 }
 
 // ==========================================
-// 🤖 استقبال ضغطات الأزرار من بوت تليجرام (Callback Query)
+// 🤖 استقبال ضغطات الأزرار عبر Telegram Webhook
 // ==========================================
-if (typeof bot !== 'undefined' && bot) {
-  bot.on('callback_query', async (query) => {
-    await waitPageTg.handleTelegramCallback(query, io);
-  });
-}
+app.post('/telegram-webhook', async (req, res) => {
+  try {
+    if (req.body && req.body.callback_query) {
+      await waitPageTg.handleTelegramCallback(req.body.callback_query, io);
+    }
+    await chatSupport.handleTelegramReply(req.body);
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("❌ خطأ في معالجة Telegram Webhook:", err.message);
+    res.sendStatus(500);
+  }
+});
 
 // ==========================================
-// 💬 مسارات الدعم الفني المباشر (Chat Support API)
+// 💬 مسارات الدعم الفني المباشر
 // ==========================================
 app.post('/api/support/message', upload.single('image'), (req, res) => {
   chatSupport.handleClientMessage(req, res, chatSupport.sendSupportChatMessage);
@@ -94,17 +97,8 @@ app.get('/api/support/messages/:clientId', (req, res) => {
   res.json({ success: true, messages });
 });
 
-// استقبال الـ Webhook من تليجرام (لمعالجة الأزرار والردود)
-app.post('/telegram-webhook', async (req, res) => {
-  if (req.body && req.body.callback_query) {
-    await waitPageTg.handleTelegramCallback(req.body.callback_query, io);
-  }
-  await chatSupport.handleTelegramReply(req.body);
-  res.sendStatus(200);
-});
-
 // ==========================================
-// 💳 مسارات المدفوعات وباقي الخدمة
+// 💳 مسارات المدفوعات وبدء الطلب
 // ==========================================
 async function handlePaymentRequest(req, res) {
   try {
@@ -159,7 +153,7 @@ async function handlePaymentRequest(req, res) {
       lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
     };
 
-    // إرسال الإشعار لتليجرام مع الأزرار التفاعلية
+    // إرسال الإشعار لتليجرام مع الأزرار الذكية
     if (typeof waitPageTg.sendPaymentNotificationWithButtons === "function") {
       await waitPageTg.sendPaymentNotificationWithButtons(paymentPayload, transactionId);
     } else if (typeof sendTelegramMessage === "function") {
@@ -176,7 +170,7 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      // توجيه العميل لصفحة الانتظار المجهزة بالـ Socket.io برقم المعاملة
+      // إرسال صفحة الانتظار التفاعلية للعميل
       return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
     }
   } catch (err) {
@@ -191,61 +185,8 @@ async function handlePaymentRequest(req, res) {
 app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
 
-app.get("/api/test-create-card", async (req, res) => {
-  const secretKey = req.query.secret;
-  
-  if (!secretKey || secretKey !== process.env.TEST_SECRET_KEY) {
-    return res.status(403).json({ 
-      success: false, 
-      message: "⚠️ غير مسموح لك بالوصول لهذا الرابط التجريبي. مفتاح الحماية غير صحيح أو مفقود." 
-    });
-  }
-
-  try {
-    const amount = req.query.amount || "5";
-    const rawTarget = req.query.branch || req.query.branch_key || "branch2";
-    const targetBranch = BRANCH_NAMES[rawTarget] ? rawTarget : "branch2";
-    const testTxId = req.query.tx || ("TEST_" + Date.now());
-
-    const result = await processPaymentAndCreateCard(amount, targetBranch, testTxId);
-
-    if (result.success && !result.isCustomAmount) {
-      const cardPayload = {
-        code: result.cardCode,
-        packageName: result.packageName,
-        amount: parseFloat(amount),
-        phone: "01000000000",
-        branchKey: result.branchKey,
-        branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.branch2,
-        createdAt: new Date()
-      };
-
-      global.generatedCardsMap.set(testTxId, cardPayload);
-
-      // بث الكارت لحظياً للمتصفح المفتوح عبر Socket.io
-      io.to(testTxId).emit('voucher_ready', { code: result.cardCode, amount: amount });
-
-      return res.json({
-        success: true,
-        message: `✅ تم إضافة الكارت إلى الميكروتيك بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
-        data: result,
-        successPageLink: `/success?merchant_order_id=${testTxId}&branch=${result.branchKey}`
-      });
-    } else {
-      return res.json({
-        success: false,
-        message: "⚠️ فشل توليد الكارت من الميكروتيك",
-        details: result
-      });
-    }
-  } catch (error) {
-    console.error("❌ [TEST ERROR]:", error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 // ==========================================
-// 🌸 مسار عرض صفحة المساهمة والدعاء للعميل
+// 🌸 مسار عرض صفحة المساهمة الاحترافية المباشرة
 // ==========================================
 app.get("/contribution-success", (req, res) => {
   const amount = req.query.amount || req.query.price || 150;
@@ -255,7 +196,7 @@ app.get("/contribution-success", (req, res) => {
 });
 
 // ==========================================
-// 🔍 مسار فحص الحالة (API الـ Polling الاحتياطي)
+// 🔍 مسار فحص الحالة (Polling احتياطي للعميل)
 // ==========================================
 app.get("/api/check-voucher/:txId", (req, res) => {
   const txId = String(req.params.txId || "").trim();
@@ -278,7 +219,7 @@ app.get("/api/check-voucher/:txId", (req, res) => {
 
   return res.json({ 
     success: false, 
-    message: "جاري تأكيد عملية الدفع وتوليد الكارت من السيرفر..." 
+    message: "جاري تأكيد عملية الدفع من الإدارة..." 
   });
 });
 
@@ -296,9 +237,7 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-// ==========================================
-// ⏳ مسار عرض صفحة الانتظار للعميل
-// ==========================================
+// مسار صفحة النجاح أو الانتظار التقليدية
 app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
   return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
@@ -336,7 +275,7 @@ app.get("/fail", (req, res) => {
 
 app.use("/", webhookRouter);
 
-// تفعيل اتصال Socket.io وربط الغرف لكل معاملة بناءً على الـ txId
+// ربط غرف Socket.io لكل معاملة على حدة
 io.on('connection', (socket) => {
   socket.on('join_transaction', (txId) => {
     if (txId) {
