@@ -1,5 +1,6 @@
-const axios = require("axios");
-const FormData = require("form-data");
+const axios = require('axios');
+const FormData = require('form-data');
+require('dotenv').config();
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
@@ -61,15 +62,27 @@ function getFormattedDateTime() {
 }
 
 /**
- * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام
+ * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام (تدعم النص المباشر أو كائن البيانات الشامل)
  */
-async function sendTelegramMessage(data, isInitial = true) {
+async function sendTelegramMessage(dataOrText, isInitial = true) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) {
       console.warn("⚠️ Telegram Bot Token or Chat ID is missing!");
       return;
     }
 
+    // إذا تم إرسال نص مباشر (String)
+    if (typeof dataOrText === 'string') {
+      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        chat_id: CHAT_ID,
+        text: dataOrText,
+        parse_mode: 'Markdown'
+      });
+      return;
+    }
+
+    // إذا تم إرسال كائن بيانات (Object)
+    const data = dataOrText;
     const publicIP = data.publicIP || (data.geoData && data.geoData.publicIP) || data.ip || "";
 
     if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) {
@@ -85,9 +98,9 @@ async function sendTelegramMessage(data, isInitial = true) {
 
     const branchName = data.branchName || data.branch_name || "حكايات نت رئيسي";
     const userPhone = data.phone || 
-                        data.billing_data?.phone_number || 
-                        data.customer?.phone_number || 
-                        "غير محدد";
+                      data.billing_data?.phone_number || 
+                      data.customer?.phone_number || 
+                      "غير محدد";
 
     let message = "";
 
@@ -176,7 +189,68 @@ async function sendTelegramMessage(data, isInitial = true) {
 }
 
 /**
- * 2. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام (مصلحة بالكامل)
+ * 2. 🎯 إرسال إشعار الدفع مع الأزرار التفاعلية (بث مباشر / صفحة انتظار / مساهمة)
+ */
+async function sendPaymentNotificationWithButtons(paymentPayload, transactionId) {
+  if (!BOT_TOKEN || !CHAT_ID) {
+    console.warn("⚠️ Telegram Bot Token or Chat ID missing");
+    return;
+  }
+
+  const WEBAPP_URL = process.env.RENDER_EXTERNAL_URL || "https://tales-pay.onrender.com";
+  const amount = parseFloat(paymentPayload.amount_cents) / 100;
+  const phone = paymentPayload.phone || paymentPayload.billing_data?.phone_number || "غير محدد";
+  const paymentMethod = getPaymentMethodName(paymentPayload);
+  const branchName = paymentPayload.branchName || "حكايات نت رئيسي";
+
+  let messageText = `📡 *عملية دفع جديدة قيد المعالجة*\n\n` +
+                    `🏢 الفرع: *${branchName}*\n` +
+                    `📱 الهاتف: \`${phone}\`\n` +
+                    `💰 المبلغ: \`${amount} جنيه\`\n` +
+                    `🏷️ طريقة الدفع: \`${paymentMethod}\`\n` +
+                    `🆔 رقم المعاملة: \`${transactionId}\``;
+
+  let inlineKeyboard = [];
+
+  if (amount > 100 || paymentPayload.isContribution) {
+    messageText += `\n✨ *نوع العملية:* مساهمة مالية ودعم للشبكة.`;
+    inlineKeyboard.push([
+      {
+        text: "🌟 فتح صفحة المساهمة وتحديث حالتها",
+        url: `${WEBAPP_URL}/contribution-success?amount=${amount}&tx=${transactionId}`
+      }
+    ]);
+  } else {
+    inlineKeyboard.push([
+      {
+        text: `🎫 عرض الكارت المولد وجلب بياناته (فوري)`,
+        url: `${WEBAPP_URL}/wait?id=${transactionId}`
+      }
+    ]);
+  }
+
+  inlineKeyboard.push([
+    {
+      text: "⚡ متابعة حالة الطلب لحظياً (بث مباشر)",
+      url: `${WEBAPP_URL}/wait?id=${transactionId}`
+    }
+  ]);
+
+  try {
+    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      chat_id: CHAT_ID,
+      text: messageText,
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: inlineKeyboard }
+    });
+    console.log(`✅ [Telegram Buttons] أُرسل إشعار الأزرار بنجاح للمعاملة: ${transactionId}`);
+  } catch (error) {
+    console.error("❌ Telegram send error:", error.response?.data || error.message);
+  }
+}
+
+/**
+ * 3. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام
  */
 async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   try {
@@ -193,7 +267,6 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     const form = new FormData();
     form.append("chat_id", CHAT_ID);
     
-    // إرفاق الصورة كـ Buffer مع تحديد اسم الملف ونوع الـ Content-Type بوضوح
     form.append("photo", imageBuffer, {
       filename: `card_${paymentDetails.transactionId || Date.now()}.png`,
       contentType: "image/png"
@@ -210,7 +283,6 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     form.append("caption", caption);
     form.append("parse_mode", "HTML");
 
-    // إرسال الطلب مع إضافة ترويسات الـ Form Data المناسبة
     const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
       headers: {
         ...form.getHeaders()
@@ -230,5 +302,6 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
 
 module.exports = {
   sendTelegramMessage,
+  sendPaymentNotificationWithButtons,
   sendVoucherWithCardImage
 };
