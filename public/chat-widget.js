@@ -15,7 +15,7 @@
     #hikayat-chat-header { background: #01338D; color: white; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 15px; }
     #hikayat-chat-close { background: none; border: none; color: white; font-size: 18px; cursor: pointer; }
     
-    /* شريط العد التنازلي الوهمي */
+    /* شريط العد التنازلي الوهمي ورقم الانتظار */
     #hikayat-queue-banner { background: #fff3cd; color: #856404; padding: 8px 12px; font-size: 12px; text-align: center; border-bottom: 1px solid #ffeeba; display: none; font-weight: bold; }
 
     #hikayat-chat-messages { flex: 1; padding: 12px; overflow-y: auto; background: #f9f9f9; display: flex; flex-direction: column; gap: 8px; }
@@ -40,7 +40,7 @@
         <span>الدعم الفني المباشر</span>
         <button id="hikayat-chat-close">&times;</button>
       </div>
-      <div id="hikayat-queue-banner">⏳ ترتيبك في الانتظار: <span id="queue-timer-text">--</span></div>
+      <div id="hikayat-queue-banner">⏳ رقم الانتظار: <span id="queue-number-text">--</span> | المتبقي: <span id="queue-timer-text">--</span></div>
       <div id="hikayat-chat-messages">
         <div id="hikayat-typing-indicator">الدعم الفني يكتب الآن...</div>
       </div>
@@ -56,7 +56,6 @@
   container.innerHTML = chatHTML;
   document.body.appendChild(container);
 
-  // تحميل مكتبة Socket.io إذا لم تكن موجودة
   if (typeof io === "undefined") {
     const script = document.createElement("script");
     script.src = "https://cdn.socket.io/4.7.2/socket.io.min.js";
@@ -89,29 +88,28 @@
     socket.on("chat_closed", (data) => {
       lockChatInterface(data.message || "تم إغلاق المحادثة بواسطة الدعم الفني.");
       
-      // إعادة تعيين معرف عميل جديد للمحادثات القادمة وتفريغ الشات
       setTimeout(() => {
         localStorage.removeItem("hikayat_client_id");
+        localStorage.removeItem("hikayat_queue_end_time");
+        localStorage.removeItem("hikayat_queue_number");
       }, 3000);
     });
 
-    // استقبال أمر بدء العد التنازلي من السيرفر عند إرسال أول رسالة
+    // استقبال أمر بدء العد التنازلي ورقم الانتظار من السيرفر
     socket.on("start_queue_countdown", (data) => {
-      startFakeCountdown(data.minutes);
+      const totalSeconds = data.minutes * 60;
+      const queueNumber = data.queueNumber || Math.floor(Math.random() * 8) + 2; // رقم انتظار عشوائي بين 2 و 10
+      const endTime = Date.now() + (totalSeconds * 1000);
+
+      // حفظ بيانات العد في المتصفح لكي تستمر حتى مع تحديث الصفحة (Refresh)
+      localStorage.setItem("hikayat_queue_end_time", endTime);
+      localStorage.setItem("hikayat_queue_number", queueNumber);
+
+      startFakeCountdown(endTime, queueNumber);
     });
 
     fetchMessages();
-  }
-
-  function fetchMessages() {
-    fetch(`/api/support/messages/${clientId}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.messages) {
-          messagesContainer.innerHTML = '<div id="hikayat-typing-indicator">الدعم الفني يكتب الآن...</div>';
-          data.messages.forEach(m => appendMessage(m.sender, m.text, m.image));
-        }
-      }).catch(err => console.log(err));
+    checkExistingQueue();
   }
 
   const bubble = document.getElementById("hikayat-chat-bubble");
@@ -124,6 +122,7 @@
   const typingIndicator = document.getElementById("hikayat-typing-indicator");
   const queueBanner = document.getElementById("hikayat-queue-banner");
   const queueTimerText = document.getElementById("queue-timer-text");
+  const queueNumberText = document.getElementById("queue-number-text");
 
   function toggleChat() {
     box.style.display = box.style.display === "flex" ? "none" : "flex";
@@ -157,16 +156,38 @@
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 
-  // تشغيل العد التنازلي الوهمي
-  function startFakeCountdown(totalMinutes) {
+  // التحقق من وجود عد تنازلي محفوظ مسبقاً عند تحديث الصفحة
+  function checkExistingQueue() {
+    const savedEndTime = localStorage.getItem("hikayat_queue_end_time");
+    const savedQueueNum = localStorage.getItem("hikayat_queue_number");
+
+    if (savedEndTime) {
+      const remainingTime = parseInt(savedEndTime, 10);
+      if (remainingTime > Date.now()) {
+        startFakeCountdown(remainingTime, savedQueueNum || 5);
+      } else {
+        localStorage.removeItem("hikayat_queue_end_time");
+        localStorage.removeItem("hikayat_queue_number");
+      }
+    }
+  }
+
+  // تشغيل العد التنازلي الوهمي المستمر
+  function startFakeCountdown(endTime, queueNumber) {
     queueBanner.style.display = "block";
-    let totalSeconds = totalMinutes * 60;
+    queueNumberText.innerText = `#${queueNumber}`;
 
     if (countdownInterval) clearInterval(countdownInterval);
 
     countdownInterval = setInterval(() => {
-      if (totalSeconds <= 0) {
+      const now = Date.now();
+      const remainingSeconds = Math.floor((endTime - now) / 1000);
+
+      if (remainingSeconds <= 0) {
         clearInterval(countdownInterval);
+        localStorage.removeItem("hikayat_queue_end_time");
+        localStorage.removeItem("hikayat_queue_number");
+
         queueBanner.style.backgroundColor = "#d4edda";
         queueBanner.style.color = "#155724";
         queueBanner.innerHTML = "✅ انضم إلينا ممثل الدعم الآن، مرحباً بك!";
@@ -174,11 +195,21 @@
         return;
       }
 
-      totalSeconds--;
-      let mins = Math.floor(totalSeconds / 60);
-      let secs = totalSeconds % 60;
+      let mins = Math.floor(remainingSeconds / 60);
+      let secs = remainingSeconds % 60;
       queueTimerText.innerText = `${mins} دقيقة و ${secs < 10 ? '0' : ''}${secs} ثانية`;
     }, 1000);
+  }
+
+  function fetchMessages() {
+    fetch(`/api/support/messages/${clientId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.messages) {
+          messagesContainer.innerHTML = '<div id="hikayat-typing-indicator">الدعم الفني يكتب الآن...</div>';
+          data.messages.forEach(m => appendMessage(m.sender, m.text, m.image));
+        }
+      }).catch(err => console.log(err));
   }
 
   function lockChatInterface(reason) {
