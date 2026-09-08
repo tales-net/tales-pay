@@ -13,7 +13,7 @@
     #hikayat-chat-header { background: #01338D; color: white; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 15px; }
     #hikayat-chat-close { background: none; border: none; color: white; font-size: 18px; cursor: pointer; }
     
-    /* شريط العد التنازلي المرتبط بالوقت ورقم الانتظار */
+    /* شريط العد التنازلي */
     #hikayat-queue-banner { background: #fff3cd; color: #856404; padding: 8px 12px; font-size: 12px; text-align: center; border-bottom: 1px solid #ffeeba; display: none; font-weight: bold; }
 
     #hikayat-chat-messages { flex: 1; padding: 12px; overflow-y: auto; background: #f9f9f9; display: flex; flex-direction: column; gap: 8px; }
@@ -54,63 +54,7 @@
   container.innerHTML = chatHTML;
   document.body.appendChild(container);
 
-  let socket = null;
-  let countdownInterval = null;
-
-  if (typeof io === "undefined") {
-    const script = document.createElement("script");
-    script.src = "https://cdn.socket.io/4.7.2/socket.io.min.js";
-    script.onload = initSocketConnection;
-    document.head.appendChild(script);
-  } else {
-    initSocketConnection();
-  }
-
-  function initSocketConnection() {
-    socket = io();
-    socket.emit("join_chat", clientId);
-
-    socket.on("new_message", (data) => {
-      hideTypingIndicator();
-      appendMessage(data.sender, data.text, data.image);
-    });
-
-    socket.on("typing_status", (data) => {
-      if (data.isTyping) showTypingIndicator();
-      else hideTypingIndicator();
-    });
-
-    socket.on("chat_closed", (data) => {
-      lockChatInterface(data.message || "تم إغلاق المحادثة بواسطة الدعم الفني.");
-    });
-
-    // استقبال بدء العد التنازلي ورقم الانتظار الحقيقي
-    socket.on("start_queue_countdown", (data) => {
-      const totalSeconds = data.minutes * 60;
-      const queueNumber = data.queueNumber || 1;
-      const endTime = Date.now() + (totalSeconds * 1000);
-      
-      localStorage.setItem("hikayat_queue_end_time", endTime);
-      localStorage.setItem("hikayat_queue_number", queueNumber);
-
-      startRealCountdown(endTime, queueNumber);
-    });
-
-    fetch(`/api/support/messages/${clientId}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.messages) {
-          data.messages.forEach(m => appendMessage(m.sender, m.text, m.image));
-        }
-      }).catch(err => console.log(err));
-
-    const savedEndTime = localStorage.getItem("hikayat_queue_end_time");
-    const savedQueueNo = localStorage.getItem("hikayat_queue_number");
-    if (savedEndTime && Number(savedEndTime) > Date.now()) {
-      startRealCountdown(Number(savedEndTime), savedQueueNo || 1);
-    }
-  }
-
+  // 📌 تعريف عناصر DOM في الأعلى لضمان توفرها دائماً للدوال
   const bubble = document.getElementById("hikayat-chat-bubble");
   const box = document.getElementById("hikayat-chat-box");
   const closeBtn = document.getElementById("hikayat-chat-close");
@@ -122,6 +66,9 @@
   const queueBanner = document.getElementById("hikayat-queue-banner");
   const queueTimerText = document.getElementById("queue-timer-text");
   const queueNumberBadge = document.getElementById("queue-number-badge");
+
+  let socket = null;
+  let countdownInterval = null;
 
   function toggleChat() {
     box.style.display = box.style.display === "flex" ? "none" : "flex";
@@ -153,9 +100,9 @@
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 
-  // تشغيل العد التنازلي التفاعلي المربوط بالوقت ورقم الانتظار
+  // دالة العد التنازلي التفاعلي المربوط بالوقت ورقم الانتظار
   function startRealCountdown(endTime, queueNumber) {
-    queueBanner.style.display = "block";
+    if (queueBanner) queueBanner.style.display = "block";
     if (queueNumberBadge) queueNumberBadge.innerText = `#${queueNumber}`;
 
     if (!sessionStorage.getItem("waiting_notice_sent")) {
@@ -174,24 +121,27 @@
         localStorage.removeItem("hikayat_queue_end_time");
         localStorage.removeItem("hikayat_queue_number");
 
-        queueBanner.style.backgroundColor = "#d4edda";
-        queueBanner.style.color = "#155724";
-        queueBanner.innerHTML = "✅ انتهى وقت الانتظار! ممثل الدعم متاح الآن.";
+        if (queueBanner) {
+          queueBanner.style.backgroundColor = "#d4edda";
+          queueBanner.style.color = "#155724";
+          queueBanner.innerHTML = "✅ انتهى وقت الانتظار! ممثل الدعم متاح الآن.";
+        }
 
         appendMessage("admin", "مرحباً بك في شبكة حكايات 🌐\nلقد وصل دورك وانتهى وقت الانتظار (رقم الانتظار #0). يمكنك إرسال استفسارك أو مشكلتك وسيرد عليك الدعم الفوري الآن.");
 
-        // إرسال إشعار للسيرفر لتنبيه تليجرام بأن الوقت انتهى ووصل الصفر
         if (socket) {
           socket.emit("queue_finished", { clientId });
         }
 
-        setTimeout(() => { queueBanner.style.display = "none"; }, 6000);
+        setTimeout(() => { if (queueBanner) queueBanner.style.display = "none"; }, 6000);
         return;
       }
 
       let mins = Math.floor(remainingSeconds / 60);
       let secs = remainingSeconds % 60;
-      queueTimerText.innerText = `${mins} دقيقة و ${secs < 10 ? '0' : ''}${secs} ثانية`;
+      if (queueTimerText) {
+        queueTimerText.innerText = `${mins} دقيقة و ${secs < 10 ? '0' : ''}${secs} ثانية`;
+      }
     }, 1000);
   }
 
@@ -206,6 +156,59 @@
     notice.innerText = reason;
     messagesContainer.insertBefore(notice, typingIndicator);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
+
+  function initSocketConnection() {
+    socket = io();
+    socket.emit("join_chat", clientId);
+
+    socket.on("new_message", (data) => {
+      hideTypingIndicator();
+      appendMessage(data.sender, data.text, data.image);
+    });
+
+    socket.on("typing_status", (data) => {
+      if (data.isTyping) showTypingIndicator();
+      else hideTypingIndicator();
+    });
+
+    socket.on("chat_closed", (data) => {
+      lockChatInterface(data.message || "تم إغلاق المحادثة بواسطة الدعم الفني.");
+    });
+
+    socket.on("start_queue_countdown", (data) => {
+      const totalSeconds = data.minutes * 60;
+      const queueNumber = data.queueNumber || 1;
+      const endTime = Date.now() + (totalSeconds * 1000);
+      
+      localStorage.setItem("hikayat_queue_end_time", endTime);
+      localStorage.setItem("hikayat_queue_number", queueNumber);
+
+      startRealCountdown(endTime, queueNumber);
+    });
+
+    fetch(`/api/support/messages/${clientId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.messages) {
+          data.messages.forEach(m => appendMessage(m.sender, m.text, m.image));
+        }
+      }).catch(err => console.log(err));
+
+    const savedEndTime = localStorage.getItem("hikayat_queue_end_time");
+    const savedQueueNo = localStorage.getItem("hikayat_queue_number");
+    if (savedEndTime && Number(savedEndTime) > Date.now()) {
+      startRealCountdown(Number(savedEndTime), savedQueueNo || 1);
+    }
+  }
+
+  if (typeof io === "undefined") {
+    const script = document.createElement("script");
+    script.src = "https://cdn.socket.io/4.7.2/socket.io.min.js";
+    script.onload = initSocketConnection;
+    document.head.appendChild(script);
+  } else {
+    initSocketConnection();
   }
 
   function sendPayload(text, file) {
