@@ -9,7 +9,7 @@ const BRANCH_NAMES = {
 };
 
 /**
- * 1. المصادقة والحصول على Authentication Token من Paymob
+ * 1. المصادقة والحصول على Token من Paymob
  */
 async function getAuthToken() {
   try {
@@ -24,7 +24,7 @@ async function getAuthToken() {
 }
 
 /**
- * 2. إنشاء طلب دفع (Order Registration) مع ربط بيانات الفرع
+ * 2. إنشاء طلب دفع (Order Registration)
  */
 async function createOrder(authToken, amountCents, branchData = {}) {
   try {
@@ -53,7 +53,7 @@ async function createOrder(authToken, amountCents, branchData = {}) {
 }
 
 /**
- * 3. توليد مفتاح الدفع (Payment Key Request) مع تضمين الفرع
+ * 3. توليد مفتاح الدفع (Payment Key Request)
  */
 async function getPaymentKey(authToken, orderId, amountCents, integrationId, phone = "01000000000", branchData = {}) {
   try {
@@ -103,7 +103,7 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
 }
 
 /**
- * 4. الدالة الرئيسية لمعالجة الدفع وإنشاء الرابط أو التوجيه مع فحص الفرع بصرامة
+ * 4. الدالة الرئيسية لمعالجة الدفع الحقيقي (بطاقة أو محفظة فودافون كاش)
  */
 async function createPaymobPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
   try {
@@ -111,29 +111,23 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     const cleanMethod = (method || 'wallet').toLowerCase();
     
     let rawBranch = String(branch || '').toLowerCase().trim();
-
     if (!rawBranch && req) {
       rawBranch = String(req.body?.branch || req.query?.branch || '').toLowerCase().trim();
     }
 
-    // التحقق الصارم من الفرع: إذا كان مفقوداً أو غير صالح، يتم التوقف وعرض صفحة التحذير
     if (!rawBranch || !BRANCH_NAMES[rawBranch]) {
-      console.warn(`⚠️ [Pay.js] رفض معاملة لدفع بفرع غير صالح أو مفقود: [${rawBranch}]`);
-      
+      console.warn(`⚠️ [Pay.js] رفض معاملة بفرع غير صالح: [${rawBranch}]`);
       if (res) {
         if (req?.headers?.['content-type']?.includes('application/json')) {
-          return res.status(400).json({ success: false, error: "يجب اختيار فرع صحيح للشبكة قبل إتمام الدفع." });
+          return res.status(400).json({ success: false, error: "يجب اختيار فرع صحيح للشبكة." });
         }
         return res.status(400).sendFile(path.join(__dirname, 'public', 'warning.html'));
       }
-      
-      throw new Error(`يجب اختيار فرع صحيح للشبكة. الفرع المحدد غير مدعوم: [${rawBranch}]`);
+      throw new Error(`يجب اختيار فرع صحيح للشبكة: [${rawBranch}]`);
     }
 
     const selectedBranch = rawBranch;
     const branchDisplayName = BRANCH_NAMES[selectedBranch];
-
-    console.log(`💳 [Pay.js] إنشاء معاملة مؤكدة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amount} | الوسيلة: ${cleanMethod}`);
 
     let integrationId;
     switch (cleanMethod) {
@@ -151,7 +145,6 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     }
 
     const token = await getAuthToken();
-    
     const orderId = await createOrder(token, amountCents, {
       branch: selectedBranch,
       branch_name: branchDisplayName
@@ -166,6 +159,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       { branch: selectedBranch, branchName: branchDisplayName }
     );
 
+    // معالجة محفظة فودافون كاش الحقيقية عبر Paymob API
     if (cleanMethod === 'wallet') {
       const walletRes = await axios.post('https://accept.paymob.com/api/acceptance/payments/pay', {
         source: {
