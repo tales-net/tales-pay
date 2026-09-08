@@ -56,7 +56,6 @@
   let socket = null;
   let countdownInterval = null;
 
-  // تأثير صوتي تفاعلي باستخدام Web Audio API
   function playNotificationSound() {
     try {
       const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -67,8 +66,8 @@
       const gain = ctx.createGain();
       
       osc.type = "sine";
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // نغمة D5
-      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // انتقال إلى A5
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
       
       gain.gain.setValueAtTime(0.15, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
@@ -112,13 +111,14 @@
 
     socket.on("start_queue_countdown", (data) => {
       const totalSeconds = data.minutes * 60;
-      const queueNumber = data.queueNumber || 1;
+      const initialQueueNumber = data.queueNumber || 5;
       const endTime = Date.now() + (totalSeconds * 1000);
       
       localStorage.setItem("hikayat_queue_end_time", endTime);
-      localStorage.setItem("hikayat_queue_number", queueNumber);
+      localStorage.setItem("hikayat_total_seconds", totalSeconds);
+      localStorage.setItem("hikayat_initial_queue", initialQueueNumber);
 
-      startRealCountdown(endTime, queueNumber);
+      startRealCountdown(endTime, totalSeconds, initialQueueNumber);
     });
 
     fetch(`/api/support/messages/${clientId}`)
@@ -130,9 +130,11 @@
       }).catch(err => console.log(err));
 
     const savedEndTime = localStorage.getItem("hikayat_queue_end_time");
-    const savedQueueNo = localStorage.getItem("hikayat_queue_number");
+    const savedTotalSecs = localStorage.getItem("hikayat_total_seconds");
+    const savedQueueNo = localStorage.getItem("hikayat_initial_queue");
+
     if (savedEndTime && Number(savedEndTime) > Date.now()) {
-      startRealCountdown(Number(savedEndTime), savedQueueNo || 1);
+      startRealCountdown(Number(savedEndTime), Number(savedTotalSecs) || 300, Number(savedQueueNo) || 5);
     }
   }
 
@@ -178,12 +180,12 @@
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 
-  function startRealCountdown(endTime, queueNumber) {
+  // العد التنازلي الديناميكي الذي يجعل رقم الانتظار يتغير وينقص مع الوقت
+  function startRealCountdown(endTime, totalSeconds, initialQueueNumber) {
     queueBanner.style.display = "block";
-    if (queueNumberBadge) queueNumberBadge.innerText = `#${queueNumber}`;
 
     if (!sessionStorage.getItem("waiting_notice_sent")) {
-      appendMessage("admin", `⏳ أنت في طابور الانتظار (الرقم #${queueNumber}). يرجى الانتظار حتى اكتمال الوقت.`);
+      appendMessage("admin", `⏳ أنت في طابور الانتظار (الرقمเริ่มต้น #${initialQueueNumber}). يرجى الانتظار حتى اكتمال الوقت.`);
       sessionStorage.setItem("waiting_notice_sent", "true");
     }
 
@@ -193,16 +195,29 @@
       const now = Date.now();
       const remainingSeconds = Math.floor((endTime - now) / 1000);
 
+      // حساب رقم الانتظار الحالي بناءً على النسبة المئوية للوقت المتبقي
+      let currentQueueNo = 0;
+      if (remainingSeconds > 0) {
+        const ratio = remainingSeconds / totalSeconds;
+        currentQueueNo = Math.ceil(ratio * initialQueueNumber);
+        if (currentQueueNo < 1) currentQueueNo = 1;
+      } else {
+        currentQueueNo = 0;
+      }
+
+      if (queueNumberBadge) queueNumberBadge.innerText = `#${currentQueueNo}`;
+
       if (remainingSeconds <= 0) {
         clearInterval(countdownInterval);
         localStorage.removeItem("hikayat_queue_end_time");
-        localStorage.removeItem("hikayat_queue_number");
+        localStorage.removeItem("hikayat_total_seconds");
+        localStorage.removeItem("hikayat_initial_queue");
 
         queueBanner.style.backgroundColor = "#d4edda";
         queueBanner.style.color = "#155724";
         queueBanner.innerHTML = "✅ انتهى وقت الانتظار! ممثل الدعم متاح الآن.";
 
-        playNotificationSound(); // تشغيل التنبيه الصوتي عند الصفر
+        playNotificationSound();
 
         appendMessage("admin", "مرحباً بك في شبكة حكايات 🌐\nلقد وصل دورك وانتهى وقت الانتظار (رقم الانتظار #0). يمكنك إرسال استفسارك أو مشكلتك وسيرد عليك الدعم الفوري الآن.");
 
