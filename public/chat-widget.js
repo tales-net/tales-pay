@@ -13,6 +13,7 @@
     #hikayat-chat-header { background: #01338D; color: white; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 15px; }
     #hikayat-chat-close { background: none; border: none; color: white; font-size: 18px; cursor: pointer; }
     
+    /* شريط العد التنازلي */
     #hikayat-queue-banner { background: #fff3cd; color: #856404; padding: 8px 12px; font-size: 12px; text-align: center; border-bottom: 1px solid #ffeeba; display: none; font-weight: bold; }
 
     #hikayat-chat-messages { flex: 1; padding: 12px; overflow-y: auto; background: #f9f9f9; display: flex; flex-direction: column; gap: 8px; }
@@ -37,7 +38,7 @@
         <span>الدعم الفني المباشر</span>
         <button id="hikayat-chat-close">&times;</button>
       </div>
-      <div id="hikayat-queue-banner">⏳ رقم الانتظار: <span id="queue-number-text">--</span> | المتبقي: <span id="queue-timer-text">--</span></div>
+      <div id="hikayat-queue-banner">⏳ ترتيبك في الانتظار <span id="queue-number-badge">#1</span>: <span id="queue-timer-text">--</span></div>
       <div id="hikayat-chat-messages">
         <div id="hikayat-typing-indicator">الدعم الفني يكتب الآن...</div>
       </div>
@@ -62,11 +63,10 @@
     initSocketConnection();
   }
 
-  let socket = null;
   let countdownInterval = null;
 
   function initSocketConnection() {
-    socket = io();
+    const socket = io();
     socket.emit("join_chat", clientId);
 
     socket.on("new_message", (data) => {
@@ -75,35 +75,40 @@
     });
 
     socket.on("typing_status", (data) => {
-      if (data.isTyping) {
-        showTypingIndicator();
-      } else {
-        hideTypingIndicator();
-      }
+      if (data.isTyping) showTypingIndicator();
+      else hideTypingIndicator();
     });
 
     socket.on("chat_closed", (data) => {
       lockChatInterface(data.message || "تم إغلاق المحادثة بواسطة الدعم الفني.");
-      setTimeout(() => {
-        localStorage.removeItem("hikayat_client_id");
-        localStorage.removeItem("hikayat_queue_end_time");
-        localStorage.removeItem("hikayat_queue_number");
-      }, 3000);
     });
 
+    // استقبال بدء العد التنازلي الحقيقي من السيرفر
     socket.on("start_queue_countdown", (data) => {
       const totalSeconds = data.minutes * 60;
-      const queueNumber = data.queueNumber || Math.floor(Math.random() * 8) + 2;
+      const queueNumber = data.queueNumber || 1;
       const endTime = Date.now() + (totalSeconds * 1000);
-
+      
       localStorage.setItem("hikayat_queue_end_time", endTime);
       localStorage.setItem("hikayat_queue_number", queueNumber);
 
-      startFakeCountdown(endTime, queueNumber);
+      startRealCountdown(endTime, queueNumber);
     });
 
-    fetchMessages();
-    checkExistingQueue();
+    fetch(`/api/support/messages/${clientId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.messages) {
+          data.messages.forEach(m => appendMessage(m.sender, m.text, m.image));
+        }
+      }).catch(err => console.log(err));
+
+    // التحقق من وجود عداد تنازلي نشط مخزن مسبقاً في حال قام العميل بتحديث الصفحة
+    const savedEndTime = localStorage.getItem("hikayat_queue_end_time");
+    const savedQueueNo = localStorage.getItem("hikayat_queue_number");
+    if (savedEndTime && Number(savedEndTime) > Date.now()) {
+      startRealCountdown(Number(savedEndTime), savedQueueNo || 1);
+    }
   }
 
   const bubble = document.getElementById("hikayat-chat-bubble");
@@ -116,7 +121,7 @@
   const typingIndicator = document.getElementById("hikayat-typing-indicator");
   const queueBanner = document.getElementById("hikayat-queue-banner");
   const queueTimerText = document.getElementById("queue-timer-text");
-  const queueNumberText = document.getElementById("queue-number-text");
+  const queueNumberBadge = document.getElementById("queue-number-badge");
 
   function toggleChat() {
     box.style.display = box.style.display === "flex" ? "none" : "flex";
@@ -133,9 +138,7 @@
   }
 
   function hideTypingIndicator() {
-    if (typingIndicator) {
-      typingIndicator.style.display = "none";
-    }
+    if (typingIndicator) typingIndicator.style.display = "none";
   }
 
   function appendMessage(sender, text, imageUrl) {
@@ -150,24 +153,15 @@
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 
-  function checkExistingQueue() {
-    const savedEndTime = localStorage.getItem("hikayat_queue_end_time");
-    const savedQueueNum = localStorage.getItem("hikayat_queue_number");
-
-    if (savedEndTime) {
-      const remainingTime = parseInt(savedEndTime, 10);
-      if (remainingTime > Date.now()) {
-        startFakeCountdown(remainingTime, savedQueueNum || 5);
-      } else {
-        localStorage.removeItem("hikayat_queue_end_time");
-        localStorage.removeItem("hikayat_queue_number");
-      }
-    }
-  }
-
-  function startFakeCountdown(endTime, queueNumber) {
+  // دالة تشغيل العد التنازلي الحقيقي
+  function startRealCountdown(endTime, queueNumber) {
     queueBanner.style.display = "block";
-    queueNumberText.innerText = `#${queueNumber}`;
+    if (queueNumberBadge) queueNumberBadge.innerText = `#${queueNumber}`;
+
+    if (!sessionStorage.getItem("waiting_notice_sent")) {
+      appendMessage("admin", "⏳ جاري توصيلك بممثل الدعم الفني، يرجى الانتظار...");
+      sessionStorage.setItem("waiting_notice_sent", "true");
+    }
 
     if (countdownInterval) clearInterval(countdownInterval);
 
@@ -182,30 +176,18 @@
 
         queueBanner.style.backgroundColor = "#d4edda";
         queueBanner.style.color = "#155724";
-        queueBanner.innerHTML = "✅ تم انتهاء وقت الانتظار. يرجى الانتظار لحظات للرد عليكم من فريق الدعم الفني!";
-        
-        setTimeout(() => { 
-          queueBanner.style.display = "none"; 
-          showWelcomeBubbleAfterQueue();
-        }, 4000);
+        queueBanner.innerHTML = "✅ ممثل الدعم جاهز الآن للمحادثة ومتاحة للمتابعة الفورية.";
+
+        appendMessage("admin", "مرحباً بك في شبكة حكايات 🌐\nتم الانتهاء من الانتظار، كيف يمكننا مساعدتك اليوم؟ يمكنك إرسال استفسارك أو رفع صورة المشكلة وسيقوم فريق الدعم بالرد الفوري.");
+
+        setTimeout(() => { queueBanner.style.display = "none"; }, 6000);
         return;
       }
 
       let mins = Math.floor(remainingSeconds / 60);
       let secs = remainingSeconds % 60;
-      queueTimerText.innerText = `${mins} دقيقة و ${secs < 10 ? '0' : ''}${secs} ثانیه`;
+      queueTimerText.innerText = `${mins} دقيقة و ${secs < 10 ? '0' : ''}${secs} ثانية`;
     }, 1000);
-  }
-
-  function fetchMessages() {
-    fetch(`/api/support/messages/${clientId}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.messages) {
-          messagesContainer.innerHTML = '<div id="hikayat-typing-indicator">الدعم الفني يكتب الآن...</div>';
-          data.messages.forEach(m => appendMessage(m.sender, m.text, m.image));
-        }
-      }).catch(err => console.log(err));
   }
 
   function lockChatInterface(reason) {
@@ -251,9 +233,7 @@
 
   sendBtn.onclick = handleSend;
   input.onkeypress = (e) => { 
-    if (e.key === "Enter") {
-      handleSend();
-    }
+    if (e.key === "Enter") handleSend();
   };
 
   imgInput.onchange = (e) => {
@@ -268,13 +248,11 @@
     return text.replace(/[&<>"']/g, m => map[m]);
   }
 
-  // ظهور فقاعة الترحيب العائمة بعد انتهاء مهلة الانتظار
-  function showWelcomeBubbleAfterQueue() {
-    if (document.getElementById('supportWelcomeBubble')) return;
-
+  // فقاعة الترحيب العائمة
+  if (!document.getElementById('supportWelcomeBubble')) {
     const welcomeBubble = document.createElement('div');
     welcomeBubble.id = 'supportWelcomeBubble';
-    welcomeBubble.innerHTML = '💬 تحدث معنا مباشرة، ممثل الدعم جاهز للرد!';
+    welcomeBubble.innerHTML = '💬 تحدث معنا مباشرة';
     
     Object.assign(welcomeBubble.style, {
       position: 'fixed', bottom: '85px', right: '20px', backgroundColor: '#01338D', color: '#ffffff',
@@ -289,21 +267,18 @@
     setTimeout(() => {
       welcomeBubble.style.opacity = '1';
       welcomeBubble.style.transform = 'translateY(0)';
-    }, 300);
+    }, 1000);
 
     welcomeBubble.onclick = function() {
       toggleChat();
-      removeWelcomeBubble();
+      if (welcomeBubble && welcomeBubble.parentNode) welcomeBubble.remove();
     };
 
-    function removeWelcomeBubble() {
+    setTimeout(() => {
       if (welcomeBubble && welcomeBubble.parentNode) {
         welcomeBubble.style.opacity = '0';
-        welcomeBubble.style.transform = 'translateY(15px)';
         setTimeout(() => welcomeBubble.remove(), 500);
       }
-    }
-
-    setTimeout(() => { removeWelcomeBubble(); }, 40000);
+    }, 61000);
   }
 })();
