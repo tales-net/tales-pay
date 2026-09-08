@@ -1,12 +1,10 @@
 (function () {
-  // توليد أو جلب معرف فريد للعميل وتخزينه في المتصفح
   let clientId = localStorage.getItem("hikayat_client_id");
   if (!clientId) {
     clientId = "client_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
     localStorage.setItem("hikayat_client_id", clientId);
   }
 
-  // حقن التصميم والأنماط الخاصة بالشات والعد التنازلي في الصفحة (على اليمين: right: 20px)
   const chatStyle = document.createElement("style");
   chatStyle.innerHTML = `
     #hikayat-chat-bubble { position: fixed; bottom: 20px; right: 20px; background: #01338D; color: white; width: 55px; height: 55px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 99999; font-size: 24px; transition: transform 0.2s; }
@@ -15,7 +13,6 @@
     #hikayat-chat-header { background: #01338D; color: white; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 15px; }
     #hikayat-chat-close { background: none; border: none; color: white; font-size: 18px; cursor: pointer; }
     
-    /* شريط العد التنازلي الوهمي ورقم الانتظار */
     #hikayat-queue-banner { background: #fff3cd; color: #856404; padding: 8px 12px; font-size: 12px; text-align: center; border-bottom: 1px solid #ffeeba; display: none; font-weight: bold; }
 
     #hikayat-chat-messages { flex: 1; padding: 12px; overflow-y: auto; background: #f9f9f9; display: flex; flex-direction: column; gap: 8px; }
@@ -87,7 +84,6 @@
 
     socket.on("chat_closed", (data) => {
       lockChatInterface(data.message || "تم إغلاق المحادثة بواسطة الدعم الفني.");
-      
       setTimeout(() => {
         localStorage.removeItem("hikayat_client_id");
         localStorage.removeItem("hikayat_queue_end_time");
@@ -95,13 +91,11 @@
       }, 3000);
     });
 
-    // استقبال أمر بدء العد التنازلي ورقم الانتظار من السيرفر
     socket.on("start_queue_countdown", (data) => {
       const totalSeconds = data.minutes * 60;
-      const queueNumber = data.queueNumber || Math.floor(Math.random() * 8) + 2; // رقم انتظار عشوائي بين 2 و 10
+      const queueNumber = data.queueNumber || Math.floor(Math.random() * 8) + 2;
       const endTime = Date.now() + (totalSeconds * 1000);
 
-      // حفظ بيانات العد في المتصفح لكي تستمر حتى مع تحديث الصفحة (Refresh)
       localStorage.setItem("hikayat_queue_end_time", endTime);
       localStorage.setItem("hikayat_queue_number", queueNumber);
 
@@ -156,7 +150,6 @@
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 
-  // التحقق من وجود عد تنازلي محفوظ مسبقاً عند تحديث الصفحة
   function checkExistingQueue() {
     const savedEndTime = localStorage.getItem("hikayat_queue_end_time");
     const savedQueueNum = localStorage.getItem("hikayat_queue_number");
@@ -172,7 +165,6 @@
     }
   }
 
-  // تشغيل العد التنازلي الوهمي المستمر
   function startFakeCountdown(endTime, queueNumber) {
     queueBanner.style.display = "block";
     queueNumberText.innerText = `#${queueNumber}`;
@@ -190,14 +182,18 @@
 
         queueBanner.style.backgroundColor = "#d4edda";
         queueBanner.style.color = "#155724";
-        queueBanner.innerHTML = "✅ انضم إلينا ممثل الدعم الآن، مرحباً بك!";
-        setTimeout(() => { queueBanner.style.display = "none"; }, 5000);
+        queueBanner.innerHTML = "✅ تم انتهاء وقت الانتظار. يرجى الانتظار لحظات للرد عليكم من فريق الدعم الفني!";
+        
+        setTimeout(() => { 
+          queueBanner.style.display = "none"; 
+          showWelcomeBubbleAfterQueue();
+        }, 4000);
         return;
       }
 
       let mins = Math.floor(remainingSeconds / 60);
       let secs = remainingSeconds % 60;
-      queueTimerText.innerText = `${mins} دقيقة و ${secs < 10 ? '0' : ''}${secs} ثانية`;
+      queueTimerText.innerText = `${mins} دقيقة و ${secs < 10 ? '0' : ''}${secs} ثانیه`;
     }, 1000);
   }
 
@@ -272,11 +268,13 @@
     return text.replace(/[&<>"']/g, m => map[m]);
   }
 
-  // فقاعة الترحيب العائمة
-  if (!document.getElementById('supportWelcomeBubble')) {
+  // ظهور فقاعة الترحيب العائمة بعد انتهاء مهلة الانتظار
+  function showWelcomeBubbleAfterQueue() {
+    if (document.getElementById('supportWelcomeBubble')) return;
+
     const welcomeBubble = document.createElement('div');
     welcomeBubble.id = 'supportWelcomeBubble';
-    welcomeBubble.innerHTML = '💬 تحدث معنا مباشرة';
+    welcomeBubble.innerHTML = '💬 تحدث معنا مباشرة، ممثل الدعم جاهز للرد!';
     
     Object.assign(welcomeBubble.style, {
       position: 'fixed', bottom: '85px', right: '20px', backgroundColor: '#01338D', color: '#ffffff',
@@ -291,7 +289,7 @@
     setTimeout(() => {
       welcomeBubble.style.opacity = '1';
       welcomeBubble.style.transform = 'translateY(0)';
-    }, 1000);
+    }, 300);
 
     welcomeBubble.onclick = function() {
       toggleChat();
@@ -306,6 +304,6 @@
       }
     }
 
-    setTimeout(() => { removeWelcomeBubble(); }, 61000);
+    setTimeout(() => { removeWelcomeBubble(); }, 40000);
   }
 })();
