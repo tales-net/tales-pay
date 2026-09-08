@@ -151,23 +151,6 @@ function generateContributionHtmlPage(amount, transactionId = "") {
           <a href="https://tales-pay.onrender.com" class="btn">العودة للرئيسية</a>
         </div>
       </div>
-
-      <!-- سكريبت لتأكيد وصول العميل للصفحة وإرسال إشعار للبوت تلقائياً -->
-      <script>
-        window.addEventListener('DOMContentLoaded', () => {
-          const urlParams = new URLSearchParams(window.location.search);
-          const txId = urlParams.get('tx') || "${transactionId}";
-          const amount = urlParams.get('amount') || "${amount}";
-
-          if (txId && amount) {
-            fetch('/api/confirm-contribution', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ txId, amount })
-            }).catch(err => console.error("Confirmation error:", err));
-          }
-        });
-      </script>
     </body>
     </html>
   `;
