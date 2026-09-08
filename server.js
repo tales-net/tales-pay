@@ -81,7 +81,7 @@ app.post('/telegram-webhook', async (req, res) => {
   res.sendStatus(200);
 });
 
-// معالجة طلبات الدفع
+// معالجة طلبات الدفع وتوجيه العميل لرابط البوابة الحقيقي
 async function handlePaymentRequest(req, res) {
   try {
     const data = { ...req.query, ...req.body };
@@ -142,15 +142,13 @@ async function handlePaymentRequest(req, res) {
       await sendTelegramMessage(paymentPayload, true);
     }
 
-    // استدعاء بوابة الدفع الحقيقية مع تمرير الكائنين req و res لفحص الفرع والتعامل مع النتائج
     const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch, req, res);
 
-    // إذا كانت الدالة قد قامت بالرد مسبقاً (مثل خطأ الفرع)، نتوقف
     if (res.headersSent) return;
 
     if (result.type === "redirect") {
-      if (req.method === "POST" && req.headers["content-type"]?.includes("application/json")) {
-        return res.json({ payment_url: result.url });
+      if (req.method === "POST" && (req.headers["content-type"]?.includes("application/json") || req.xhr)) {
+        return res.json({ success: true, payment_url: result.url });
       }
       return res.redirect(result.url);
     } else if (result.type === "html") {
@@ -161,8 +159,8 @@ async function handlePaymentRequest(req, res) {
   } catch (err) {
     console.error("❌ خطأ في معالجة طلب الدفع:", err.response?.data || err.message);
     if (res.headersSent) return;
-    if (req.headers["content-type"]?.includes("application/json")) {
-      return res.status(500).json({ error: `حدث خطأ أثناء معالجة عملية الدفع: ${err.message}` });
+    if (req.headers["content-type"]?.includes("application/json") || req.xhr) {
+      return res.status(500).json({ success: false, error: `حدث خطأ أثناء معالجة عملية الدفع: ${err.message}` });
     }
     res.status(500).send(`حدث خطأ أثناء معالجة عملية الدفع: ${err.message}`);
   }
