@@ -4,7 +4,7 @@ const router = express.Router();
 const profiles = require("./profiles");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateCardImage } = require("./cardGenerator");
-const { sendTelegramMessage, sendVoucherWithCardImage } = require("./telegram");
+const { sendTelegramMessage, sendVoucherWithCardImage, sendContributionButton } = require("./telegram");
 
 // خريطة عالمية لحفظ بيانات وكروت المعاملات مؤقتاً لصفحة النجاح
 global.generatedCardsMap = global.generatedCardsMap || new Map();
@@ -78,7 +78,6 @@ function verifyPaymobHmac(req) {
       val = obj[key];
     }
     
-    // تحويل القيمة البولينية والأرقام إلى نصوص دقيقة مطابقة لتوثيق Paymob
     if (val === undefined || val === null) {
       val = "";
     } else if (typeof val === "boolean") {
@@ -121,7 +120,7 @@ function extractBranchKey(obj) {
   return "main";
 }
 
-router.post("/paymob-webhook", async (req, res) => {
+router.post("/paymob-webhook", express.json(), async (req, res) => {
   try {
     // 1. التحقق من التوقيع الرقمي HMAC
     if (!verifyPaymobHmac(req)) {
@@ -155,13 +154,19 @@ router.post("/paymob-webhook", async (req, res) => {
     const branchDisplayName = BRANCH_NAMES[branchKey] || BRANCH_NAMES.main;
 
     const phone = obj.phone || 
-                  obj.billing_data?.phone_number || 
-                  obj.customer?.phone_number || 
-                  obj.order?.shipping_data?.phone_number || 
-                  "غير محدد";
+                obj.billing_data?.phone_number || 
+                obj.customer?.phone_number || 
+                obj.order?.shipping_data?.phone_number || 
+                "غير محدد";
 
     if (isSuccess) {
       console.log(`💳 [Webhook Debug] معاملة ناجحة: ${transactionId} | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ: ${numericAmount}ج`);
+
+      // 🌟 فحص إذا كانت العملية مساهمة مالية (أكبر من 100 جنيه) وإرسال زر المساهمة التفاعلي
+      if (numericAmount > 100) {
+        console.log(`✨ [Contribution Detected] تم رصد مساهمة مالية بقيمة ${numericAmount} جنيه. جاري إرسال زر المساهمة...`);
+        await sendContributionButton(process.env.TELEGRAM_CHAT_ID, numericAmount, transactionId);
+      }
 
       let packageName = "باقة إنترنت شبكة حكايات";
       if (typeof profiles.getPackageName === "function") {
