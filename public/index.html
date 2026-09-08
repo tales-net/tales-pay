@@ -58,8 +58,8 @@
                     <div class="input-group-custom">
                         <label for="payment_method"><i class="fa fa-credit-card-alt" aria-hidden="true"></i> اختر وسيلة الدفع:</label>
                         <select name="payment_method" id="payment_method" class="form-control" style="height: 48px; border-radius: 8px;" required>
-                            <option value="wallet" selected>📱 محفظة إلكترونية</option>
-                            <option value="card">💳 بطاقة بنكية</option>
+                            <option value="card" selected>💳 بطاقة بنكية</option>
+                            <option value="wallet">📱 محفظة إلكترونية (فودافون كاش)</option>
                         </select>
                     </div>
 
@@ -76,8 +76,8 @@
                         <div class="error-message" id="error_amount">يرجى إدخال مبلغ صحيح.</div>
                     </div>
 
-                    <!-- 4. رقم الهاتف / المحفظة -->
-                    <div class="input-group-custom" id="phone_group">
+                    <!-- 4. رقم الهاتف / المحفظة (يظهر في حالة البطاقة إذا لزم أو يتم إخفاؤه) -->
+                    <div class="input-group-custom" id="phone_group" style="display: none;">
                         <label for="user_phone">رقم الهاتف / المحفظة:</label>
                         <div class="input-wrapper">
                             <input placeholder="01XXXXXXXXX" 
@@ -138,7 +138,7 @@
                                            id="mmyy" 
                                            maxlength="5">
                                 </div>
-                                <div class="error-message" id="error_mmyy">تاريخ غير صحيح.</div>
+                                <div class="error_message" id="error_mmyy">تاريخ غير صحيح.</div>
                             </div>
 
                             <div class="input-group-custom">
@@ -186,11 +186,11 @@
         </div>
     </div>
 
-    <!-- كود ربط وسيلة الدفع بالانتقال لصفحة فودافون المستقلة -->
+    <!-- كود التوجيه التلقائي لصفحة فودافون كاش عند اختيارها -->
     <script>
         document.getElementById('payment_method').addEventListener('change', function() {
             if (this.value === 'wallet') {
-                // توجيه المستخدم لصفحة فودافون المخصصة
+                // الانتقال المباشر لصفحة فودافون المستقلة
                 window.location.href = 'vodafone-checkout.html';
             }
         });
