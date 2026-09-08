@@ -7,8 +7,10 @@ const path = require("path");
 const multer = require("multer");
 require("dotenv").config();
 
-// ✅ التعديل هنا: استدعاء دالة createPaymobPayment أو processPayment بشكل صحيح من الكائن المصدر
-const { createPaymobPayment } = require("./pay");
+// ✅ التعديل الآمن لاستيراد ملف الدفع وضمان عدم ظهور خطأ is not a function
+const payModule = require("./pay");
+const createPaymobPayment = typeof payModule === 'function' ? payModule : (payModule.createPaymobPayment || payModule.processPayment);
+
 const { sendTelegramMessage } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
@@ -143,17 +145,20 @@ async function handlePaymentRequest(req, res) {
       await sendTelegramMessage(paymentPayload, true);
     }
 
-    // استدعاء دالة معالجة الدفع السليمة
+    if (typeof createPaymobPayment !== "function") {
+      throw new Error("الدالة createPaymobPayment غير معرفة في ملف pay.js");
+    }
+
     const result = await createPaymobPayment(userPhone, payAmount, selectedMethod, selectedBranch, req, res);
 
     if (res.headersSent) return;
 
-    if (result.type === "redirect") {
+    if (result && result.type === "redirect") {
       if (req.method === "POST" && (req.headers["content-type"]?.includes("application/json") || req.xhr)) {
         return res.json({ success: true, payment_url: result.url });
       }
       return res.redirect(result.url);
-    } else if (result.type === "html") {
+    } else if (result && result.type === "html") {
       return res.send(result.content);
     } else {
       return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
