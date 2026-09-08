@@ -18,8 +18,7 @@
         <div class="checkout-card">
             <section class="card-inputs">
                 
-                <form id="vodafone_form" action="/api/pay" method="POST">
-                    <!-- وسيلة الدفع ومحددات الفرع افتراضياً -->
+                <form id="vodafone_form">
                     <input type="hidden" name="payment_method" value="wallet">
                     <input type="hidden" name="branch" value="branch2">
 
@@ -49,10 +48,42 @@
     </div>
 
     <script>
-        document.getElementById('vodafone_form').addEventListener('submit', function(e) {
+        document.getElementById('vodafone_form').addEventListener('submit', async function(e) {
+            e.preventDefault();
             const btn = document.getElementById('submitButton');
+            const phone = document.getElementById('user_phone').value;
+            const amount = document.getElementById('pay_amount').value;
+
             btn.disabled = true;
-            btn.innerText = 'جاري الاتصال ببوابة الدفع... (قد يستغرق لحظات)';
+            btn.innerText = 'جاري الاتصال بـ Paymob وإرسال طلب المحفظة...';
+
+            try {
+                const response = await fetch('/api/pay', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        phone: phone,
+                        amount: amount,
+                        payment_method: 'wallet',
+                        branch: 'branch2'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.payment_url) {
+                    // التوجيه لرابط البوابة لكي يدخل المستخدم وستقوم الشركة بإرسال OTP حقيقي له
+                    window.location.href = data.payment_url;
+                } else {
+                    alert(data.error || 'حدث خطأ أثناء معالجة الدفع.');
+                    btn.disabled = false;
+                    btn.innerText = 'متابعة وتأكيد الدفع من المحفظة';
+                }
+            } catch (err) {
+                alert('فشل الاتصال بالسيرفر، تأكد من الشبكة.');
+                btn.disabled = false;
+                btn.innerText = 'متابعة وتأكيد الدفع من المحفظة';
+            }
         });
     </script>
 </body>
