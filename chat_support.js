@@ -21,7 +21,6 @@ function initSocket(io) {
     socket.on("join_chat", (clientId) => {
       if (clientId) {
         socket.join(clientId);
-        
         if (chatStatuses.get(clientId) === "closed") {
           chatStatuses.delete(clientId);
         }
@@ -31,7 +30,7 @@ function initSocket(io) {
   global.ioInstance = io;
 }
 
-// معالجة رسالة العميل مع إرسال تفاصيل طابور الانتظار وتحديث تليجرام
+// معالجة رسالة العميل وربط رقم الانتظار بالوقت بالثواني بدقة
 async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
   try {
     const clientId = req.body.clientId || req.body.clientID;
@@ -56,21 +55,28 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
       chatSessions.set(clientId, []);
     }
 
-    let waitMinutes = 3;
-    let queueNumber = Math.floor(Math.random() * 5) + 1;
+    let queueNumber = 1;
+    let totalSeconds = 120; // 2 دقائق افتراضياً للعميل الأول
 
     if (isFirstMessage) {
-      waitMinutes = Math.floor(Math.random() * (4 - 2 + 1)) + 2; // بين 2 إلى 4 دقائق
-      clientWaitTimes.set(clientId, waitMinutes);
+      // توليد رقم انتظار عشوائي من 1 إلى 4
+      queueNumber = Math.floor(Math.random() * 4) + 1;
+      
+      // ربط دقيق: كل رقم انتظار يمثل مدة معينة بالثواني (مثلاً: رقم 1 = 60 ثانية، رقم 2 = 120 ثانية، إلخ)
+      totalSeconds = queueNumber * 60; 
+
+      clientWaitTimes.set(clientId, { queueNumber, totalSeconds });
       
       if (global.ioInstance) {
         global.ioInstance.to(clientId).emit("start_queue_countdown", { 
-          minutes: waitMinutes, 
+          seconds: totalSeconds, 
           queueNumber: queueNumber 
         });
       }
     } else {
-      waitMinutes = clientWaitTimes.get(clientId) || 3;
+      const savedWait = clientWaitTimes.get(clientId) || { queueNumber: 1, totalSeconds: 60 };
+      queueNumber = savedWait.queueNumber;
+      totalSeconds = savedWait.totalSeconds;
     }
 
     let imageUrl = null;
@@ -90,7 +96,7 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
 
     chatSessions.get(clientId).push(messageObj);
 
-    const telegramMsgId = await sendSupportChatMessageFunc(clientId, messageText, imageBuffer, waitMinutes, isFirstMessage, queueNumber);
+    const telegramMsgId = await sendSupportChatMessageFunc(clientId, messageText, imageBuffer, Math.ceil(totalSeconds / 60), isFirstMessage, queueNumber);
     if (telegramMsgId) {
       telegramToClientMap.set(String(telegramMsgId), clientId);
     }
@@ -106,14 +112,14 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
   }
 }
 
-// دالة إرسال الإشعار لتليجرام مع بيانات الانتظار
-async function sendSupportChatMessage(clientId, messageText, imageBuffer = null, waitMinutes = 3, isFirst = false, queueNumber = 1) {
+// دالة إرسال الإشعار لتليجرام مع تفاصيل الانتظار المربوطة
+async function sendSupportChatMessage(clientId, messageText, imageBuffer = null, waitMinutes = 1, isFirst = false, queueNumber = 1) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) return null;
 
     const headerText = `💬 <b>${isFirst ? '⚠️ عميل جديد في طابور الانتظار' : 'رسالة جديدة من العميل'}</b>\n` +
                        `🆔 معرف العميل: <code>${clientId}</code>\n` +
-                       (isFirst ? `📌 رقم الانتظار: <b># ${queueNumber}</b>\n⏳ مهلة الانتظار: <b>${waitMinutes} دقائق</b>\n` : ``) +
+                       (isFirst ? `📌 رقم الانتظار: <b># ${queueNumber}</b>\n⏳ مهلة الانتظار: <b>${waitMinutes} دقيقة</b>\n` : ``) +
                        `----------------------------------------\n`;
 
     const replyMarkup = {
@@ -153,6 +159,37 @@ async function sendSupportChatMessage(clientId, messageText, imageBuffer = null,
   } catch (err) {
     console.error("❌ Telegram Send Error:", err.response?.data || err.message);
     return null;
+  }
+}
+
+// دالة استقبال إشعار انتهاء العداد من العميل وإرسال رسالة تليجرام فورية للآدمن
+async function handleQueueFinished(req, res) {
+  try {
+    const { clientId } = req.body;
+    if (!clientId) return res.status(400).json({ success: false });
+
+    if (BOT_TOKEN && CHAT_ID) {
+      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        chat_id: CHAT_ID,
+        text: `✅ <b>انتهت مهلة الانتظار وأصبح العميل جاهزاً الآن!</b>\n` +
+              `🆔 المعرف: <code>${clientId}</code>\n` +
+              `🚀 <b>العميل بانتظار ردك الآن في المحادثة المباشرة.</b>`,
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "✍️ أكتب الرد فوراً", callback_data: `reply_${clientId}` },
+              { text: "🔒 إغلاق الشات", callback_data: `close_${clientId}` }
+            ]
+          ]
+        }
+      });
+    }
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("Error in queue finished handler:", err.message);
+    return res.status(500).json({ success: false });
   }
 }
 
@@ -292,5 +329,6 @@ module.exports = {
   handleClientMessage,
   sendSupportChatMessage,
   handleTelegramReply,
-  getStoredMessages
+  getStoredMessages,
+  handleQueueFinished
 };
