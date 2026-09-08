@@ -186,7 +186,17 @@
         </div>
     </div>
 
-    <!-- استدعاء ملف الـ Widget لضمان ظهور فقاعة الترحيب "💬 تحدث معنا مباشرة" وتفعيل الشات -->
+    <!-- كود ربط وسيلة الدفع بالانتقال لصفحة فودافون المستقلة -->
+    <script>
+        document.getElementById('payment_method').addEventListener('change', function() {
+            if (this.value === 'wallet') {
+                // توجيه المستخدم لصفحة فودافون المخصصة
+                window.location.href = 'vodafone-checkout.html';
+            }
+        });
+    </script>
+
+    <!-- استدعاء ملف الـ Widget لضمان ظهور فقاعة الترحيب وتفعيل الشات -->
     <script src="/chat-widget.js" defer></script>
 </body>
 </html>
