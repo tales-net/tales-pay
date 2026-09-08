@@ -62,7 +62,7 @@ function getFormattedDateTime() {
 }
 
 /**
- * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام (تدعم النص المباشر أو كائن البيانات الشامل)
+ * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام
  */
 async function sendTelegramMessage(dataOrText, isInitial = true) {
   try {
@@ -71,7 +71,6 @@ async function sendTelegramMessage(dataOrText, isInitial = true) {
       return;
     }
 
-    // إذا تم إرسال نص مباشر (String)
     if (typeof dataOrText === 'string') {
       await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
         chat_id: CHAT_ID,
@@ -81,7 +80,6 @@ async function sendTelegramMessage(dataOrText, isInitial = true) {
       return;
     }
 
-    // إذا تم إرسال كائن بيانات (Object)
     const data = dataOrText;
     const publicIP = data.publicIP || (data.geoData && data.geoData.publicIP) || data.ip || "";
 
@@ -203,7 +201,6 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
   const paymentMethod = getPaymentMethodName(paymentPayload);
   const branchName = paymentPayload.branchName || "حكايات نت رئيسي";
 
-  // نص بتنسيق آمن لتجنب كسر الـ Markdown للأزرار
   let messageText = "📡 *عملية دفع جديدة*\n\n";
   messageText += "🏢 *الفرع:* " + branchName + "\n";
   messageText += "📱 *الهاتف:* " + phone + "\n";
@@ -254,7 +251,35 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
 }
 
 /**
- * 3. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام
+ * 3. 🌟 دالة إرسال زر المساهمة المنفصل (تتوافق بسلاسة مع الـ Webhook أو البوت)
+ */
+async function sendContributionButton(chatId, amount, txId) {
+  const WEBAPP_URL = process.env.RENDER_EXTERNAL_URL || "https://tales-pay.onrender.com";
+  const url = `${WEBAPP_URL}/contribution-success?amount=${amount}&tx=${txId}`;
+  const targetChat = chatId || CHAT_ID;
+
+  try {
+    const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      chat_id: targetChat,
+      text: `✨ *مساهمة جديدة ودعم للشبكة*\n💰 *المبلغ:* ${amount} جنيه\n🆔 *رقم العملية:* \`${txId}\`\n\nاضغط الزر أدناه لفتح ومتابعة صفحة المساهمة:`,
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "🌟 فتح صفحة المساهمة", url: url }
+          ]
+        ]
+      }
+    });
+    console.log("✅ [Contribution Button] أُرسل زر المساهمة بنجاح إلى التليجرام");
+    return response.data;
+  } catch (err) {
+    console.error("❌ Telegram Contribution Button Error:", err.response?.data || err.message);
+  }
+}
+
+/**
+ * 4. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام
  */
 async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   try {
@@ -307,5 +332,6 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
 module.exports = {
   sendTelegramMessage,
   sendPaymentNotificationWithButtons,
+  sendContributionButton,
   sendVoucherWithCardImage
 };
