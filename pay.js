@@ -8,9 +8,6 @@ const BRANCH_NAMES = {
   branch3: 'حكايات نت فرع ثالث'
 };
 
-/**
- * 1. المصادقة والحصول على Token من Paymob
- */
 async function getAuthToken() {
   try {
     const response = await axios.post("https://accept.paymob.com/api/auth/tokens", {
@@ -23,9 +20,6 @@ async function getAuthToken() {
   }
 }
 
-/**
- * 2. إنشاء طلب دفع (Order Registration)
- */
 async function createOrder(authToken, amountCents, branchData = {}) {
   try {
     const branchKey = branchData.branch || 'main';
@@ -52,9 +46,6 @@ async function createOrder(authToken, amountCents, branchData = {}) {
   }
 }
 
-/**
- * 3. توليد مفتاح الدفع (Payment Key Request)
- */
 async function getPaymentKey(authToken, orderId, amountCents, integrationId, phone = "01000000000", branchData = {}) {
   try {
     let sanitizedPhone = String(phone).replace(/\D/g, "");
@@ -102,9 +93,6 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
   }
 }
 
-/**
- * 4. الدالة الرئيسية لمعالجة الدفع الحقيقي (بطاقة أو محفظة فودافون كاش)
- */
 async function createPaymobPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
   try {
     const amountCents = Math.round(parseFloat(amount) * 100).toString();
@@ -159,7 +147,6 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       { branch: selectedBranch, branchName: branchDisplayName }
     );
 
-    // معالجة محفظة فودافون كاش الحقيقية عبر Paymob API
     if (cleanMethod === 'wallet') {
       const walletRes = await axios.post('https://accept.paymob.com/api/acceptance/payments/pay', {
         source: {
@@ -198,7 +185,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
   }
 }
 
-module.exports = { 
+module.exports, { 
   createPaymobPayment, 
   processPayment: createPaymobPayment,
   getAuthToken,
