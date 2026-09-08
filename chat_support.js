@@ -28,7 +28,6 @@ function initSocket(io) {
       }
     });
 
-    // استقبال إشعار انتهاء العداد ووصول الوقت إلى الصفر لإرسال تنبيه لتليجرام
     socket.on("queue_finished", async (data) => {
       const { clientId } = data;
       if (clientId && BOT_TOKEN && CHAT_ID) {
@@ -49,7 +48,6 @@ function initSocket(io) {
   global.ioInstance = io;
 }
 
-// معالجة رسالة العميل مع إرسال تفاصيل طابور الانتظار وتحديث تليجرام
 async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
   try {
     const clientId = req.body.clientId || req.body.clientID;
@@ -74,11 +72,12 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
       chatSessions.set(clientId, []);
     }
 
-    let waitMinutes = 3;
-    let queueNumber = Math.floor(Math.random() * 5) + 1;
+    let waitMinutes = 5;
+    let queueNumber = Math.floor(Math.random() * 8) + 1;
 
     if (isFirstMessage) {
-      waitMinutes = Math.floor(Math.random() * (4 - 2 + 1)) + 2; // بين 2 إلى 4 دقائق
+      // نطاق زمني عشوائي بين 3 إلى 10 دقائق
+      waitMinutes = Math.floor(Math.random() * (10 - 3 + 1)) + 3; 
       clientWaitTimes.set(clientId, waitMinutes);
       
       if (global.ioInstance) {
@@ -88,7 +87,7 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
         });
       }
     } else {
-      waitMinutes = clientWaitTimes.get(clientId) || 3;
+      waitMinutes = clientWaitTimes.get(clientId) || 5;
     }
 
     let imageUrl = null;
@@ -124,14 +123,13 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
   }
 }
 
-// دالة إرسال الإشعار لتليجرام مع بيانات الانتظار
-async function sendSupportChatMessage(clientId, messageText, imageBuffer = null, waitMinutes = 3, isFirst = false, queueNumber = 1) {
+async function sendSupportChatMessage(clientId, messageText, imageBuffer = null, waitMinutes = 5, isFirst = false, queueNumber = 1) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) return null;
 
     const headerText = `💬 <b>${isFirst ? '⚠️ عميل جديد في طابور الانتظار' : 'رسالة جديدة من العميل'}</b>\n` +
                        `🆔 معرف العميل: <code>${clientId}</code>\n` +
-                       (isFirst ? `📌 رقم الانتظار: <b># ${queueNumber}</b>\n⏳ مهلة الانتظار: <b>${waitMinutes} دقائق</b>\n` : ``) +
+                       (isFirst ? `📌 رقم الانتظار: <b># ${queueNumber}</b>\n⏳ مهلة الانتظار العشوائية: <b>${waitMinutes} دقائق</b>\n` : ``) +
                        `----------------------------------------\n`;
 
     const replyMarkup = {
@@ -174,7 +172,6 @@ async function sendSupportChatMessage(clientId, messageText, imageBuffer = null,
   }
 }
 
-// معالجة ردود الآدمن من تليجرام
 async function handleTelegramReply(body) {
   try {
     if (body.callback_query) {
