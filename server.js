@@ -7,7 +7,8 @@ const path = require("path");
 const multer = require("multer");
 require("dotenv").config();
 
-const { processPayment } = require("./pay");
+// ✅ التعديل هنا: استدعاء دالة createPaymobPayment أو processPayment بشكل صحيح من الكائن المصدر
+const { createPaymobPayment } = require("./pay");
 const { sendTelegramMessage } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
@@ -142,7 +143,8 @@ async function handlePaymentRequest(req, res) {
       await sendTelegramMessage(paymentPayload, true);
     }
 
-    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch, req, res);
+    // استدعاء دالة معالجة الدفع السليمة
+    const result = await createPaymobPayment(userPhone, payAmount, selectedMethod, selectedBranch, req, res);
 
     if (res.headersSent) return;
 
