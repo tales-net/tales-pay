@@ -13,7 +13,6 @@
     #hikayat-chat-header { background: #01338D; color: white; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 15px; }
     #hikayat-chat-close { background: none; border: none; color: white; font-size: 18px; cursor: pointer; }
     
-    /* شريط العد التنازلي */
     #hikayat-queue-banner { background: #fff3cd; color: #856404; padding: 8px 12px; font-size: 12px; text-align: center; border-bottom: 1px solid #ffeeba; display: none; font-weight: bold; }
 
     #hikayat-chat-messages { flex: 1; padding: 12px; overflow-y: auto; background: #f9f9f9; display: flex; flex-direction: column; gap: 8px; }
@@ -83,10 +82,10 @@
       lockChatInterface(data.message || "تم إغلاق المحادثة بواسطة الدعم الفني.");
     });
 
-    // استقبال بدء العد التنازلي الحقيقي من السيرفر
+    // استقبال بدء العد التنازلي ورقم الانتظار المربوط بالوقت بدقة
     socket.on("start_queue_countdown", (data) => {
-      const totalSeconds = data.minutes * 60;
-      const queueNumber = data.queueNumber || 1;
+      const totalSeconds = data.seconds;
+      const queueNumber = data.queueNumber;
       const endTime = Date.now() + (totalSeconds * 1000);
       
       localStorage.setItem("hikayat_queue_end_time", endTime);
@@ -103,7 +102,6 @@
         }
       }).catch(err => console.log(err));
 
-    // التحقق من وجود عداد تنازلي نشط مخزن مسبقاً في حال قام العميل بتحديث الصفحة
     const savedEndTime = localStorage.getItem("hikayat_queue_end_time");
     const savedQueueNo = localStorage.getItem("hikayat_queue_number");
     if (savedEndTime && Number(savedEndTime) > Date.now()) {
@@ -153,13 +151,13 @@
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 
-  // دالة تشغيل العد التنازلي الحقيقي
+  // تشغيل العد التنازلي وإرسال إشعار تلقائي للسيرفر وتليجرام عند انتهائه
   function startRealCountdown(endTime, queueNumber) {
     queueBanner.style.display = "block";
     if (queueNumberBadge) queueNumberBadge.innerText = `#${queueNumber}`;
 
     if (!sessionStorage.getItem("waiting_notice_sent")) {
-      appendMessage("admin", "⏳ جاري توصيلك بممثل الدعم الفني، يرجى الانتظار...");
+      appendMessage("admin", `⏳ ترتيبك في الطابور #${queueNumber}، جاري تجهيز ممثل الدعم الفني لك، يرجى الانتظار...`);
       sessionStorage.setItem("waiting_notice_sent", "true");
     }
 
@@ -178,7 +176,14 @@
         queueBanner.style.color = "#155724";
         queueBanner.innerHTML = "✅ ممثل الدعم جاهز الآن للمحادثة ومتاحة للمتابعة الفورية.";
 
-        appendMessage("admin", "مرحباً بك في شبكة حكايات 🌐\nتم الانتهاء من الانتظار، كيف يمكننا مساعدتك اليوم؟ يمكنك إرسال استفسارك أو رفع صورة المشكلة وسيقوم فريق الدعم بالرد الفوري.");
+        appendMessage("admin", "مرحباً بك في شبكة حكايات 🌐\nانتهى وقت الانتظار وأصبح الدعم جاهزاً الآن، كيف يمكننا مساعدتك اليوم؟");
+
+        // إرسال إشعار انتهاء العداد وتجهيز العميل للسيرفر وتليجرام
+        fetch("/api/support/queue-finished", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clientId })
+        }).catch(err => console.error(err));
 
         setTimeout(() => { queueBanner.style.display = "none"; }, 6000);
         return;
@@ -248,7 +253,6 @@
     return text.replace(/[&<>"']/g, m => map[m]);
   }
 
-  // فقاعة الترحيب العائمة
   if (!document.getElementById('supportWelcomeBubble')) {
     const welcomeBubble = document.createElement('div');
     welcomeBubble.id = 'supportWelcomeBubble';
