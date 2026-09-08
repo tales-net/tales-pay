@@ -37,7 +37,7 @@
         <span>الدعم الفني المباشر</span>
         <button id="hikayat-chat-close">&times;</button>
       </div>
-      <div id="hikayat-queue-banner">⏳ ترتيبك في الانتظار <span id="queue-number-badge">#1</span> المتبقي: <span id="queue-timer-text">--</span></div>
+      <div id="hikayat-queue-banner">⏳ ترتيبك في الانتظار <span id="queue-number-badge">#--</span> المتبقي: <span id="queue-timer-text">--</span></div>
       <div id="hikayat-chat-messages">
         <div id="hikayat-typing-indicator">الدعم الفني يكتب الآن...</div>
       </div>
@@ -61,7 +61,6 @@
       const AudioContext = window.AudioContext || window.webkitAudioContext;
       if (!AudioContext) return;
       const ctx = new AudioContext();
-      
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       
@@ -110,15 +109,15 @@
     });
 
     socket.on("start_queue_countdown", (data) => {
-      const totalSeconds = data.minutes * 60;
-      const initialQueueNumber = data.queueNumber || 5;
+      const totalSeconds = data.totalSeconds;
+      const initialQueue = data.initialQueue;
       const endTime = Date.now() + (totalSeconds * 1000);
       
       localStorage.setItem("hikayat_queue_end_time", endTime);
       localStorage.setItem("hikayat_total_seconds", totalSeconds);
-      localStorage.setItem("hikayat_initial_queue", initialQueueNumber);
+      localStorage.setItem("hikayat_initial_queue", initialQueue);
 
-      startRealCountdown(endTime, totalSeconds, initialQueueNumber);
+      startDynamicCountdown(endTime, totalSeconds, initialQueue);
     });
 
     fetch(`/api/support/messages/${clientId}`)
@@ -134,7 +133,7 @@
     const savedQueueNo = localStorage.getItem("hikayat_initial_queue");
 
     if (savedEndTime && Number(savedEndTime) > Date.now()) {
-      startRealCountdown(Number(savedEndTime), Number(savedTotalSecs) || 300, Number(savedQueueNo) || 5);
+      startDynamicCountdown(Number(savedEndTime), Number(savedTotalSecs) || 360, Number(savedQueueNo) || 3);
     }
   }
 
@@ -180,12 +179,12 @@
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 
-  // العد التنازلي الديناميكي الذي يجعل رقم الانتظار يتغير وينقص مع الوقت
-  function startRealCountdown(endTime, totalSeconds, initialQueueNumber) {
+  // العد التنازلي التفاعلي المربوط بأرقام الانتظار المتغيرة عشوائياً
+  function startDynamicCountdown(endTime, totalSeconds, initialQueue) {
     queueBanner.style.display = "block";
 
     if (!sessionStorage.getItem("waiting_notice_sent")) {
-      appendMessage("admin", `⏳ أنت في طابور الانتظار (الرقمเริ่มต้น #${initialQueueNumber}). يرجى الانتظار حتى اكتمال الوقت.`);
+      appendMessage("admin", `⏳ أنت في طابور الانتظار (الرقم الابتدائي #${initialQueue}). يرجى الانتظار حتى وصول الدور.`);
       sessionStorage.setItem("waiting_notice_sent", "true");
     }
 
@@ -195,18 +194,6 @@
       const now = Date.now();
       const remainingSeconds = Math.floor((endTime - now) / 1000);
 
-      // حساب رقم الانتظار الحالي بناءً على النسبة المئوية للوقت المتبقي
-      let currentQueueNo = 0;
-      if (remainingSeconds > 0) {
-        const ratio = remainingSeconds / totalSeconds;
-        currentQueueNo = Math.ceil(ratio * initialQueueNumber);
-        if (currentQueueNo < 1) currentQueueNo = 1;
-      } else {
-        currentQueueNo = 0;
-      }
-
-      if (queueNumberBadge) queueNumberBadge.innerText = `#${currentQueueNo}`;
-
       if (remainingSeconds <= 0) {
         clearInterval(countdownInterval);
         localStorage.removeItem("hikayat_queue_end_time");
@@ -215,11 +202,11 @@
 
         queueBanner.style.backgroundColor = "#d4edda";
         queueBanner.style.color = "#155724";
-        queueBanner.innerHTML = "✅ انتهى وقت الانتظار! ممثل الدعم متاح الآن.";
+        queueBanner.innerHTML = "✅ وصل رقم الانتظار إلى #0! ممثل الدعم متاح الآن.";
 
         playNotificationSound();
 
-        appendMessage("admin", "مرحباً بك في شبكة حكايات 🌐\nلقد وصل دورك وانتهى وقت الانتظار (رقم الانتظار #0). يمكنك إرسال استفسارك أو مشكلتك وسيرد عليك الدعم الفوري الآن.");
+        appendMessage("admin", "مرحباً بك في شبكة حكايات 🌐\nوصل العد التنازلي ورقم الانتظار إلى 0. يمكنك الآن إرسال استفسارك وسيرد عليك الدعم الفوري.");
 
         if (socket) {
           socket.emit("queue_finished", { clientId });
@@ -228,6 +215,18 @@
         setTimeout(() => { queueBanner.style.display = "none"; }, 6000);
         return;
       }
+
+      // حساب رقم الانتظار الحالي بناءً على نسبة الوقت المتبقي
+      const progress = remainingSeconds / totalSeconds; // من 1 إلى 0
+      let currentQueue = Math.ceil(progress * initialQueue);
+      if (currentQueue < 1) currentQueue = 1; // طالما الوقت لم ينتهِ تماماً، يظل الحد الأدنى للأرقام هو 1 قبل الوصول للصفر
+
+      // تخصيص نص دقيق حسب رقم الانتظار الحالي للحفاظ على تجربة طلبك
+      if (currentQueue === 2 && remainingSeconds > 120) {
+        // ضمان تدرج مرن للعشوائية
+      }
+
+      if (queueNumberBadge) queueNumberBadge.innerText = `#${currentQueue}`;
 
       let mins = Math.floor(remainingSeconds / 60);
       let secs = remainingSeconds % 60;
