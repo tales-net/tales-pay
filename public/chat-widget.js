@@ -66,10 +66,11 @@
     initSocketConnection();
   }
 
+  let socket = null;
   let countdownInterval = null;
 
   function initSocketConnection() {
-    const socket = io();
+    socket = io();
     socket.emit("join_chat", clientId);
 
     socket.on("new_message", (data) => {
@@ -87,6 +88,11 @@
 
     socket.on("chat_closed", (data) => {
       lockChatInterface(data.message || "تم إغلاق المحادثة بواسطة الدعم الفني.");
+      
+      // إعادة تعيين معرف عميل جديد للمحادثات القادمة وتفريغ الشات
+      setTimeout(() => {
+        localStorage.removeItem("hikayat_client_id");
+      }, 3000);
     });
 
     // استقبال أمر بدء العد التنازلي من السيرفر عند إرسال أول رسالة
@@ -94,10 +100,15 @@
       startFakeCountdown(data.minutes);
     });
 
+    fetchMessages();
+  }
+
+  function fetchMessages() {
     fetch(`/api/support/messages/${clientId}`)
       .then(res => res.json())
       .then(data => {
         if (data.success && data.messages) {
+          messagesContainer.innerHTML = '<div id="hikayat-typing-indicator">الدعم الفني يكتب الآن...</div>';
           data.messages.forEach(m => appendMessage(m.sender, m.text, m.image));
         }
       }).catch(err => console.log(err));
@@ -230,31 +241,17 @@
     return text.replace(/[&<>"']/g, m => map[m]);
   }
 
-  // ==========================================
-  // دمج فقاعة الترحيب العائمة (على اليمين: right: 20px)
-  // ==========================================
+  // فقاعة الترحيب العائمة
   if (!document.getElementById('supportWelcomeBubble')) {
     const welcomeBubble = document.createElement('div');
     welcomeBubble.id = 'supportWelcomeBubble';
     welcomeBubble.innerHTML = '💬 تحدث معنا مباشرة';
     
     Object.assign(welcomeBubble.style, {
-      position: 'fixed',
-      bottom: '85px',
-      right: '20px',
-      backgroundColor: '#01338D',
-      color: '#ffffff',
-      padding: '10px 16px',
-      borderRadius: '20px 20px 2px 20px',
-      boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
-      fontFamily: 'Segoe UI, Tahoma, Cairo, sans-serif',
-      fontSize: '13px',
-      fontWeight: 'bold',
-      zIndex: '999998',
-      cursor: 'pointer',
-      direction: 'rtl',
-      opacity: '0',
-      transform: 'translateY(15px)',
+      position: 'fixed', bottom: '85px', right: '20px', backgroundColor: '#01338D', color: '#ffffff',
+      padding: '10px 16px', borderRadius: '20px 20px 2px 20px', boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+      fontFamily: 'Segoe UI, Tahoma, Cairo, sans-serif', fontSize: '13px', fontWeight: 'bold',
+      zIndex: '999998', cursor: 'pointer', direction: 'rtl', opacity: '0', transform: 'translateY(15px)',
       transition: 'all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
     });
 
@@ -278,8 +275,6 @@
       }
     }
 
-    setTimeout(() => {
-      removeWelcomeBubble();
-    }, 61000);
+    setTimeout(() => { removeWelcomeBubble(); }, 61000);
   }
 })();
