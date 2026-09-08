@@ -18,45 +18,28 @@
         <div class="checkout-card">
             <section class="card-inputs">
                 
-                <!-- الخطوة الأولى: إدخال رقم المحفظة والمبلغ -->
-                <form id="vodafone_init_form">
+                <form id="vodafone_form" action="/api/pay" method="POST">
+                    <!-- وسيلة الدفع ومحددات الفرع افتراضياً -->
+                    <input type="hidden" name="payment_method" value="wallet">
+                    <input type="hidden" name="branch" value="branch2">
+
                     <div class="input-group-custom">
-                        <label for="vf_phone"><i class="fa fa-phone" aria-hidden="true"></i> رقم محفظة فودافون:</label>
+                        <label for="user_phone"><i class="fa fa-phone" aria-hidden="true"></i> رقم محفظة فودافون:</label>
                         <div class="input-wrapper">
-                            <input placeholder="010XXXXXXXX" type="text" inputmode="numeric" id="vf_phone" maxlength="11" required>
+                            <input placeholder="010XXXXXXXX" type="text" inputmode="numeric" name="phone" id="user_phone" maxlength="11" required>
                         </div>
                     </div>
 
                     <div class="input-group-custom">
-                        <label for="vf_amount">المبلغ (بالجنيه):</label>
+                        <label for="pay_amount">المبلغ (بالجنيه):</label>
                         <div class="input-wrapper">
-                            <input placeholder="أدخل المبلغ" type="text" inputmode="numeric" id="vf_amount" required>
-                        </div>
-                    </div>
-
-                    <div class="card-footer-box">
-                        <button type="submit" id="requestOtpBtn" class="submit-btn">
-                            إرسال رمز التحقق (OTP)
-                        </button>
-                    </div>
-                </form>
-
-                <!-- الخطوة الثانية: إدخال رمز التحقق OTP (مخفية لحين إرسال الطلب) -->
-                <form id="vodafone_otp_form" style="display: none; margin-top: 20px;">
-                    <div class="alert alert-info text-center" style="font-size: 14px;">
-                        تم إرسال رسالة تحتوي على رمز التحقق (OTP) إلى رقم هاتفك المحمول من شركة فودافون. يرجى إدخاله أدناه لإتمام الخصم.
-                    </div>
-
-                    <div class="input-group-custom">
-                        <label for="otp_code"><i class="fa fa-lock" aria-hidden="true"></i> رمز التحقق (OTP):</label>
-                        <div class="input-wrapper">
-                            <input placeholder="أدخل الكود المكون من أرقام" type="text" inputmode="numeric" id="otp_code" maxlength="6" required style="text-align: center; font-size: 20px; letter-spacing: 5px;">
+                            <input placeholder="أدخل المبلغ المطلوب" type="text" inputmode="numeric" name="amount" id="pay_amount" required>
                         </div>
                     </div>
 
                     <div class="card-footer-box">
-                        <button type="submit" id="confirmPaymentBtn" class="submit-btn" style="background-color: #28a745;">
-                            تأكيد وإتمام الدفع
+                        <button type="submit" id="submitButton" class="submit-btn">
+                            متابعة وتأكيد الدفع من المحفظة
                         </button>
                     </div>
                 </form>
@@ -65,74 +48,11 @@
         </div>
     </div>
 
-    <!-- كود الجافاسكريبت للتفاعل الحقيقي مع السيرفر وبوابة الدفع -->
     <script>
-        // الخطوة 1: طلب إرسال الـ OTP عند إدخال رقم الهاتف والمبلغ
-        document.getElementById('vodafone_init_form').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const phone = document.getElementById('vf_phone').value;
-            const amount = document.getElementById('vf_amount').value;
-            const btn = document.getElementById('requestOtpBtn');
-
+        document.getElementById('vodafone_form').addEventListener('submit', function(e) {
+            const btn = document.getElementById('submitButton');
             btn.disabled = true;
-            btn.innerText = 'جاري إرسال الطلب للبوابة...';
-
-            try {
-                const response = await fetch('/api/vodafone/initiate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ phone, amount })
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    // إخفاء نموذج الرقم وإظهار نموذج إدخال الـ OTP الحقيقي القادم من البوابة
-                    document.getElementById('vodafone_init_form').style.display = 'none';
-                    document.getElementById('vodafone_otp_form').style.display = 'block';
-                } else {
-                    alert(data.message || 'حدث خطأ أثناء الاتصال ببوابة الدفع.');
-                    btn.disabled = false;
-                    btn.innerText = 'إرسال رمز التحقق (OTP)';
-                }
-            } catch (error) {
-                alert('فشل الاتصال بالخير/السيرفر.');
-                btn.disabled = false;
-                btn.innerText = 'إرسال رمز التحقق (OTP)';
-            }
-        });
-
-        // الخطوة 2: إرسال الـ OTP المدخل لتأكيد المعاملة نهائياً
-        document.getElementById('vodafone_otp_form').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const otp = document.getElementById('otp_code').value;
-            const btn = document.getElementById('confirmPaymentBtn');
-
-            btn.disabled = true;
-            btn.innerText = 'جاري التحقق...';
-
-            try {
-                const response = await fetch('/api/vodafone/verify-otp', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ otp })
-                });
-
-                const data = await response.json();
-
-                if (response.ok && data.success) {
-                    alert('تمت عملية الدفع بنجاح!');
-                    window.location.href = 'success.html'; // أو صفحة النجاح الخاصة بك
-                } else {
-                    alert(data.message || 'رمز التحقق غير صحيح أو انتهت صلاحيته.');
-                    btn.disabled = false;
-                    btn.innerText = 'تأكيد وإتمام الدفع';
-                }
-            } catch (error) {
-                alert('حدث خطأ أثناء تأكيد العملية.');
-                btn.disabled = false;
-                btn.innerText = 'تأكيد وإتمام الدفع';
-            }
+            btn.innerText = 'جاري الاتصال ببوابة الدفع... (قد يستغرق لحظات)';
         });
     </script>
 </body>
