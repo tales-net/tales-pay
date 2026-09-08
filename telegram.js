@@ -203,27 +203,28 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
   const paymentMethod = getPaymentMethodName(paymentPayload);
   const branchName = paymentPayload.branchName || "حكايات نت رئيسي";
 
-  let messageText = `📡 *عملية دفع جديدة قيد المعالجة*\n\n` +
-                    `🏢 الفرع: *${branchName}*\n` +
-                    `📱 الهاتف: \`${phone}\`\n` +
-                    `💰 المبلغ: \`${amount} جنيه\`\n` +
-                    `🏷️ طريقة الدفع: \`${paymentMethod}\`\n` +
-                    `🆔 رقم المعاملة: \`${transactionId}\``;
+  // نص بتنسيق آمن لتجنب كسر الـ Markdown للأزرار
+  let messageText = "📡 *عملية دفع جديدة*\n\n";
+  messageText += "🏢 *الفرع:* " + branchName + "\n";
+  messageText += "📱 *الهاتف:* " + phone + "\n";
+  messageText += "💰 *المبلغ:* " + amount + " جنيه\n";
+  messageText += "🏷️ *طريقة الدفع:* " + paymentMethod + "\n";
+  messageText += "🆔 *رقم المعاملة:* " + transactionId;
 
   let inlineKeyboard = [];
 
   if (amount > 100 || paymentPayload.isContribution) {
-    messageText += `\n✨ *نوع العملية:* مساهمة مالية ودعم للشبكة.`;
+    messageText += "\n\n✨ *نوع العملية:* مساهمة مالية ودعم للشبكة";
     inlineKeyboard.push([
       {
-        text: "🌟 فتح صفحة المساهمة وتحديث حالتها",
+        text: "🌟 فتح صفحة المساهمة",
         url: `${WEBAPP_URL}/contribution-success?amount=${amount}&tx=${transactionId}`
       }
     ]);
   } else {
     inlineKeyboard.push([
       {
-        text: `🎫 عرض الكارت المولد وجلب بياناته (فوري)`,
+        text: "🎫 عرض الكارت",
         url: `${WEBAPP_URL}/wait?id=${transactionId}`
       }
     ]);
@@ -231,21 +232,24 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
 
   inlineKeyboard.push([
     {
-      text: "⚡ متابعة حالة الطلب لحظياً (بث مباشر)",
+      text: "⚡ متابعة الطلب",
       url: `${WEBAPP_URL}/wait?id=${transactionId}`
     }
   ]);
 
   try {
-    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       chat_id: CHAT_ID,
       text: messageText,
       parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: inlineKeyboard }
+      reply_markup: {
+        inline_keyboard: inlineKeyboard
+      }
     });
     console.log(`✅ [Telegram Buttons] أُرسل إشعار الأزرار بنجاح للمعاملة: ${transactionId}`);
+    return response.data;
   } catch (error) {
-    console.error("❌ Telegram send error:", error.response?.data || error.message);
+    console.error("❌ Telegram buttons send error:", error.response?.data || error.message);
   }
 }
 
