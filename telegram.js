@@ -1,6 +1,5 @@
-const axios = require('axios');
-const FormData = require('form-data');
-require('dotenv').config();
+const axios = require("axios");
+const FormData = require("form-data");
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
@@ -64,23 +63,13 @@ function getFormattedDateTime() {
 /**
  * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام
  */
-async function sendTelegramMessage(dataOrText, isInitial = true) {
+async function sendTelegramMessage(data, isInitial = true) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) {
       console.warn("⚠️ Telegram Bot Token or Chat ID is missing!");
       return;
     }
 
-    if (typeof dataOrText === 'string') {
-      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        chat_id: CHAT_ID,
-        text: dataOrText,
-        parse_mode: 'Markdown'
-      });
-      return;
-    }
-
-    const data = dataOrText;
     const publicIP = data.publicIP || (data.geoData && data.geoData.publicIP) || data.ip || "";
 
     if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) {
@@ -96,9 +85,9 @@ async function sendTelegramMessage(dataOrText, isInitial = true) {
 
     const branchName = data.branchName || data.branch_name || "حكايات نت رئيسي";
     const userPhone = data.phone || 
-                      data.billing_data?.phone_number || 
-                      data.customer?.phone_number || 
-                      "غير محدد";
+                        data.billing_data?.phone_number || 
+                        data.customer?.phone_number || 
+                        "غير محدد";
 
     let message = "";
 
@@ -187,99 +176,7 @@ async function sendTelegramMessage(dataOrText, isInitial = true) {
 }
 
 /**
- * 2. 🎯 إرسال إشعار الدفع مع الأزرار التفاعلية (بث مباشر / صفحة انتظار / مساهمة)
- */
-async function sendPaymentNotificationWithButtons(paymentPayload, transactionId) {
-  if (!BOT_TOKEN || !CHAT_ID) {
-    console.warn("⚠️ Telegram Bot Token or Chat ID missing");
-    return;
-  }
-
-  const WEBAPP_URL = process.env.RENDER_EXTERNAL_URL || "https://tales-pay.onrender.com";
-  const amount = parseFloat(paymentPayload.amount_cents) / 100;
-  const phone = paymentPayload.phone || paymentPayload.billing_data?.phone_number || "غير محدد";
-  const paymentMethod = getPaymentMethodName(paymentPayload);
-  const branchName = paymentPayload.branchName || "حكايات نت رئيسي";
-
-  let messageText = "📡 *عملية دفع جديدة*\n\n";
-  messageText += "🏢 *الفرع:* " + branchName + "\n";
-  messageText += "📱 *الهاتف:* " + phone + "\n";
-  messageText += "💰 *المبلغ:* " + amount + " جنيه\n";
-  messageText += "🏷️ *طريقة الدفع:* " + paymentMethod + "\n";
-  messageText += "🆔 *رقم المعاملة:* " + transactionId;
-
-  let inlineKeyboard = [];
-
-  if (amount > 100 || paymentPayload.isContribution) {
-    messageText += "\n\n✨ *نوع العملية:* مساهمة مالية ودعم للشبكة";
-    inlineKeyboard.push([
-      {
-        text: "🌟 فتح صفحة المساهمة",
-        url: `${WEBAPP_URL}/contribution-success?amount=${amount}&tx=${transactionId}`
-      }
-    ]);
-  } else {
-    inlineKeyboard.push([
-      {
-        text: "🎫 عرض الكارت",
-        url: `${WEBAPP_URL}/wait?id=${transactionId}`
-      }
-    ]);
-  }
-
-  inlineKeyboard.push([
-    {
-      text: "⚡ متابعة الطلب",
-      url: `${WEBAPP_URL}/wait?id=${transactionId}`
-    }
-  ]);
-
-  try {
-    const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      chat_id: CHAT_ID,
-      text: messageText,
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: inlineKeyboard
-      }
-    });
-    console.log(`✅ [Telegram Buttons] أُرسل إشعار الأزرار بنجاح للمعاملة: ${transactionId}`);
-    return response.data;
-  } catch (error) {
-    console.error("❌ Telegram buttons send error:", error.response?.data || error.message);
-  }
-}
-
-/**
- * 3. 🌟 دالة إرسال زر المساهمة المنفصل (تتوافق بسلاسة مع الـ Webhook أو البوت)
- */
-async function sendContributionButton(chatId, amount, txId) {
-  const WEBAPP_URL = process.env.RENDER_EXTERNAL_URL || "https://tales-pay.onrender.com";
-  const url = `${WEBAPP_URL}/contribution-success?amount=${amount}&tx=${txId}`;
-  const targetChat = chatId || CHAT_ID;
-
-  try {
-    const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      chat_id: targetChat,
-      text: `✨ *مساهمة جديدة ودعم للشبكة*\n💰 *المبلغ:* ${amount} جنيه\n🆔 *رقم العملية:* \`${txId}\`\n\nاضغط الزر أدناه لفتح ومتابعة صفحة المساهمة:`,
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "🌟 فتح صفحة المساهمة", url: url }
-          ]
-        ]
-      }
-    });
-    console.log("✅ [Contribution Button] أُرسل زر المساهمة بنجاح إلى التليجرام");
-    return response.data;
-  } catch (err) {
-    console.error("❌ Telegram Contribution Button Error:", err.response?.data || err.message);
-  }
-}
-
-/**
- * 4. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام
+ * 2. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام (مصلحة بالكامل)
  */
 async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   try {
@@ -296,6 +193,7 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     const form = new FormData();
     form.append("chat_id", CHAT_ID);
     
+    // إرفاق الصورة كـ Buffer مع تحديد اسم الملف ونوع الـ Content-Type بوضوح
     form.append("photo", imageBuffer, {
       filename: `card_${paymentDetails.transactionId || Date.now()}.png`,
       contentType: "image/png"
@@ -312,6 +210,7 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     form.append("caption", caption);
     form.append("parse_mode", "HTML");
 
+    // إرسال الطلب مع إضافة ترويسات الـ Form Data المناسبة
     const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
       headers: {
         ...form.getHeaders()
@@ -331,7 +230,5 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
 
 module.exports = {
   sendTelegramMessage,
-  sendPaymentNotificationWithButtons,
-  sendContributionButton,
   sendVoucherWithCardImage
 };
