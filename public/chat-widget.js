@@ -10,8 +10,11 @@
     #hikayat-chat-bubble { position: fixed; bottom: 20px; right: 20px; background: #01338D; color: white; width: 55px; height: 55px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 99999; font-size: 24px; transition: transform 0.2s; }
     #hikayat-chat-bubble:hover { transform: scale(1.05); }
     #hikayat-chat-box { position: fixed; bottom: 90px; right: 20px; width: 340px; height: 480px; background: white; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); display: none; flex-direction: column; z-index: 99999; direction: rtl; font-family: Tahoma, Cairo, sans-serif; overflow: hidden; border: 1px solid #e0e0e0; }
-    #hikayat-chat-header { background: #01338D; color: white; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 15px; }
-    #hikayat-chat-close { background: none; border: none; color: white; font-size: 18px; cursor: pointer; }
+    
+    /* توسيط عنوان الدعم الفني المباشر وجعل زر الإغلاق على اليسار */
+    #hikayat-chat-header { background: #01338D; color: white; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 15px; position: relative; }
+    #hikayat-chat-header span { flex: 1; text-align: center; }
+    #hikayat-chat-close { background: none; border: none; color: white; font-size: 18px; cursor: pointer; position: absolute; left: 15px; }
     
     #hikayat-queue-banner { background: #fff3cd; color: #856404; padding: 8px 12px; font-size: 12px; text-align: center; border-bottom: 1px solid #ffeeba; display: none; font-weight: bold; }
 
@@ -37,7 +40,8 @@
         <span>الدعم الفني المباشر</span>
         <button id="hikayat-chat-close">&times;</button>
       </div>
-      <div id="hikayat-queue-banner">⏳ ترتيبك في الانتظار <span id="queue-number-badge">#--</span> المتبقي: <span id="queue-timer-text">--</span></div>
+      <!-- تم إخفاء نص الوقت وتعديل البانر ليظهر رقم الانتظار فقط بشكل خفي أو مبسط -->
+      <div id="hikayat-queue-banner">⏳ ترتيبك الحالي في الانتظار: <span id="queue-number-badge">#--</span></div>
       <div id="hikayat-chat-messages">
         <div id="hikayat-typing-indicator">الدعم الفني يكتب الآن...</div>
       </div>
@@ -146,7 +150,6 @@
   const messagesContainer = document.getElementById("hikayat-chat-messages");
   const typingIndicator = document.getElementById("hikayat-typing-indicator");
   const queueBanner = document.getElementById("hikayat-queue-banner");
-  const queueTimerText = document.getElementById("queue-timer-text");
   const queueNumberBadge = document.getElementById("queue-number-badge");
 
   function toggleChat() {
@@ -179,7 +182,7 @@
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 
-  // العد التنازلي التفاعلي المربوط بأرقام الانتظار المتغيرة عشوائياً
+  // العد التنازلي يعمل في الخلفية لتغيير أرقام الانتظار دون إظهار الوقت للعميل
   function startDynamicCountdown(endTime, totalSeconds, initialQueue) {
     queueBanner.style.display = "block";
 
@@ -217,20 +220,11 @@
       }
 
       // حساب رقم الانتظار الحالي بناءً على نسبة الوقت المتبقي
-      const progress = remainingSeconds / totalSeconds; // من 1 إلى 0
+      const progress = remainingSeconds / totalSeconds;
       let currentQueue = Math.ceil(progress * initialQueue);
-      if (currentQueue < 1) currentQueue = 1; // طالما الوقت لم ينتهِ تماماً، يظل الحد الأدنى للأرقام هو 1 قبل الوصول للصفر
-
-      // تخصيص نص دقيق حسب رقم الانتظار الحالي للحفاظ على تجربة طلبك
-      if (currentQueue === 2 && remainingSeconds > 120) {
-        // ضمان تدرج مرن للعشوائية
-      }
+      if (currentQueue < 1) currentQueue = 1;
 
       if (queueNumberBadge) queueNumberBadge.innerText = `#${currentQueue}`;
-
-      let mins = Math.floor(remainingSeconds / 60);
-      let secs = remainingSeconds % 60;
-      queueTimerText.innerText = `${mins} دقيقة و ${secs < 10 ? '0' : ''}${secs} ثانية`;
     }, 1000);
   }
 
