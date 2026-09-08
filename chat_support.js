@@ -36,7 +36,7 @@ function initSocket(io) {
             chat_id: CHAT_ID,
             text: `🚨 <b>انتهى وقت الانتظار تماماً للعميل!</b>\n` +
                   `🆔 معرف العميل: <code>${clientId}</code>\n` +
-                  `⏱️ وصل العد التنازلي إلى <b>0</b> والعميل جاهز الآن للمحادثة والمتابعة الفورية.`,
+                  `⏱️ وصل رقم الانتظار والعداد إلى <b>0</b> والعميل جاهز الآن للمحادثة الفورية.`,
             parse_mode: "HTML"
           });
         } catch (err) {
@@ -48,7 +48,12 @@ function initSocket(io) {
   global.ioInstance = io;
 }
 
-async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
+async function handleClientMessage(res, sendSupportChatMessageFunc) {
+  // تم ترك الدالة متوافقة مع البرامترات
+}
+
+// دالة لمعالجة الرسائل
+async function handleClientMessageRoute(req, res, sendSupportChatMessageFunc) {
   try {
     const clientId = req.body.clientId || req.body.clientID;
     const messageText = req.body.message || "";
@@ -72,23 +77,31 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
       chatSessions.set(clientId, []);
     }
 
-    let waitMinutes = 5;
-    // نطاق زمني عشوائي من 3 إلى 10 دقائق
-    let queueNumber = Math.floor(Math.random() * (10 - 3 + 1)) + 3;
+    let totalSeconds = 360; // افتراضي
+    let initialQueue = 3;   // افتراضي
 
     if (isFirstMessage) {
-      waitMinutes = queueNumber; // مطابقة الوقت لرقم الانتظار العشوائي ليكون متناسقاً
-      clientWaitTimes.set(clientId, waitMinutes);
+      // اختيار رقم انتظار عشوائي ضمن النطاق المطلوب (مثلاً بين 3 إلى 10، أو بناءً على رغبتك)
+      // لنجعل النطاق العشوائي يبدأ من 3 كحد أدنى وحتى 6 أو 10 بناءً على طلبك السابق
+      initialQueue = Math.floor(Math.random() * (10 - 3 + 1)) + 3; 
+      
+      // تعيين وقت عشوائي إجمالي يتناسب مع الرقم (مثلاً كل رقم يحمل وقتاً عشوائياً مختلفاً)
+      // إذا كان رقم الانتظار 3 قد يصل الوقت الإجمالي إلى ما بين 5 إلى 7 دقائق (300 إلى 420 ثانية)
+      // لتوليد عشوائية ذكية ومختلفة لكل عميل:
+      totalSeconds = initialQueue * 60 + Math.floor(Math.random() * 120); // إضافة ثوانٍ عشوائية إضافية للتنوع
+
+      clientWaitTimes.set(clientId, { totalSeconds, initialQueue });
       
       if (global.ioInstance) {
         global.ioInstance.to(clientId).emit("start_queue_countdown", { 
-          minutes: waitMinutes, 
-          queueNumber: queueNumber 
+          totalSeconds: totalSeconds, 
+          initialQueue: initialQueue 
         });
       }
     } else {
-      waitMinutes = clientWaitTimes.get(clientId) || 5;
-      queueNumber = waitMinutes;
+      const stored = clientWaitTimes.get(clientId) || { totalSeconds: 360, initialQueue: 3 };
+      totalSeconds = stored.totalSeconds;
+      initialQueue = stored.initialQueue;
     }
 
     let imageUrl = null;
@@ -108,7 +121,8 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
 
     chatSessions.get(clientId).push(messageObj);
 
-    const telegramMsgId = await sendSupportChatMessageFunc(clientId, messageText, imageBuffer, waitMinutes, isFirstMessage, queueNumber);
+    const waitMinutesApprox = Math.ceil(totalSeconds / 60);
+    const telegramMsgId = await sendSupportChatMessageFunc(clientId, messageText, imageBuffer, waitMinutesApprox, isFirstMessage, initialQueue);
     if (telegramMsgId) {
       telegramToClientMap.set(String(telegramMsgId), clientId);
     }
@@ -124,13 +138,13 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
   }
 }
 
-async function sendSupportChatMessage(clientId, messageText, imageBuffer = null, waitMinutes = 5, isFirst = false, queueNumber = 5) {
+async function sendSupportChatMessage(clientId, messageText, imageBuffer = null, waitMinutes = 6, isFirst = false, queueNumber = 3) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) return null;
 
-    const headerText = `💬 <b>${isFirst ? '⚠️ عميل جديد في طابور الانتظار' : 'رسالة جديدة من العميل'}</b>\n` +
+    const headerText = `💬 <b>${isFirst ? '⚠️ عميل جديد في طابور الانتظار الديناميكي' : 'رسالة جديدة من العميل'}</b>\n` +
                        `🆔 معرف العميل: <code>${clientId}</code>\n` +
-                       (isFirst ? `📌 رقم الانتظار الابتدائي: <b># ${queueNumber}</b>\n⏳ مهلة الانتظار العشوائية: <b>${waitMinutes} دقائق</b>\n` : ``) +
+                       (isFirst ? `📌 رقم الانتظار الابتدائي: <b># ${queueNumber}</b>\n⏳ الوقت التقديري المتغير: <b>~ ${waitMinutes} دقائق</b>\n` : ``) +
                        `----------------------------------------\n`;
 
     const replyMarkup = {
@@ -305,7 +319,7 @@ function getStoredMessages(clientId) {
 
 module.exports = {
   initSocket,
-  handleClientMessage,
+  handleClientMessage: handleClientMessageRoute,
   sendSupportChatMessage,
   handleTelegramReply,
   getStoredMessages
