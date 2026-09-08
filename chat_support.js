@@ -4,18 +4,16 @@ const FormData = require("form-data");
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-// ذاكرة مؤقتة لتخزين المحادثات وحالاتها
+// ذاكرة مؤقتة لتخزين المحادثات وحاتها
 const chatSessions = global.chatSessions || new Map();
 global.chatSessions = chatSessions;
 
 const chatStatuses = global.chatStatuses || new Map();
 global.chatStatuses = chatStatuses;
 
-// خريطة لتخزين وقت أو مدة الانتظار الخاصة بكل عميل
 const clientWaitTimes = global.clientWaitTimes || new Map();
 global.clientWaitTimes = clientWaitTimes;
 
-// خريطة لربط معرف رسالة التليجرام بمعرف العميل لتسهيل الرد المباشر
 const telegramToClientMap = global.telegramToClientMap || new Map();
 global.telegramToClientMap = telegramToClientMap;
 
@@ -27,6 +25,10 @@ function initSocket(io) {
         
         // إرسال رسالة ترحيبية تلقائية إذا كانت المحادثة جديدة ولا توجد رسائل سابقة
         if (!chatSessions.has(clientId) || chatSessions.get(clientId).length === 0) {
+          if (chatStatuses.get(clientId) === "closed") {
+            chatStatuses.delete(clientId); // السماح بفتح محادثة جديدة نظيفة
+          }
+
           const welcomeMsg = {
             sender: "admin",
             text: "مرحباً بك في حكايات 🌐\nكيف يمكننا مساعدتك اليوم؟ يمكنك إرسال استفسارك أو رفع صورة المشكلة وسيقوم فريق الدعم بالرد عليك في أقرب وقت.",
@@ -45,7 +47,7 @@ function initSocket(io) {
   global.ioInstance = io;
 }
 
-// معالجة رسالة العميل وإرسالها لتليجرام مع أزرار تفاعلية والعد التنازلي الوهمي
+// معالجة رسالة العميل وإرسالها لتليجرام مع العد التنازلي الوهمي
 async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
   try {
     const clientId = req.body.clientId || req.body.clientID;
@@ -65,16 +67,16 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
       });
     }
 
-    const isFirstMessage = !chatSessions.has(clientId) || chatSessions.get(clientId).length === 0;
+    const isFirstMessage = !chatSessions.has(clientId) || chatSessions.get(clientId).filter(m => m.sender === 'client').length === 0;
 
     if (!chatSessions.has(clientId)) {
       chatSessions.set(clientId, []);
     }
 
-    // إذا كانت أول رسالة، نقوم بتوليد رقم عشوائي بين 5 إلى 20 دقيقة للانتظار
     let randomWaitMinutes = 0;
     if (isFirstMessage) {
-      randomWaitMinutes = Math.floor(Math.random() * (20 - 5 + 1)) + 5; // بين 5 و 20 دقيقة
+      // توليد رقم عشوائي بين 5 إلى 20 دقيقة للانتظار الوهمي
+      randomWaitMinutes = Math.floor(Math.random() * (20 - 5 + 1)) + 5; 
       clientWaitTimes.set(clientId, randomWaitMinutes);
       
       // إرسال حدث للعميل لبدء العد التنازلي في الواجهة فوراً
@@ -82,7 +84,7 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
         global.ioInstance.to(clientId).emit("start_queue_countdown", { minutes: randomWaitMinutes });
       }
     } else {
-      randomWaitMinutes = clientWaitTimes.get(clientId) || 0;
+      randomWaitMinutes = clientWaitTimes.get(clientId) || 5;
     }
 
     let imageUrl = null;
@@ -108,7 +110,6 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
       telegramToClientMap.set(String(telegramMsgId), clientId);
     }
 
-    // بث الرسالة للسوكيت إن وجد
     if (global.ioInstance) {
       global.ioInstance.to(clientId).emit("new_message", messageObj);
     }
@@ -120,7 +121,7 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
   }
 }
 
-// دالة إرسال الرسالة إلى تليجرام مع الأزرار وتنبيه العد التنازلي
+// دالة إرسال الرسالة إلى تليجرام
 async function sendSupportChatMessage(clientId, messageText, imageBuffer = null, waitMinutes = 0, isFirst = false) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) return null;
@@ -207,20 +208,24 @@ async function handleTelegramReply(body) {
       if (data.startsWith("close_")) {
         const clientId = data.replace("close_", "");
         chatStatuses.set(clientId, "closed");
+        
+        // مسح الذاكرة الخاصة بالمحادثة القديمة تماماً لتبدأ جديدة بعد الإغلاق
+        chatSessions.delete(clientId);
+        clientWaitTimes.delete(clientId);
 
         if (global.ioInstance) {
-          global.ioInstance.to(clientId).emit("chat_closed", { message: "تم إغلاق المحادثة من قبل الدعم الفني." });
+          global.ioInstance.to(clientId).emit("chat_closed", { message: "تم إغلاق المحادثة من قبل الدعم الفني. سيتم بدء محادثة جديدة." });
         }
 
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
           callback_query_id: callbackQuery.id,
-          text: "🔒 تم إغلاق الشات بنجاح."
+          text: "🔒 تم إغلاق الشات بنجاح ومسح السجل."
         });
 
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageReplyMarkup`, {
           chat_id: chatId,
           message_id: messageId,
-          reply_markup: { inline_keyboard: [[{ text: "🔒 المحادثة مغلقة حالياً", callback_data: "closed" }]] }
+          reply_markup: { inline_keyboard: [[{ text: "🔒 المحادثة مغلقة وممسوحة", callback_data: "closed" }]] }
         });
       }
       return;
