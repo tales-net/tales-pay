@@ -244,14 +244,23 @@ app.get("/contribution-success", (req, res) => {
   res.send(generateContributionHtmlPage(amount, transactionId));
 });
 
-// مسار تأكيد المساهمة من البوت
+// مسار تأكيد المساهمة من البوت مع إرسال الرابط المباشر
 app.post('/api/confirm-contribution', async (req, res) => {
   const { txId, amount } = req.body;
   if (txId) {
     contributions[txId] = { isContribution: true, amount: amount || 0, createdAt: Date.now() };
   }
+
+  const WEBAPP_URL = process.env.RENDER_EXTERNAL_URL || "https://tales-pay.onrender.com";
+  const contributionLink = `${WEBAPP_URL}/contribution-success?amount=${amount || 0}&tx=${txId || "غير محدد"}`;
+
+  const message = `✅ *العميل وصل صفحة المساهمة*\n\n` +
+                  `💰 *المبلغ:* ${amount || 0} جنيه\n` +
+                  `🆔 *رقم العملية:* \`${txId || "غير محدد"}\`\n\n` +
+                  `🔗 [اضغط هنا لفتح ومراجعة صفحة المساهمة](${contributionLink})`;
+
   if (typeof sendTelegramMessage === "function") {
-    await sendTelegramMessage(`✅ العميل وصل صفحة المساهمة\n💰 المبلغ: ${amount || 0} جنيه\n🆔 رقم العملية: ${txId || "غير محدد"}`);
+    await sendTelegramMessage(message);
   }
   res.json({ success: true });
 });
