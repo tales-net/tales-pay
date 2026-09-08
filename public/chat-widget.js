@@ -1,10 +1,12 @@
 (function () {
+  // توليد أو جلب معرف فريد للعميل وتخزينه في المتصفح
   let clientId = localStorage.getItem("hikayat_client_id");
   if (!clientId) {
     clientId = "client_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
     localStorage.setItem("hikayat_client_id", clientId);
   }
 
+  // حقن التصميم والأنماط الخاصة بالشات والعد التنازلي في الصفحة (على اليمين: right: 20px)
   const chatStyle = document.createElement("style");
   chatStyle.innerHTML = `
     #hikayat-chat-bubble { position: fixed; bottom: 20px; right: 20px; background: #01338D; color: white; width: 55px; height: 55px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 99999; font-size: 24px; transition: transform 0.2s; }
@@ -54,6 +56,7 @@
   container.innerHTML = chatHTML;
   document.body.appendChild(container);
 
+  // تحميل مكتبة Socket.io إذا لم تكن موجودة
   if (typeof io === "undefined") {
     const script = document.createElement("script");
     script.src = "https://cdn.socket.io/4.7.2/socket.io.min.js";
@@ -75,15 +78,18 @@
     });
 
     socket.on("typing_status", (data) => {
-      if (data.isTyping) showTypingIndicator();
-      else hideTypingIndicator();
+      if (data.isTyping) {
+        showTypingIndicator();
+      } else {
+        hideTypingIndicator();
+      }
     });
 
     socket.on("chat_closed", (data) => {
       lockChatInterface(data.message || "تم إغلاق المحادثة بواسطة الدعم الفني.");
     });
 
-    // استقبال أمر بدء العد التنازلي من السيرفر بعد أول رسالة
+    // استقبال أمر بدء العد التنازلي من السيرفر عند إرسال أول رسالة
     socket.on("start_queue_countdown", (data) => {
       startFakeCountdown(data.minutes);
     });
@@ -93,7 +99,6 @@
       .then(data => {
         if (data.success && data.messages) {
           data.messages.forEach(m => appendMessage(m.sender, m.text, m.image));
-          // إذا وجدنا رسائل سابقة للعميل ولم ينته العد، يمكن استئنافه أو تخطيه
         }
       }).catch(err => console.log(err));
   }
@@ -124,7 +129,9 @@
   }
 
   function hideTypingIndicator() {
-    if (typingIndicator) typingIndicator.style.display = "none";
+    if (typingIndicator) {
+      typingIndicator.style.display = "none";
+    }
   }
 
   function appendMessage(sender, text, imageUrl) {
@@ -160,7 +167,7 @@
       let mins = Math.floor(totalSeconds / 60);
       let secs = totalSeconds % 60;
       queueTimerText.innerText = `${mins} دقيقة و ${secs < 10 ? '0' : ''}${secs} ثانية`;
-    }, 1000); // ينقص كل ثانية حقيقية ليعطيك عداداً سلسماً يمثل الدقائق المتفق عليها
+    }, 1000);
   }
 
   function lockChatInterface(reason) {
@@ -206,7 +213,9 @@
 
   sendBtn.onclick = handleSend;
   input.onkeypress = (e) => { 
-    if (e.key === "Enter") handleSend();
+    if (e.key === "Enter") {
+      handleSend();
+    }
   };
 
   imgInput.onchange = (e) => {
@@ -221,17 +230,31 @@
     return text.replace(/[&<>"']/g, m => map[m]);
   }
 
-  // فقاعة الترحيب العائمة (تجعل العميل يضغط عليها)
+  // ==========================================
+  // دمج فقاعة الترحيب العائمة (على اليمين: right: 20px)
+  // ==========================================
   if (!document.getElementById('supportWelcomeBubble')) {
     const welcomeBubble = document.createElement('div');
     welcomeBubble.id = 'supportWelcomeBubble';
     welcomeBubble.innerHTML = '💬 تحدث معنا مباشرة';
     
     Object.assign(welcomeBubble.style, {
-      position: 'fixed', bottom: '85px', right: '20px', backgroundColor: '#01338D', color: '#ffffff',
-      padding: '10px 16px', borderRadius: '20px 20px 2px 20px', boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
-      fontFamily: 'Segoe UI, Tahoma, Cairo, sans-serif', fontSize: '13px', fontWeight: 'bold',
-      zIndex: '999998', cursor: 'pointer', direction: 'rtl', opacity: '0', transform: 'translateY(15px)',
+      position: 'fixed',
+      bottom: '85px',
+      right: '20px',
+      backgroundColor: '#01338D',
+      color: '#ffffff',
+      padding: '10px 16px',
+      borderRadius: '20px 20px 2px 20px',
+      boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+      fontFamily: 'Segoe UI, Tahoma, Cairo, sans-serif',
+      fontSize: '13px',
+      fontWeight: 'bold',
+      zIndex: '999998',
+      cursor: 'pointer',
+      direction: 'rtl',
+      opacity: '0',
+      transform: 'translateY(15px)',
       transition: 'all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
     });
 
@@ -244,14 +267,19 @@
 
     welcomeBubble.onclick = function() {
       toggleChat();
-      if (welcomeBubble && welcomeBubble.parentNode) welcomeBubble.remove();
+      removeWelcomeBubble();
     };
 
-    setTimeout(() => {
+    function removeWelcomeBubble() {
       if (welcomeBubble && welcomeBubble.parentNode) {
         welcomeBubble.style.opacity = '0';
+        welcomeBubble.style.transform = 'translateY(15px)';
         setTimeout(() => welcomeBubble.remove(), 500);
       }
+    }
+
+    setTimeout(() => {
+      removeWelcomeBubble();
     }, 61000);
   }
 })();
