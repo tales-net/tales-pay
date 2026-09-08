@@ -102,7 +102,8 @@ function generateWaitPageHtml(transactionId, networkUrl) {
         </div>
 
         <script>
-          const txId = "${transactionId}";
+          const urlParams = new URLSearchParams(window.location.search);
+          const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
           let attempts = 0;
           
           // نصوص حية تتغير بشكل ديناميكي لمحاكاة البث المباشر وجاري الكتابة
@@ -130,7 +131,7 @@ function generateWaitPageHtml(transactionId, networkUrl) {
               if (data.success && data.data) {
                 const cardAmount = parseFloat(data.data.amount || 0);
 
-                // الانتقال الفوري والسريع لصفحة المساهمة إذا كان المبلغ أكبر من 100
+                // الانتقال الفوري والسريع لصفحة المساهمة إذا كان المبلغ أكبر من 100 أو مساهمة
                 if (cardAmount > 100 || data.data.isContribution) {
                   document.getElementById('statusText').innerText = "تم تأكيد المساهمة، جاري توجيهك الآن...";
                   window.location.href = '/contribution-success?amount=' + cardAmount + '&tx=' + encodeURIComponent(txId);
