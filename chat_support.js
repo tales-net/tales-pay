@@ -73,11 +73,11 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
     }
 
     let waitMinutes = 5;
-    let queueNumber = Math.floor(Math.random() * 8) + 1;
+    // نطاق زمني عشوائي من 3 إلى 10 دقائق
+    let queueNumber = Math.floor(Math.random() * (10 - 3 + 1)) + 3;
 
     if (isFirstMessage) {
-      // نطاق زمني عشوائي بين 3 إلى 10 دقائق
-      waitMinutes = Math.floor(Math.random() * (10 - 3 + 1)) + 3; 
+      waitMinutes = queueNumber; // مطابقة الوقت لرقم الانتظار العشوائي ليكون متناسقاً
       clientWaitTimes.set(clientId, waitMinutes);
       
       if (global.ioInstance) {
@@ -88,6 +88,7 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
       }
     } else {
       waitMinutes = clientWaitTimes.get(clientId) || 5;
+      queueNumber = waitMinutes;
     }
 
     let imageUrl = null;
@@ -123,13 +124,13 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
   }
 }
 
-async function sendSupportChatMessage(clientId, messageText, imageBuffer = null, waitMinutes = 5, isFirst = false, queueNumber = 1) {
+async function sendSupportChatMessage(clientId, messageText, imageBuffer = null, waitMinutes = 5, isFirst = false, queueNumber = 5) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) return null;
 
     const headerText = `💬 <b>${isFirst ? '⚠️ عميل جديد في طابور الانتظار' : 'رسالة جديدة من العميل'}</b>\n` +
                        `🆔 معرف العميل: <code>${clientId}</code>\n` +
-                       (isFirst ? `📌 رقم الانتظار: <b># ${queueNumber}</b>\n⏳ مهلة الانتظار العشوائية: <b>${waitMinutes} دقائق</b>\n` : ``) +
+                       (isFirst ? `📌 رقم الانتظار الابتدائي: <b># ${queueNumber}</b>\n⏳ مهلة الانتظار العشوائية: <b>${waitMinutes} دقائق</b>\n` : ``) +
                        `----------------------------------------\n`;
 
     const replyMarkup = {
