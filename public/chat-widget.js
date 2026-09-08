@@ -13,6 +13,7 @@
     #hikayat-chat-header { background: #01338D; color: white; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 15px; }
     #hikayat-chat-close { background: none; border: none; color: white; font-size: 18px; cursor: pointer; }
     
+    /* شريط العد التنازلي المرتبط بالوقت ورقم الانتظار */
     #hikayat-queue-banner { background: #fff3cd; color: #856404; padding: 8px 12px; font-size: 12px; text-align: center; border-bottom: 1px solid #ffeeba; display: none; font-weight: bold; }
 
     #hikayat-chat-messages { flex: 1; padding: 12px; overflow-y: auto; background: #f9f9f9; display: flex; flex-direction: column; gap: 8px; }
@@ -37,7 +38,7 @@
         <span>الدعم الفني المباشر</span>
         <button id="hikayat-chat-close">&times;</button>
       </div>
-      <div id="hikayat-queue-banner">⏳ ترتيبك في الانتظار <span id="queue-number-badge">#1</span>: <span id="queue-timer-text">--</span></div>
+      <div id="hikayat-queue-banner">⏳ ترتيبك في الانتظار <span id="queue-number-badge">#1</span> المتبقي: <span id="queue-timer-text">--</span></div>
       <div id="hikayat-chat-messages">
         <div id="hikayat-typing-indicator">الدعم الفني يكتب الآن...</div>
       </div>
@@ -53,6 +54,9 @@
   container.innerHTML = chatHTML;
   document.body.appendChild(container);
 
+  let socket = null;
+  let countdownInterval = null;
+
   if (typeof io === "undefined") {
     const script = document.createElement("script");
     script.src = "https://cdn.socket.io/4.7.2/socket.io.min.js";
@@ -62,10 +66,8 @@
     initSocketConnection();
   }
 
-  let countdownInterval = null;
-
   function initSocketConnection() {
-    const socket = io();
+    socket = io();
     socket.emit("join_chat", clientId);
 
     socket.on("new_message", (data) => {
@@ -82,10 +84,10 @@
       lockChatInterface(data.message || "تم إغلاق المحادثة بواسطة الدعم الفني.");
     });
 
-    // استقبال بدء العد التنازلي ورقم الانتظار المربوط بالوقت بدقة
+    // استقبال بدء العد التنازلي ورقم الانتظار الحقيقي
     socket.on("start_queue_countdown", (data) => {
-      const totalSeconds = data.seconds;
-      const queueNumber = data.queueNumber;
+      const totalSeconds = data.minutes * 60;
+      const queueNumber = data.queueNumber || 1;
       const endTime = Date.now() + (totalSeconds * 1000);
       
       localStorage.setItem("hikayat_queue_end_time", endTime);
@@ -151,13 +153,13 @@
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 
-  // تشغيل العد التنازلي وإرسال إشعار تلقائي للسيرفر وتليجرام عند انتهائه
+  // تشغيل العد التنازلي التفاعلي المربوط بالوقت ورقم الانتظار
   function startRealCountdown(endTime, queueNumber) {
     queueBanner.style.display = "block";
     if (queueNumberBadge) queueNumberBadge.innerText = `#${queueNumber}`;
 
     if (!sessionStorage.getItem("waiting_notice_sent")) {
-      appendMessage("admin", `⏳ ترتيبك في الطابور #${queueNumber}، جاري تجهيز ممثل الدعم الفني لك، يرجى الانتظار...`);
+      appendMessage("admin", `⏳ أنت في طابور الانتظار (الرقم #${queueNumber}). يرجى الانتظار حتى اكتمال الوقت.`);
       sessionStorage.setItem("waiting_notice_sent", "true");
     }
 
@@ -174,16 +176,14 @@
 
         queueBanner.style.backgroundColor = "#d4edda";
         queueBanner.style.color = "#155724";
-        queueBanner.innerHTML = "✅ ممثل الدعم جاهز الآن للمحادثة ومتاحة للمتابعة الفورية.";
+        queueBanner.innerHTML = "✅ انتهى وقت الانتظار! ممثل الدعم متاح الآن.";
 
-        appendMessage("admin", "مرحباً بك في شبكة حكايات 🌐\nانتهى وقت الانتظار وأصبح الدعم جاهزاً الآن، كيف يمكننا مساعدتك اليوم؟");
+        appendMessage("admin", "مرحباً بك في شبكة حكايات 🌐\nلقد وصل دورك وانتهى وقت الانتظار (رقم الانتظار #0). يمكنك إرسال استفسارك أو مشكلتك وسيرد عليك الدعم الفوري الآن.");
 
-        // إرسال إشعار انتهاء العداد وتجهيز العميل للسيرفر وتليجرام
-        fetch("/api/support/queue-finished", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clientId })
-        }).catch(err => console.error(err));
+        // إرسال إشعار للسيرفر لتنبيه تليجرام بأن الوقت انتهى ووصل الصفر
+        if (socket) {
+          socket.emit("queue_finished", { clientId });
+        }
 
         setTimeout(() => { queueBanner.style.display = "none"; }, 6000);
         return;
