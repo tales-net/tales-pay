@@ -11,6 +11,10 @@ global.chatSessions = chatSessions;
 const chatStatuses = global.chatStatuses || new Map();
 global.chatStatuses = chatStatuses;
 
+// خريطة لتخزين وقت أو مدة الانتظار الخاصة بكل عميل
+const clientWaitTimes = global.clientWaitTimes || new Map();
+global.clientWaitTimes = clientWaitTimes;
+
 // خريطة لربط معرف رسالة التليجرام بمعرف العميل لتسهيل الرد المباشر
 const telegramToClientMap = global.telegramToClientMap || new Map();
 global.telegramToClientMap = telegramToClientMap;
@@ -41,7 +45,7 @@ function initSocket(io) {
   global.ioInstance = io;
 }
 
-// معالجة رسالة العميل وإرسالها لتليجرام مع أزرار تفاعلية
+// معالجة رسالة العميل وإرسالها لتليجرام مع أزرار تفاعلية والعد التنازلي الوهمي
 async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
   try {
     const clientId = req.body.clientId || req.body.clientID;
@@ -61,8 +65,24 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
       });
     }
 
+    const isFirstMessage = !chatSessions.has(clientId) || chatSessions.get(clientId).length === 0;
+
     if (!chatSessions.has(clientId)) {
       chatSessions.set(clientId, []);
+    }
+
+    // إذا كانت أول رسالة، نقوم بتوليد رقم عشوائي بين 5 إلى 20 دقيقة للانتظار
+    let randomWaitMinutes = 0;
+    if (isFirstMessage) {
+      randomWaitMinutes = Math.floor(Math.random() * (20 - 5 + 1)) + 5; // بين 5 و 20 دقيقة
+      clientWaitTimes.set(clientId, randomWaitMinutes);
+      
+      // إرسال حدث للعميل لبدء العد التنازلي في الواجهة فوراً
+      if (global.ioInstance) {
+        global.ioInstance.to(clientId).emit("start_queue_countdown", { minutes: randomWaitMinutes });
+      }
+    } else {
+      randomWaitMinutes = clientWaitTimes.get(clientId) || 0;
     }
 
     let imageUrl = null;
@@ -82,8 +102,8 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
 
     chatSessions.get(clientId).push(messageObj);
 
-    // إرسال الإشعار لجروب التليجرام مع أزرار (رد / إغلاق)
-    const telegramMsgId = await sendSupportChatMessageFunc(clientId, messageText, imageBuffer);
+    // إرسال الإشعار لجروب التليجرام مع تفاصيل الدورة ووقت الانتظار
+    const telegramMsgId = await sendSupportChatMessageFunc(clientId, messageText, imageBuffer, randomWaitMinutes, isFirstMessage);
     if (telegramMsgId) {
       telegramToClientMap.set(String(telegramMsgId), clientId);
     }
@@ -100,13 +120,14 @@ async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
   }
 }
 
-// دالة إرسال الرسالة إلى تليجرام مع الأزرار التفاعلية (Inline Keyboards)
-async function sendSupportChatMessage(clientId, messageText, imageBuffer = null) {
+// دالة إرسال الرسالة إلى تليجرام مع الأزرار وتنبيه العد التنازلي
+async function sendSupportChatMessage(clientId, messageText, imageBuffer = null, waitMinutes = 0, isFirst = false) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) return null;
 
-    const headerText = `💬 <b>رسالة دعم جديدة من العميل</b>\n` +
+    const headerText = `💬 <b>${isFirst ? '⚠️ محادثة جديدة (أول رسالة)' : 'رسالة جديدة من العميل'}</b>\n` +
                        `🆔 معرف العميل: <code>${clientId}</code>\n` +
+                       (isFirst ? `⏳ دور الانتظار الوهمي: <b>${waitMinutes} دقيقة</b>\n` : ``) +
                        `----------------------------------------\n`;
 
     const replyMarkup = {
@@ -126,7 +147,7 @@ async function sendSupportChatMessage(clientId, messageText, imageBuffer = null)
         filename: `support_${clientId}.png`,
         contentType: "image/png"
       });
-      form.append("caption", headerText + (messageText ? `📝 النص: ${messageText}` : ""));
+      form.append("caption", headerText + (messageText ? `📝 النص: ${messageText}` : "صورة مرسلة"));
       form.append("parse_mode", "HTML");
       form.append("reply_markup", JSON.stringify(replyMarkup));
 
@@ -149,10 +170,9 @@ async function sendSupportChatMessage(clientId, messageText, imageBuffer = null)
   }
 }
 
-// معالجة ردود الآدمن من تليجرام (سواء عبر الأزرار أو الرد النصي)
+// معالجة ردود الآدمن من تليجرام
 async function handleTelegramReply(body) {
   try {
-    // 1. التعامل مع ضغط الأزرار (Callback Query)
     if (body.callback_query) {
       const callbackQuery = body.callback_query;
       const data = callbackQuery.data;
@@ -160,11 +180,9 @@ async function handleTelegramReply(body) {
       const messageId = callbackQuery.message.message_id;
       const originalMessage = callbackQuery.message;
 
-      // أ) الضغط على زر "أكتب الرد" -> إرسال حدث الكتابة للعميل ثم فتح خانة الرد في تليجرام
       if (data.startsWith("reply_")) {
         const clientId = data.replace("reply_", "");
         
-        // إرسال إشعار للعميل عبر الـ Socket بأن الدعم يكتب الآن
         if (global.ioInstance) {
           global.ioInstance.to(clientId).emit("typing_status", { isTyping: true });
         }
@@ -176,7 +194,7 @@ async function handleTelegramReply(body) {
 
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
           chat_id: chatId,
-          text: `👉 أكتب ردك الآن للعميل (معرف العميل: ${clientId}):\n(قم بالرد مباشرة على هذه الرسالة أو اكتب رسالتك)`,
+          text: `👉 أكتب ردك الآن للعميل (معرف العميل: ${clientId}):\n(قم بالرد مباشرة على هذه الرسالة)`,
           reply_to_message_id: originalMessage.message_id,
           reply_markup: {
             force_reply: true,
@@ -186,7 +204,6 @@ async function handleTelegramReply(body) {
         return;
       }
 
-      // ب) الضغط على زر "إغلاق الشات"
       if (data.startsWith("close_")) {
         const clientId = data.replace("close_", "");
         chatStatuses.set(clientId, "closed");
@@ -197,7 +214,7 @@ async function handleTelegramReply(body) {
 
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
           callback_query_id: callbackQuery.id,
-          text: "🔒 تم إغلاق الشات بنجاح وإيقاف العميل عن الكتابة."
+          text: "🔒 تم إغلاق الشات بنجاح."
         });
 
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageReplyMarkup`, {
@@ -209,14 +226,12 @@ async function handleTelegramReply(body) {
       return;
     }
 
-    // 2. التعامل مع ردود الآدمن النصية أو الصور المرسلة من تليجرام
     const message = body.message;
     if (!message) return;
 
     let clientId = null;
     let replyText = message.text || message.caption || "";
 
-    // استخراج معرف العميل من رسالة الـ Reply أو رسالة الـ Force Reply
     if (message.reply_to_message) {
       const repliedMsgId = String(message.reply_to_message.message_id);
       clientId = telegramToClientMap.get(repliedMsgId);
@@ -235,7 +250,7 @@ async function handleTelegramReply(body) {
       if (chatStatuses.get(clientId) === "closed") {
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
           chat_id: message.chat.id,
-          text: "⚠️ عذراً، هذه المحادثة مغلقة ولا يمكن إرسال رسائل لها."
+          text: "⚠️ عذراً، هذه المحادثة مغلقة."
         });
         return;
       }
@@ -245,13 +260,11 @@ async function handleTelegramReply(body) {
       }
 
       let adminImageUrl = null;
-
       if (message.photo && message.photo.length > 0) {
         const photoFileId = message.photo[message.photo.length - 1].file_id;
         try {
           const fileRes = await axios.get(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${photoFileId}`);
-          const filePath = fileRes.data.result.file_path;
-          adminImageUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+          adminImageUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileRes.data.result.file_path}`;
         } catch (imgErr) {
           console.error("❌ خطأ في جلب صورة رد الآدمن:", imgErr.message);
         }
@@ -266,7 +279,6 @@ async function handleTelegramReply(body) {
 
       chatSessions.get(clientId).push(adminMsgObj);
 
-      // بث رد الآدمن وإيقاف مؤشر الكتابة للعميل فوراً عبر Socket.io
       if (global.ioInstance) {
         global.ioInstance.to(clientId).emit("typing_status", { isTyping: false });
         global.ioInstance.to(clientId).emit("new_message", adminMsgObj);
