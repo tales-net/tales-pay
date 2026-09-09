@@ -1,7 +1,7 @@
 const axios = require("axios");
 const FormData = require("form-data");
 const mikrotikService = require("./mikrotikService");
-const contributionMessages = require("./contributionMessages"); // تأكد من مطابقتها لمسار الملف لديك
+const contributionMessages = require("./contributionMessages");
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
@@ -254,7 +254,7 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
 }
 
 /**
- * 3. 🔄 معالجة الضغط على الأزرار التفاعلية (Callback Queries) مثل تمرير إغلاق البث
+ * 3. 🔄 معالجة الضغط على الأزرار التفاعلية (Callback Queries)
  */
 async function handleTelegramCallback(callbackQuery) {
   try {
@@ -273,14 +273,13 @@ async function handleTelegramCallback(callbackQuery) {
     });
 
     const parts = data.split("_");
-    const action = parts[0]; // مثل create أو contribution
+    const action = parts[0];
 
     if (data.startsWith("create_voucher")) {
       // الصيغة: create_voucher_{txnId}_{amount}
       const txnId = parts[2];
       const amount = parts[3] || "0";
 
-      // استدعاء خدمة المايكروتيك لإصدار الكارت بناءً على المبلغ
       let generatedCard = null;
       try {
         if (typeof mikrotikService.generateVoucherByAmount === "function") {
@@ -295,7 +294,6 @@ async function handleTelegramCallback(callbackQuery) {
       const cardCodeStr = generatedCard?.code || generatedCard || "فشل التوليد أو غير متوفر";
       const updatedText = callbackQuery.message.text + `\n\n🎟️ <b>[تم الإصدار اليدوي]</b> كارت الإنترنت: <code>${cardCodeStr}</code>`;
 
-      // تعديل الرسالة وإزالة الأزرار (مثل تمرير إغلاق البث)
       await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
         chat_id: chatId,
         message_id: messageId,
@@ -309,16 +307,19 @@ async function handleTelegramCallback(callbackQuery) {
       const txnId = parts[1];
       const amount = parts[2] || "0";
 
-      let contributionMessageHtml = "تم تسجيل المساهمة بنجاح عبر النظام.";
-      if (contributionMessages && typeof contributionMessages.getContributionMessage === "function") {
-        contributionMessageHtml = contributionMessages.getContributionMessage(amount, txnId);
-      } else if (contributionMessages && typeof contributionMessages.render === "function") {
-        contributionMessageHtml = contributionMessages.render({ amount, txnId });
+      // حفظ بيانات المساهمة في الذاكرة المؤقتة ليتم توجيه العميل للصفحة مباشرة
+      if (global.generatedCardsMap) {
+        global.generatedCardsMap.set(txnId, {
+          isContribution: true,
+          amount: amount,
+          transactionId: txnId,
+          packageName: `مساهمة بقيمة ${amount} جنيه`,
+          createdAt: new Date()
+        });
       }
 
-      const updatedText = callbackQuery.message.text + `\n\n🤝 <b>[تم فتح قسم المساهمة]</b>\n${contributionMessageHtml}`;
+      const updatedText = callbackQuery.message.text + `\n\n🤝 <b>[تم تأكيد وتحويل العملية إلى مساهمة]</b> بقيمة: <code>${amount} جنيه</code> (رقم المعاملة: ${txnId})`;
 
-      // تعديل الرسالة وإزالة الأزرار
       await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
         chat_id: chatId,
         message_id: messageId,
@@ -326,6 +327,8 @@ async function handleTelegramCallback(callbackQuery) {
         parse_mode: "HTML",
         reply_markup: { inline_keyboard: [] }
       });
+
+      console.log(`🤝 [Contribution Success] تم تسجيل المساهمة بنجاح للمعاملة: ${txnId} بقيمة ${amount}`);
     }
 
   } catch (err) {
