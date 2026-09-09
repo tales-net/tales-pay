@@ -281,8 +281,12 @@ async function handleTelegramReply(body) {
       if (message.photo && message.photo.length > 0) {
         const photoFileId = message.photo[message.photo.length - 1].file_id;
         try {
-          const fileRes = await axios.get(`https://api.telegram.org/file/bot${BOT_TOKEN}/getFile?file_id=${photoFileId}`);
-          adminImageUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileRes.data.result.file_path}`;
+          // التصحيح هنا: استخدام api.telegram.org/bot.../getFile
+          const fileRes = await axios.get(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${photoFileId}`);
+          if (fileRes.data && fileRes.data.result && fileRes.data.result.file_path) {
+            const filePath = fileRes.data.result.file_path;
+            adminImageUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+          }
         } catch (imgErr) {
           console.error("❌ خطأ في جلب صورة رد الآدمن:", imgErr.message);
         }
