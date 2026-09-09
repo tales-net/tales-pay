@@ -5,7 +5,8 @@ function generateFailPageHtml(errorMessage) {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>فشل الدفع - شبكة حكايات</title>
+        <script src="protection.js" defer></script>
+        <title>فشل الدفع - حكايات</title>
         <style>
           body { font-family: Tahoma, Cairo, sans-serif; background: #f0f2f5; text-align: center; padding: 40px 20px; direction: rtl; }
           .card { background: white; max-width: 420px; margin: auto; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
