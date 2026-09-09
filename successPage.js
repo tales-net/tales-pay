@@ -1,4 +1,4 @@
-const { BRANCH_NAMES } = require('./server'); // أو عرفها محلياً
+const { BRANCH_NAMES } = require("./branches"); // أو عرفها محلياً
 
 function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
   let inferredBranch = "waitPage";
@@ -6,8 +6,6 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
   if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
   else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
   else if (upperTx.includes("MAIN")) inferredBranch = "main";
-
-  const { BRANCH_NAMES } = require("./branches");
 
   const activeBranchKey = queryBranch || inferredBranch;
   const defaultBranchName = BRANCH_NAMES_MAP[activeBranchKey] || BRANCH_NAMES_MAP.waitPage;
