@@ -79,8 +79,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
 
           async function pollVoucher() {
             if (!txId || txId === "غير محدد") {
-              document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:14px;'>لم يتم العثور على رقم العملية</span>";
-              document.getElementById('pkgName').innerText = "غير معروف";
+              window.location.href = '/fail?error=' + encodeURIComponent("لم يتم العثور على رقم العملية المطلوب.");
               return;
             }
             try {
@@ -107,14 +106,17 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
               if (attempts < maxAttempts) {
                 setTimeout(pollVoucher, 2000);
               } else {
-                document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>⚠️ تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: " + txId + "</span>";
-                document.getElementById('pkgName').innerText = "انتهت مهلة الانتظار";
+                // إعادة التوجيه إلى صفحة الفشل عند انتهاء مهلة الانتظار
+                const errorMsg = encodeURIComponent("⚠️ تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: " + txId);
+                window.location.href = '/fail?error=' + errorMsg;
               }
             } catch (e) {
               if (attempts < maxAttempts) {
                 setTimeout(pollVoucher, 2500);
               } else {
-                document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>خطأ في الاتصال بالسيرفر</span>";
+                // إعادة التوجيه إلى صفحة الفشل عند حدوث خطأ في الاتصال
+                const errorMsg = encodeURIComponent("خطأ في الاتصال بالسيرفر أثناء جلب الكارت للمعاملة: " + txId);
+                window.location.href = '/fail?error=' + errorMsg;
               }
             }
           }
@@ -134,4 +136,4 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
   `;
 }
 
-module.exports = { generateSuccessPageHtml }; 
+module.exports = { generateSuccessPageHtml };
