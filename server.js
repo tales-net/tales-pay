@@ -121,10 +121,10 @@ async function handlePaymentRequest(req, res) {
       return res.redirect("/");
     }
 
-    const selectedMethod = payment_method || method || "wallet";
+    const selectedMethod = payment_method || method || "waitPage";
     const rawBranch = branch || branch_key || "branch2";
     const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "branch2";
-    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.branch2;
+    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.waitPage;
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
