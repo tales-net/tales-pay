@@ -2,7 +2,7 @@ const axios = require('axios');
 
 /**
  * دالة لإرسال إشعار التليجرام برابط آمن للمعاملة،
- * مع أزرار تفاعلية (Inline Keyboard) تعمل عند الضغط عليها.
+ * مع أزرار تفاعلية (Inline Keyboard) موجهة لصفحة الكارت أو صفحة المساهمة.
  */
 async function sendPaymentNotificationWithButtons(paymentPayload, transactionId) {
   const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -19,34 +19,36 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
   const branchName = paymentPayload.branchName || "حكايات نت";
   const paymentMethod = paymentPayload.payment_method || "wallet";
 
-  // نص الرسالة
+  // نص الرسالة في التليجرام
   let messageText = `📡 *عملية دفع جديدة*\n\n📱 الهاتف: \`${phone}\`\n💰 المبلغ: \`${amount} جنيه\`\n🏷️ طريقة الدفع: \`${paymentMethod}\`\n🌐 الفرع: ${branchName}\n🆔 رقم المعاملة: \`${transactionId}\``;
 
-  // الأزرار
+  // إعداد الأزرار التفاعلية (Inline Keyboard)
   let inlineKeyboard = [];
 
+  // إذا كانت العملية مساهمة مالية (أكبر من 100 جنيه أو محددة كمساهمة)
   if (amount > 100 || paymentPayload.isContribution) {
     messageText += `\n✨ *نوع العملية:* مساهمة مالية ودعم للشبكة.`;
 
     inlineKeyboard.push([
       {
-        text: "🌟 فتح صفحة المساهمة",
+        text: "🌟 فتح صفحة المساهمة والدعاء",
         url: `${WEBAPP_URL}/contribution-success?amount=${amount}&tx=${transactionId}`
       }
     ]);
   } else {
+    // العمليات العادية (كروت الإنترنت) توجّه إلى صفحة النجاح والكارت (successPage)
     inlineKeyboard.push([
       {
-        text: "🎫 عرض الكارت",
-        url: `${WEBAPP_URL}/wait?id=${transactionId}`
+        text: "🎫 عرض الكارت وتفعيله",
+        url: `${WEBAPP_URL}/success?id=${transactionId}&branch=${paymentPayload.branch || 'branch2'}`
       }
     ]);
   }
 
-  // زر إضافي دائم لمتابعة الطلب
+  // زر إضافي دائم لمتابعة حالة الطلب أو صفحة الانتظار
   inlineKeyboard.push([
     {
-      text: "⚡ متابعة حالة الطلب",
+      text: "⚡ متابعة حالة الطلب / الانتظار",
       url: `${WEBAPP_URL}/wait?id=${transactionId}`
     }
   ]);
@@ -63,7 +65,7 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
       }
     });
 
-    console.log(`✅ تم إرسال إشعار التليجرام مع زرار المعاملة: ${transactionId}`);
+    console.log(`✅ تم إرسال إشعار التليجرام مع أزرار المعاملة بنجاح: ${transactionId}`);
     return response.data;
   } catch (error) {
     console.error("❌ فشل إرسال إشعار تليجرام:", error.response?.data || error.message);
