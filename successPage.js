@@ -1,25 +1,14 @@
-const { BRANCH_NAMES } = require('./branches');
-
 function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
-  let inferredBranch = "main";
-  
-  // 1. محاولة استخراج الفرع من الـ transactionId إذا كان مخزناً بداخله
+  let inferredBranch = "waitPage";
   const upperTx = (transactionId || "").toUpperCase();
-  if (upperTx.includes("BRANCH2") || upperTx.includes("FR2") || upperTx.includes("_BR2_")) inferredBranch = "branch2";
-  else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3") || upperTx.includes("_BR3_")) inferredBranch = "branch3";
-  else if (upperTx.includes("MAIN") || upperTx.includes("_MAIN_")) inferredBranch = "main";
+  if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
+  else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
+  else if (upperTx.includes("MAIN")) inferredBranch = "main";
 
-  // 2. إذا كان هناك كاش أو خريطة مخزنة في الذاكرة تحتوي على تفاصيل الكارت ومعها الفرع، يمكننا جلبها
-  if (global.generatedCardsMap && global.generatedCardsMap.has(transactionId)) {
-    const cardData = global.generatedCardsMap.get(transactionId);
-    if (cardData && cardData.branchKey) {
-      inferredBranch = cardData.branchKey;
-    }
-  }
+  const { BRANCH_NAMES } = require('./branches');
 
-  // الاعتماد على queryBranch المرسل أولاً، ثم المكتشف من رقم المعاملة أو الذاكرة، وإلا فالافتراضي
-  const activeBranchKey = queryBranch || inferredBranch || "main";
-  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.main || "حكايات نت رئيسي";
+  const activeBranchKey = queryBranch || inferredBranch;
+  const defaultBranchName = BRANCH_NAMES_MAP[activeBranchKey] || BRANCH_NAMES_MAP.waitPage;
 
   return `
     <!DOCTYPE html>
@@ -85,63 +74,37 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
         <script>
           const urlParams = new URLSearchParams(window.location.search);
           const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
-          
-          const branchMap = {
-            "main": "حكايات نت رئيسي",
-            "branch2": "الفرع الثاني",
-            "branch3": "الفرع الثالث"
-          };
-
-          // فحص الـ URL للفرع المختار
-          const queryBranchParam = urlParams.get('branch') || urlParams.get('branchKey');
-          if (queryBranchParam && branchMap[queryBranchParam]) {
-            document.getElementById('bName').innerText = branchMap[queryBranchParam];
-          }
-
           let attempts = 0;
           const maxAttempts = 30;
 
           async function pollVoucher() {
             if (!txId || txId === "غير محدد") {
-              document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:14px;'>لم يتم العثور على رقم العملية</span>";
-              document.getElementById('pkgName').innerText = "غير معروف";
+              window.location.href = '/fail?error=' + encodeURIComponent('لم يتم العثور على رقم العملية');
               return;
             }
             try {
               attempts++;
               const res = await fetch('/api/check-voucher/' + encodeURIComponent(txId));
               const data = await res.json();
-              
               if (data.success && data.data) {
-                if (data.data.isContribution) {
-                  window.location.href = '/contribution-success?amount=' + data.data.amount + '&tx=' + encodeURIComponent(txId);
-                  return;
+                document.getElementById('codeContainer').innerText = data.data.code;
+                document.getElementById('pkgName').innerText = data.data.packageName || "باقة إنترنت شبكة حكايات";
+                if (data.data.branchName) {
+                  document.getElementById('bName').innerText = data.data.branchName;
                 }
-
-                if (data.data.code) {
-                  document.getElementById('codeContainer').innerText = data.data.code;
-                  document.getElementById('pkgName').innerText = data.data.packageName || "باقة إنترنت شبكة حكايات";
-                  
-                  // تحديث اسم الفرع من استجابة الـ API إذا وُجد
-                  const serverBranch = data.data.branchName || data.data.branchKey;
-                  if (serverBranch && branchMap[serverBranch]) {
-                    document.getElementById('bName').innerText = branchMap[serverBranch];
-                  }
-                  return;
-                }
-              }
-
-              if (attempts < maxAttempts) {
-                setTimeout(pollVoucher, 2000);
               } else {
-                document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>⚠️ تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: " + txId + "</span>";
-                document.getElementById('pkgName').innerText = "انتهت مهلة الانتظار";
+                if (attempts < maxAttempts) {
+                  setTimeout(pollVoucher, 2000);
+                } else {
+                  // التحويل التلقائي لصفحة الفشل عند انتهاء المحاولات
+                  window.location.href = '/fail?error=' + encodeURIComponent('⚠️ تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: ' + txId);
+                }
               }
             } catch (e) {
               if (attempts < maxAttempts) {
                 setTimeout(pollVoucher, 2500);
               } else {
-                document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>خطأ في الاتصال بالسيرفر</span>";
+                window.location.href = '/fail?error=' + encodeURIComponent('خطأ في الاتصال بالسيرفر برقم المعاملة: ' + txId);
               }
             }
           }
