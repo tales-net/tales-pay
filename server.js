@@ -16,7 +16,7 @@ const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateWaitPageHtml } = require('./waitPage'); 
 const { generateSuccessPageHtml } = require('./successPage'); // استدعاء صفحة النجاح المنفصلة
-const { generateFailPageHtml } = require('./failPage');      // استدعاء صفحة الفشل المنفصلة
+const { generateFailPageHtml } = require('./failPage');       // استدعاء صفحة الفشل المنفصلة
 
 // استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
@@ -24,6 +24,9 @@ const chatSupport = require('./chat_support');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
+// جعل الـ io متاحاً عالمياً للاستخدام في اي ملف آخر
+global.io = io;
 
 const PORT = process.env.PORT || 3000;
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "Tales.net/login";
@@ -86,8 +89,87 @@ app.get('/api/support/messages/:clientId', (req, res) => {
   res.json({ success: true, messages });
 });
 
+// ==========================================
+// 🤖 دالة معالجة أزرار التليجرام التفاعلية (Callback Query)
+// ==========================================
+async function handleTelegramCallback(query) {
+  const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = query.message.chat.id;
+  const messageId = query.message.message_id;
+  const data = query.data; // مثل: approve_card_TX_123_branch2 أو approve_contrib_TX_123_150
+
+  // الرد على تليجرام لإلغاء علامة التحميل من الزر
+  const axios = require('axios');
+  await axios.post(`https://api.telegram.org/bot${telegramBotToken}/answerCallbackQuery`, {
+    callback_query_id: query.id,
+    text: "جاري تنفيذ الطلب وتحديث شاشة العميل..."
+  }).catch(() => {});
+
+  if (data.startsWith('approve_card_')) {
+    // استخراج رقم المعاملة والفرع
+    const parts = data.replace('approve_card_', '').split('_');
+    const transactionId = parts[0];
+    const branchKey = parts[1] || 'branch2';
+
+    // 1. إصدار الكارت من الميكروتيك وتخزينه تلقائياً
+    const cardResult = await processPaymentAndCreateCard("5", branchKey, transactionId); 
+    if (cardResult.success) {
+      global.generatedCardsMap.set(transactionId, {
+        code: cardResult.cardCode,
+        packageName: cardResult.packageName,
+        amount: 5,
+        branchKey: cardResult.branchKey,
+        branchName: cardResult.branchName || "حكايات نت",
+        createdAt: new Date()
+      });
+    }
+
+    // 2. إبلاغ العميل عبر Socket.io ليتحول تلقائياً لصفحة الكارت (Success) دون تدخل منه
+    if (global.io) {
+      global.io.emit(`redirect_client_${transactionId}`, {
+        action: 'success',
+        url: `/success?id=${transactionId}&branch=${branchKey}`
+      });
+    }
+
+    // تحديث رسالة تليجرام لتصبح "تم الموافقة وإصدار الكارت"
+    await axios.post(`https://api.telegram.org/bot${telegramBotToken}/editMessageText`, {
+      chat_id: chatId,
+      message_id: messageId,
+      text: query.message.text + `\n\n✅ *الحالة:* تم الموافقة وإصدار الكارت للعميل وتحديث شاشته بنجاح.`,
+      parse_mode: 'Markdown'
+    }).catch(() => {});
+
+  } else if (data.startsWith('approve_contrib_')) {
+    const parts = data.replace('approve_contrib_', '').split('_');
+    const transactionId = parts[0];
+    const amount = parts[1] || 150;
+
+    // إبلاغ العميل عبر Socket.io ليتحول تلقائياً لصفحة المساهمة والدعاء
+    if (global.io) {
+      global.io.emit(`redirect_client_${transactionId}`, {
+        action: 'contribution',
+        url: `/contribution-success?amount=${amount}&tx=${transactionId}`
+      });
+    }
+
+    // تحديث رسالة تليجرام
+    await axios.post(`https://api.telegram.org/bot${telegramBotToken}/editMessageText`, {
+      chat_id: chatId,
+      message_id: messageId,
+      text: query.message.text + `\n\n✨ *الحالة:* تم تحويل العملية إلى مساهمة مالية وعرض رسالة الدعاء للعميل.`,
+      parse_mode: 'Markdown'
+    }).catch(() => {});
+  }
+}
+
+// مسار استقبال أحداث تليجرام (يدعم الـ Webhook العام والـ Callback)
 app.post('/telegram-webhook', async (req, res) => {
-  await chatSupport.handleTelegramReply(req.body);
+  if (req.body.callback_query) {
+    await handleTelegramCallback(req.body.callback_query);
+  } else if (req.body.message) {
+    await chatSupport.handleTelegramReply(req.body);
+  }
   res.sendStatus(200);
 });
 
