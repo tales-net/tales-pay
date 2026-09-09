@@ -7,12 +7,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
   else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
   else if (upperTx.includes("MAIN")) inferredBranch = "main";
 
-  const BRANCH_NAMES_MAP = {
-    waitPage: "يجب تأكيد الدفع من محفظتك",
-    main: "حكايات نت رئيسي",
-    branch2: "حكايات نت فرع ثاني",
-    branch3: "حكايات نت فرع ثالث"
-  };
+  const { BRANCH_NAMES } = require("./branches");
 
   const activeBranchKey = queryBranch || inferredBranch;
   const defaultBranchName = BRANCH_NAMES_MAP[activeBranchKey] || BRANCH_NAMES_MAP.waitPage;
