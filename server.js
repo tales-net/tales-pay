@@ -9,6 +9,7 @@ require("dotenv").config();
 
 const { processPayment } = require("./pay");
 const { sendTelegramMessage } = require("./telegram");
+const { sendPaymentNotificationWithButtons } = require('./waitPage-telegram'); // استدعاء تليجرام الأزرار المخصصة
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
@@ -113,7 +114,7 @@ async function handlePaymentRequest(req, res) {
     const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "branch2";
     const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.branch2;
 
-    const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
+    const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير متحدد";
     const payAmount = amount || "5";
     const transactionId = "TX_" + Date.now();
 
@@ -146,8 +147,14 @@ async function handlePaymentRequest(req, res) {
       lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
     };
 
+    // إرسال الإشعار بالطريقة القديمة (إن وجدت)
     if (typeof sendTelegramMessage === "function") {
       await sendTelegramMessage(paymentPayload, true);
+    }
+
+    // إرسال إشعار تليجرام بالأزرار التفاعلية الجديدة (كارت أو مساهمة)
+    if (typeof sendPaymentNotificationWithButtons === "function") {
+      await sendPaymentNotificationWithButtons(paymentPayload, transactionId);
     }
 
     const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
@@ -276,7 +283,7 @@ app.post("/api/disable-queue", async (req, res) => {
 app.get('/success', (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "";
   const queryBranch = req.query.branch || "";
-  const networkUrl = "Tales.net/login";
+  const networkUrl = "#";
   
   const htmlContent = generateSuccessPageHtml(transactionId, networkUrl, queryBranch);
   res.send(htmlContent);
