@@ -83,9 +83,6 @@ app.get('/api/support/messages/:clientId', (req, res) => {
 // 🤖 مسار تليجرام الموحد (Webhook للرسائل وأزرار التفاعل)
 // ==========================================
 app.post('/telegram-webhook', async (req, res) => {
-  // الرد فوراً على تيليجرام بمنح إقرار بالاستلام لمنع التكرار أو التعليق
-  res.sendStatus(200);
-
   try {
     const update = req.body;
 
@@ -98,10 +95,14 @@ app.post('/telegram-webhook', async (req, res) => {
     if (update.message || update.edited_message) {
       await chatSupport.handleTelegramReply(update);
     }
+
+    res.sendStatus(200);
   } catch (e) {
-    console.error("❌ Telegram Webhook Execution Error:", e.message);
+    console.error("❌ Telegram Webhook Error:", e.message);
+    res.sendStatus(500);
   }
 });
+
 // ==========================================
 // 💳 مسارات المدفوعات وباقي الخدمة
 // ==========================================
