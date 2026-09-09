@@ -1,4 +1,4 @@
-const { BRANCH_NAMES } = require("./branches"); // أو عرفها محلياً
+const { BRANCH_NAMES } = require('./branches');
 
 function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
   let inferredBranch = "waitPage";
@@ -8,7 +8,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
   else if (upperTx.includes("MAIN")) inferredBranch = "main";
 
   const activeBranchKey = queryBranch || inferredBranch;
-  const defaultBranchName = BRANCH_NAMES_MAP[activeBranchKey] || BRANCH_NAMES_MAP.waitPage;
+  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.waitPage;
 
   return `
     <!DOCTYPE html>
@@ -89,13 +89,11 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
               const data = await res.json();
               
               if (data.success && data.data) {
-                // التحقق مما إذا كانت المعاملة مساهمة وليست كارت إنترنت
                 if (data.data.isContribution) {
                   window.location.href = '/contribution-success?amount=' + data.data.amount + '&tx=' + encodeURIComponent(txId);
                   return;
                 }
 
-                // إذا كان كارت إنترنت متاحاً
                 if (data.data.code) {
                   document.getElementById('codeContainer').innerText = data.data.code;
                   document.getElementById('pkgName').innerText = data.data.packageName || "باقة إنترنت شبكة حكايات";
