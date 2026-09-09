@@ -61,6 +61,26 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
+function getClientPublicIP(req) {
+  try {
+    // لو السيرفر خلف Proxy زي Render أو Nginx
+    const forwarded = req.headers["x-forwarded-for"];
+    if (forwarded) {
+      return forwarded.split(",")[0].trim();
+    }
+
+    // لو الاتصال مباشر
+    if (req.socket && req.socket.remoteAddress) {
+      return req.socket.remoteAddress;
+    }
+
+    // fallback
+    return req.ip || "غير متوفر";
+  } catch (e) {
+    return "غير متوفر";
+  }
+}
+
 // ==========================================
 // 📡 استقبال ضغط الأزرار من التليجرام
 // ==========================================
