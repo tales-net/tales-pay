@@ -6,6 +6,8 @@ const contributionMessages = require("./contributionMessages"); // تأكد من
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
+const { BRANCH_NAMES } = require('./branches');
+
 /**
  * جلب بيانات الشبكة والموقع بناءً على IP
  */
