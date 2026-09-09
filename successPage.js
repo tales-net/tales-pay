@@ -25,8 +25,6 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>تم الدفع بنجاح - شبكة حكايات</title>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-        <!-- استدعاء مكتبة Socket.io للربط اللحظي -->
-        <script src="/socket.io/socket.io.js"></script>
         <style>
           body { font-family: 'Segoe UI', Tahoma, Cairo, sans-serif; background: #f0f2f5; text-align: center; padding: 20px 10px; direction: rtl; }
           .card-container { background: white; max-width: 480px; margin: auto; padding: 25px 20px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
@@ -83,27 +81,6 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
         <script>
           const urlParams = new URLSearchParams(window.location.search);
           const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
-          
-          // ==========================================
-          // 🔌 تفعيل Socket.io للاستماع الفوري لتوجيهات الإدارة
-          // ==========================================
-          const socket = io();
-          if (txId && txId !== "غير محدد") {
-            socket.on(\`redirect_client_\${txId}\`, function(data) {
-              if (data && data.url) {
-                // إظهار تنبيه مرئي للعميل قبل التحويل
-                const alertBox = document.createElement('div');
-                alertBox.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#27ae60;color:white;padding:15px 25px;border-radius:10px;z-index:9999;font-weight:bold;box-shadow:0 5px 15px rgba(0,0,0,0.3);";
-                alertBox.innerHTML = "🎉 تم اعتماد طلبك بنجاح! جاري التوجيه...";
-                document.body.appendChild(alertBox);
-
-                setTimeout(() => {
-                  window.location.href = data.url; // تحويل العميل لصفحة الكارت أو المساهمة فوراً
-                }, 1500);
-              }
-            });
-          }
-
           let attempts = 0;
           const maxAttempts = 30;
 
@@ -117,19 +94,30 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
               attempts++;
               const res = await fetch('/api/check-voucher/' + encodeURIComponent(txId));
               const data = await res.json();
+              
               if (data.success && data.data) {
-                document.getElementById('codeContainer').innerText = data.data.code;
-                document.getElementById('pkgName').innerText = data.data.packageName || "باقة إنترنت شبكة حكايات";
-                if (data.data.branchName) {
-                  document.getElementById('bName').innerText = data.data.branchName;
+                // التحقق مما إذا كانت المعاملة مساهمة وليست كارت إنترنت
+                if (data.data.isContribution) {
+                  window.location.href = '/contribution-success?amount=' + data.data.amount + '&tx=' + encodeURIComponent(txId);
+                  return;
                 }
+
+                // إذا كان كارت إنترنت متاحاً
+                if (data.data.code) {
+                  document.getElementById('codeContainer').innerText = data.data.code;
+                  document.getElementById('pkgName').innerText = data.data.packageName || "باقة إنترنت شبكة حكايات";
+                  if (data.data.branchName) {
+                    document.getElementById('bName').innerText = data.data.branchName;
+                  }
+                  return;
+                }
+              }
+
+              if (attempts < maxAttempts) {
+                setTimeout(pollVoucher, 2000);
               } else {
-                if (attempts < maxAttempts) {
-                  setTimeout(pollVoucher, 2000);
-                } else {
-                  document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>⚠️ تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: " + txId + "</span>";
-                  document.getElementById('pkgName').innerText = "انتهت مهلة الانتظار";
-                }
+                document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>⚠️ تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: " + txId + "</span>";
+                document.getElementById('pkgName').innerText = "انتهت مهلة الانتظار";
               }
             } catch (e) {
               if (attempts < maxAttempts) {
