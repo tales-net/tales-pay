@@ -276,9 +276,10 @@ async function handleTelegramCallback(callbackQuery) {
     const action = parts[0];
 
     if (data.startsWith("create_voucher")) {
-      // الصيغة المتوقعة: create_voucher_{txnId}_{amount}
-      const txnId = parts[1];
-      const amount = parts[2] || "0";
+      // الصيغة: create_voucher_{txnId}_{amount}
+      // لضمان جلب رقم العملية والمبلغ بدقة أينما كان موقعهم:
+      const txnId = parts[2] || parts[1]; 
+      const amount = parts[3] || parts[2] || "0";
 
       console.log(`🎟️ [Voucher Creation Started] جارٍ إصدار الكارت للمعاملة: ${txnId} بالقيمة: ${amount}`);
 
@@ -286,7 +287,7 @@ async function handleTelegramCallback(callbackQuery) {
       let errorMessage = null;
 
       try {
-        // 1. استدعاء خدمة ميكروتيك لإصدار الكارت بناءً على القيمة أو المعاملة
+        // استدعاء خدمة ميكروتيك لإصدار الكارت الفعلي
         if (typeof mikrotikService !== "undefined" && typeof mikrotikService.generateVoucher === "function") {
           voucherData = await mikrotikService.generateVoucher(amount, txnId);
         } else if (typeof mikrotikService.generateVoucherByAmount === "function") {
@@ -294,7 +295,7 @@ async function handleTelegramCallback(callbackQuery) {
         } else if (typeof mikrotikService.createVoucher === "function") {
           voucherData = await mikrotikService.createVoucher(amount);
         } else {
-          // كود افتراضي في حال لم يتم العثور على الدالة المطابقة تماماً
+          // جلب كارت وهمي فقط في حال لم تُعرف الدالة
           voucherData = {
             username: `user_${Math.floor(Math.random() * 89999 + 10000)}`,
             password: `pass_${Math.floor(Math.random() * 89999 + 10000)}`,
@@ -308,7 +309,7 @@ async function handleTelegramCallback(callbackQuery) {
       }
 
       if (voucherData) {
-        // 2. حفظ تفاصيل الكارت في الذاكرة المؤقتة (global.generatedCardsMap) لكي تقرأها صفحة الانتظار successPage.js
+        // حفظ تفاصيل الكارت الحقيقية في الذاكرة المؤقتة لكي تظهر للعميل في صفحة الانتظار
         if (global.generatedCardsMap) {
           global.generatedCardsMap.set(txnId, {
             isContribution: false,
@@ -320,8 +321,7 @@ async function handleTelegramCallback(callbackQuery) {
           });
         }
 
-        // 3. تحديث رسالة تليجرام وإظهار بيانات الكارت للإداري وتأكيد الإصدار
-        const usernameStr = voucherData.username || voucherData.code || "متاح";
+        const usernameStr = voucherData.username || voucherData.code || voucherData.pin || "متاح";
         const passwordStr = voucherData.password || "";
 
         const updatedText = callbackQuery.message.text + 
@@ -333,13 +333,12 @@ async function handleTelegramCallback(callbackQuery) {
           message_id: messageId,
           text: updatedText,
           parse_mode: "HTML",
-          reply_markup: { inline_keyboard: [] } // إزالة الأزرار بعد الإصدار
+          reply_markup: { inline_keyboard: [] }
         });
 
         console.log(`✅ [Voucher Success] تم إصدار الكارت بنجاح للمعاملة ${txnId} وإرساله لصفحة الانتظار.`);
 
       } else {
-        // في حال فشل الإصدار
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
           chat_id: chatId,
           text: `❌ فشل إصدار الكارت للمعاملة ${txnId}. الخطأ: ${errorMessage || "غير معروف"}`
