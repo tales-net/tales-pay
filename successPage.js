@@ -1,11 +1,11 @@
+const { BRANCH_NAMES } = require('./branches'); // أو عرفها محلياً
+
 function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
   let inferredBranch = "waitPage";
   const upperTx = (transactionId || "").toUpperCase();
   if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
   else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
   else if (upperTx.includes("MAIN")) inferredBranch = "main";
-
-  const { BRANCH_NAMES } = require('./branches');
 
   const activeBranchKey = queryBranch || inferredBranch;
   const defaultBranchName = BRANCH_NAMES_MAP[activeBranchKey] || BRANCH_NAMES_MAP.waitPage;
@@ -79,7 +79,8 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
 
           async function pollVoucher() {
             if (!txId || txId === "غير محدد") {
-              window.location.href = '/fail?error=' + encodeURIComponent('لم يتم العثور على رقم العملية');
+              document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:14px;'>لم يتم العثور على رقم العملية</span>";
+              document.getElementById('pkgName').innerText = "غير معروف";
               return;
             }
             try {
@@ -96,15 +97,15 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
                 if (attempts < maxAttempts) {
                   setTimeout(pollVoucher, 2000);
                 } else {
-                  // التحويل التلقائي لصفحة الفشل عند انتهاء المحاولات
-                  window.location.href = '/fail?error=' + encodeURIComponent('⚠️ تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: ' + txId);
+                  document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>⚠️ تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: " + txId + "</span>";
+                  document.getElementById('pkgName').innerText = "انتهت مهلة الانتظار";
                 }
               }
             } catch (e) {
               if (attempts < maxAttempts) {
                 setTimeout(pollVoucher, 2500);
               } else {
-                window.location.href = '/fail?error=' + encodeURIComponent('خطأ في الاتصال بالسيرفر برقم المعاملة: ' + txId);
+                document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>خطأ في الاتصال بالسيرفر</span>";
               }
             }
           }
