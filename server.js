@@ -26,7 +26,7 @@ const PORT = process.env.PORT || 3000;
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://tales.net";
 
 const BRANCH_NAMES = {
-  waitPage: "يجب تأكيد الدفع من محفظتك",
+  waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك",
   main: "حكايات نت رئيسي",
   branch2: "حكايات نت فرع ثاني",
   branch3: "حكايات نت فرع ثالث"
@@ -61,20 +61,16 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
+// ✅ دالة جلب IP العميل
 function getClientPublicIP(req) {
   try {
-    // لو السيرفر خلف Proxy زي Render أو Nginx
     const forwarded = req.headers["x-forwarded-for"];
     if (forwarded) {
       return forwarded.split(",")[0].trim();
     }
-
-    // لو الاتصال مباشر
     if (req.socket && req.socket.remoteAddress) {
       return req.socket.remoteAddress;
     }
-
-    // fallback
     return req.ip || "غير متوفر";
   } catch (e) {
     return "غير متوفر";
