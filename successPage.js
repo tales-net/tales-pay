@@ -2,12 +2,23 @@ const { BRANCH_NAMES } = require('./branches');
 
 function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
   let inferredBranch = "main";
+  
+  // 1. محاولة استخراج الفرع من الـ transactionId إذا كان مخزناً بداخله
   const upperTx = (transactionId || "").toUpperCase();
-  if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
-  else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
-  else if (upperTx.includes("MAIN")) inferredBranch = "main";
+  if (upperTx.includes("BRANCH2") || upperTx.includes("FR2") || upperTx.includes("_BR2_")) inferredBranch = "branch2";
+  else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3") || upperTx.includes("_BR3_")) inferredBranch = "branch3";
+  else if (upperTx.includes("MAIN") || upperTx.includes("_MAIN_")) inferredBranch = "main";
 
-  const activeBranchKey = queryBranch || inferredBranch;
+  // 2. إذا كان هناك كاش أو خريطة مخزنة في الذاكرة تحتوي على تفاصيل الكارت ومعها الفرع، يمكننا جلبها
+  if (global.generatedCardsMap && global.generatedCardsMap.has(transactionId)) {
+    const cardData = global.generatedCardsMap.get(transactionId);
+    if (cardData && cardData.branchKey) {
+      inferredBranch = cardData.branchKey;
+    }
+  }
+
+  // الاعتماد على queryBranch المرسل أولاً، ثم المكتشف من رقم المعاملة أو الذاكرة، وإلا فالافتراضي
+  const activeBranchKey = queryBranch || inferredBranch || "main";
   const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.main || "حكايات نت رئيسي";
 
   return `
@@ -75,14 +86,13 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
           const urlParams = new URLSearchParams(window.location.search);
           const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
           
-          // خريطة أسماء الفروع لضمان ظهور الاسم العربي الصحيح بدقة
           const branchMap = {
             "main": "حكايات نت رئيسي",
             "branch2": "الفرع الثاني",
             "branch3": "الفرع الثالث"
           };
 
-          // تحديد الفرع القادم من الرابط فوراً إن وجد
+          // فحص الـ URL للفرع المختار
           const queryBranchParam = urlParams.get('branch') || urlParams.get('branchKey');
           if (queryBranchParam && branchMap[queryBranchParam]) {
             document.getElementById('bName').innerText = branchMap[queryBranchParam];
@@ -112,10 +122,10 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
                   document.getElementById('codeContainer').innerText = data.data.code;
                   document.getElementById('pkgName').innerText = data.data.packageName || "باقة إنترنت شبكة حكايات";
                   
-                  // تحديث اسم الفرع بناءً على البيانات القادمة من السيرفر إن توفرت
+                  // تحديث اسم الفرع من استجابة الـ API إذا وُجد
                   const serverBranch = data.data.branchName || data.data.branchKey;
-                  if (serverBranch) {
-                    document.getElementById('bName').innerText = branchMap[serverBranch] || serverBranch;
+                  if (serverBranch && branchMap[serverBranch]) {
+                    document.getElementById('bName').innerText = branchMap[serverBranch];
                   }
                   return;
                 }
