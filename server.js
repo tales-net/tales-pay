@@ -5,6 +5,7 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const path = require("path");
 const multer = require("multer");
+const axios = require("axios");
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
@@ -32,7 +33,7 @@ const PORT = process.env.PORT || 3000;
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "Tales.net/login";
 
 const BRANCH_NAMES = {
-  waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك",
+  waitPage: "يجب تأكيد الدفع من محفظتك",
   main: "حكايات نت رئيسي",
   branch2: "حكايات نت فرع ثاني",
   branch3: "حكايات نت فرع ثالث"
@@ -90,7 +91,7 @@ app.get('/api/support/messages/:clientId', (req, res) => {
 });
 
 // ==========================================
-// 🤖 دالة معالجة أزرار التليجرام التفاعلية (Callback Query)
+// 🤖 دالة معالجة أزرار التليجرام التفاعلية (Callback Query) وتحويل العميل فوريًا
 // ==========================================
 async function handleTelegramCallback(query) {
   const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -98,8 +99,7 @@ async function handleTelegramCallback(query) {
   const messageId = query.message.message_id;
   const data = query.data; // مثل: approve_card_TX_123_branch2 أو approve_contrib_TX_123_150
 
-  // الرد على تليجرام لإلغاء علامة التحميل من الزر
-  const axios = require('axios');
+  // الرد على تليجرام لإلغاء علامة التحميل من الزر فوراً
   await axios.post(`https://api.telegram.org/bot${telegramBotToken}/answerCallbackQuery`, {
     callback_query_id: query.id,
     text: "جاري تنفيذ الطلب وتحديث شاشة العميل..."
@@ -153,22 +153,26 @@ async function handleTelegramCallback(query) {
       });
     }
 
-    // تحديث رسالة تليجرام
+    // تحديث رسالة تليجرام لتصبح "تم التحويل إلى مساهمة"
     await axios.post(`https://api.telegram.org/bot${telegramBotToken}/editMessageText`, {
       chat_id: chatId,
       message_id: messageId,
-      text: query.message.text + `\n\n✨ *الحالة:* تم تحويل العملية إلى مساهمة مالية وعرض رسالة الدعاء للعميل.`,
+      text: query.message.text + `\n\n✨ *الحالة:* تم تحويل العملية إلى مساهمة مالية وعرض رسالة الدعاء للعميل وتحديث شاشته بنجاح.`,
       parse_mode: 'Markdown'
     }).catch(() => {});
   }
 }
 
-// مسار استقبال أحداث تليجرام (يدعم الـ Webhook العام والـ Callback)
+// مسار استقبال أحداث تليجرام (يدعم الـ Webhook العام، الـ Callback لأزرار التحكم، وردود الشات المباشر)
 app.post('/telegram-webhook', async (req, res) => {
-  if (req.body.callback_query) {
-    await handleTelegramCallback(req.body.callback_query);
-  } else if (req.body.message) {
-    await chatSupport.handleTelegramReply(req.body);
+  try {
+    if (req.body.callback_query) {
+      await handleTelegramCallback(req.body.callback_query);
+    } else if (req.body.message) {
+      await chatSupport.handleTelegramReply(req.body);
+    }
+  } catch (err) {
+    console.error("❌ خطأ في معالجة تليجرام Webhook:", err.message);
   }
   res.sendStatus(200);
 });
@@ -229,12 +233,7 @@ async function handlePaymentRequest(req, res) {
       lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
     };
 
-    // إرسال الإشعار بالطريقة القديمة (إن وجدت)
-    if (typeof sendTelegramMessage === "function") {
-      await sendTelegramMessage(paymentPayload, true);
-    }
-
-    // إرسال إشعار تليجرام بالأزرار التفاعلية الجديدة (كارت أو مساهمة)
+    // إرسال إشعار تليجرام بالأزرار التفاعلية الجديدة للمشرف
     if (typeof sendPaymentNotificationWithButtons === "function") {
       await sendPaymentNotificationWithButtons(paymentPayload, transactionId);
     }
