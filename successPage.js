@@ -1,14 +1,14 @@
 const { BRANCH_NAMES } = require('./branches');
 
 function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
-  let inferredBranch = "waitPage";
+  let inferredBranch = "main";
   const upperTx = (transactionId || "").toUpperCase();
   if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
   else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
   else if (upperTx.includes("MAIN")) inferredBranch = "main";
 
   const activeBranchKey = queryBranch || inferredBranch;
-  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.waitPage;
+  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.main || "حكايات نت رئيسي";
 
   return `
     <!DOCTYPE html>
@@ -74,6 +74,20 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
         <script>
           const urlParams = new URLSearchParams(window.location.search);
           const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
+          
+          // خريطة أسماء الفروع لضمان ظهور الاسم العربي الصحيح بدقة
+          const branchMap = {
+            "main": "حكايات نت رئيسي",
+            "branch2": "الفرع الثاني",
+            "branch3": "الفرع الثالث"
+          };
+
+          // تحديد الفرع القادم من الرابط فوراً إن وجد
+          const queryBranchParam = urlParams.get('branch') || urlParams.get('branchKey');
+          if (queryBranchParam && branchMap[queryBranchParam]) {
+            document.getElementById('bName').innerText = branchMap[queryBranchParam];
+          }
+
           let attempts = 0;
           const maxAttempts = 30;
 
@@ -97,8 +111,11 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
                 if (data.data.code) {
                   document.getElementById('codeContainer').innerText = data.data.code;
                   document.getElementById('pkgName').innerText = data.data.packageName || "باقة إنترنت شبكة حكايات";
-                  if (data.data.branchName) {
-                    document.getElementById('bName').innerText = data.data.branchName;
+                  
+                  // تحديث اسم الفرع بناءً على البيانات القادمة من السيرفر إن توفرت
+                  const serverBranch = data.data.branchName || data.data.branchKey;
+                  if (serverBranch) {
+                    document.getElementById('bName').innerText = branchMap[serverBranch] || serverBranch;
                   }
                   return;
                 }
