@@ -25,13 +25,7 @@ const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://tales.net";
 
-const BRANCH_NAMES = {
-  waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك",
-  main: "حكايات نت رئيسي",
-  branch2: "حكايات نت فرع ثاني",
-  branch3: "حكايات نت فرع ثالث"
-};
-module.exports = { BRANCH_NAMES };
+const { BRANCH_NAMES } = require("./branches");
 
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
