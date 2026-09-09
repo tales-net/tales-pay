@@ -15,7 +15,7 @@ const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateWaitPageHtml } = require('./waitPage'); 
 const { generateSuccessPageHtml } = require('./successPage'); // استدعاء صفحة النجاح المنفصلة
-const { generateFailPageHtml } = require('./failPage');     // استدعاء صفحة الفشل المنفصلة
+const { generateFailPageHtml } = require('./failPage');      // استدعاء صفحة الفشل المنفصلة
 
 // استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
@@ -25,7 +25,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://tales.net";
+const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "Tales.net/login";
 
 const BRANCH_NAMES = {
   waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك",
@@ -270,13 +270,16 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-// استدعاء واجهة النجاح المنفصلة وتمرير البيانات والفروع بذكاء
-app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
+// ==========================================
+// 🎫 مسار صفحة النجاح والكارت المحدث
+// ==========================================
+app.get('/success', (req, res) => {
+  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "";
   const queryBranch = req.query.branch || "";
+  const networkUrl = "Tales.net/login";
   
-  const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
-  return res.send(pageHtml);
+  const htmlContent = generateSuccessPageHtml(transactionId, networkUrl, queryBranch);
+  res.send(htmlContent);
 });
 
 // استدعاء واجهة الفشل المنفصلة
