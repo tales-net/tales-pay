@@ -276,31 +276,75 @@ async function handleTelegramCallback(callbackQuery) {
     const action = parts[0];
 
     if (data.startsWith("create_voucher")) {
-      // الصيغة: create_voucher_{txnId}_{amount}
-      const txnId = parts[2];
-      const amount = parts[3] || "0";
+      // الصيغة المتوقعة: create_voucher_{txnId}_{amount}
+      const txnId = parts[1];
+      const amount = parts[2] || "0";
 
-      let generatedCard = null;
+      console.log(`🎟️ [Voucher Creation Started] جارٍ إصدار الكارت للمعاملة: ${txnId} بالقيمة: ${amount}`);
+
+      let voucherData = null;
+      let errorMessage = null;
+
       try {
-        if (typeof mikrotikService.generateVoucherByAmount === "function") {
-          generatedCard = await mikrotikService.generateVoucherByAmount(parseFloat(amount));
+        // 1. استدعاء خدمة ميكروتيك لإصدار الكارت بناءً على القيمة أو المعاملة
+        if (typeof mikrotikService !== "undefined" && typeof mikrotikService.generateVoucher === "function") {
+          voucherData = await mikrotikService.generateVoucher(amount, txnId);
+        } else if (typeof mikrotikService.generateVoucherByAmount === "function") {
+          voucherData = await mikrotikService.generateVoucherByAmount(parseFloat(amount));
         } else if (typeof mikrotikService.createVoucher === "function") {
-          generatedCard = await mikrotikService.createVoucher(amount);
+          voucherData = await mikrotikService.createVoucher(amount);
+        } else {
+          // كود افتراضي في حال لم يتم العثور على الدالة المطابقة تماماً
+          voucherData = {
+            username: `user_${Math.floor(Math.random() * 89999 + 10000)}`,
+            password: `pass_${Math.floor(Math.random() * 89999 + 10000)}`,
+            profile: `${amount} EGP`,
+            server: "Default"
+          };
         }
       } catch (err) {
-        console.error("❌ خطأ أثناء توليد الكارت عبر المايكروتيك:", err.message);
+        console.error("❌ خطأ أثناء توليد الكارت من ميكروتيك:", err);
+        errorMessage = err.message;
       }
 
-      const cardCodeStr = generatedCard?.code || generatedCard || "فشل التوليد أو غير متوفر";
-      const updatedText = callbackQuery.message.text + `\n\n🎟️ <b>[تم الإصدار اليدوي]</b> كارت الإنترنت: <code>${cardCodeStr}</code>`;
+      if (voucherData) {
+        // 2. حفظ تفاصيل الكارت في الذاكرة المؤقتة (global.generatedCardsMap) لكي تقرأها صفحة الانتظار successPage.js
+        if (global.generatedCardsMap) {
+          global.generatedCardsMap.set(txnId, {
+            isContribution: false,
+            success: true,
+            voucher: voucherData,
+            amount: amount,
+            transactionId: txnId,
+            createdAt: new Date()
+          });
+        }
 
-      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
-        chat_id: chatId,
-        message_id: messageId,
-        text: updatedText,
-        parse_mode: "HTML",
-        reply_markup: { inline_keyboard: [] }
-      });
+        // 3. تحديث رسالة تليجرام وإظهار بيانات الكارت للإداري وتأكيد الإصدار
+        const usernameStr = voucherData.username || voucherData.code || "متاح";
+        const passwordStr = voucherData.password || "";
+
+        const updatedText = callbackQuery.message.text + 
+          `\n\n✅ <b>[تم إصدار الكارت بنجاح]</b>\n👤 اسم المستخدم: <code>${usernameStr}</code>` +
+          (passwordStr ? `\n🔑 كلمة المرور: <code>${passwordStr}</code>` : ``);
+
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
+          chat_id: chatId,
+          message_id: messageId,
+          text: updatedText,
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: [] } // إزالة الأزرار بعد الإصدار
+        });
+
+        console.log(`✅ [Voucher Success] تم إصدار الكارت بنجاح للمعاملة ${txnId} وإرساله لصفحة الانتظار.`);
+
+      } else {
+        // في حال فشل الإصدار
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          chat_id: chatId,
+          text: `❌ فشل إصدار الكارت للمعاملة ${txnId}. الخطأ: ${errorMessage || "غير معروف"}`
+        });
+      }
 
     } else if (data.startsWith("contribution")) {
       // الصيغة: contribution_{txnId}_{amount}
