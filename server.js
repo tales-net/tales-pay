@@ -79,6 +79,11 @@ app.get('/api/support/messages/:clientId', (req, res) => {
   res.json({ success: true, messages });
 });
 
+app.post('/telegram-webhook', async (req, res) => {
+  await chatSupport.handleTelegramReply(req.body);
+  res.sendStatus(200);
+});
+
 // ==========================================
 // 🤖 مسار تليجرام الموحد (Webhook للرسائل وأزرار التفاعل)
 // ==========================================
