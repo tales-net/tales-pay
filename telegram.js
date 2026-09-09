@@ -303,6 +303,7 @@ async function handleTelegramCallback(callbackQuery) {
           global.generatedCardsMap.set(txnId, {
             isContribution: voucherData.isContribution || false,
             success: true,
+            code: voucherData.cardCode || voucherData.username || "متاح", // <-- إضافة المفتاح مباشرة ليتم قراءته في صفحة النجاح
             voucher: {
               username: voucherData.cardCode || voucherData.username || "متاح",
               password: voucherData.password || ""
