@@ -2,11 +2,7 @@ const axios = require('axios');
 const path = require('path');
 const { getCheckoutPage } = require('./checkout');
 
-const BRANCH_NAMES = {
-  main: 'حكايات نت رئيسي',
-  branch2: 'حكايات نت فرع ثاني',
-  branch3: 'حكايات نت فرع ثالث'
-};
+const { BRANCH_NAMES } = require("./branches");
 
 /**
  * 1. المصادقة والحصول على Authentication Token من Paymob
