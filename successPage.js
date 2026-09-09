@@ -8,7 +8,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
   else if (upperTx.includes("MAIN")) inferredBranch = "main";
 
   const BRANCH_NAMES_MAP = {
-    waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك",
+    waitPage: "يجب تأكيد الدفع من محفظتك",
     main: "حكايات نت رئيسي",
     branch2: "حكايات نت فرع ثاني",
     branch3: "حكايات نت فرع ثالث"
@@ -89,11 +89,17 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
           // ==========================================
           const socket = io();
           if (txId && txId !== "غير محدد") {
-            socket.on(\`redirect_client_\${txId}\`, (data) => {
+            socket.on(\`redirect_client_\${txId}\`, function(data) {
               if (data && data.url) {
-                // إظهار تنبيه بسيط ثم التوجيه الفوري
-                console.log("🚀 تم استقبال توجيه من الإدارة:", data);
-                window.location.href = data.url;
+                // إظهار تنبيه مرئي للعميل قبل التحويل
+                const alertBox = document.createElement('div');
+                alertBox.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#27ae60;color:white;padding:15px 25px;border-radius:10px;z-index:9999;font-weight:bold;box-shadow:0 5px 15px rgba(0,0,0,0.3);";
+                alertBox.innerHTML = "🎉 تم اعتماد طلبك بنجاح! جاري التوجيه...";
+                document.body.appendChild(alertBox);
+
+                setTimeout(() => {
+                  window.location.href = data.url; // تحويل العميل لصفحة الكارت أو المساهمة فوراً
+                }, 1500);
               }
             });
           }
