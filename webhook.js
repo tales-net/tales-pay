@@ -20,11 +20,7 @@ setInterval(() => {
   }
 }, 15 * 60 * 1000);
 
-const BRANCH_NAMES = {
-  main: "حكايات نت رئيسي",
-  branch2: "حكايات نت فرع ثاني",
-  branch3: "حكايات نت فرع ثالث"
-};
+const { BRANCH_NAMES } = require("./branches");
 
 // 🔄 معالجة طلبات GET لـ Paymob
 router.get("/paymob-webhook", (req, res) => {
