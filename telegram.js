@@ -120,7 +120,6 @@ async function sendTelegramMessage(data, isInitial = true) {
 
       message = `⏳ <b>جاري عملية الدفع...</b>\n\n` +
                 `🏢 الفرع: <b>${branchName}</b>\n` +
-                `🆔 رقم العملية: <code>${txnId}</code>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المطلوب: <b>${amountEGP} جنيه</b>\n`;
 
