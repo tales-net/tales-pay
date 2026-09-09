@@ -277,7 +277,6 @@ async function handleTelegramCallback(callbackQuery) {
 
     if (data.startsWith("create_voucher")) {
       // الصيغة: create_voucher_{txnId}_{amount}
-      // لضمان جلب رقم العملية والمبلغ بدقة أينما كان موقعهم:
       const txnId = parts[2] || parts[1]; 
       const amount = parts[3] || parts[2] || "0";
 
@@ -287,45 +286,39 @@ async function handleTelegramCallback(callbackQuery) {
       let errorMessage = null;
 
       try {
-        // استدعاء خدمة ميكروتيك لإصدار الكارت الفعلي
-        if (typeof mikrotikService !== "undefined" && typeof mikrotikService.generateVoucher === "function") {
-          voucherData = await mikrotikService.generateVoucher(amount, txnId);
-        } else if (typeof mikrotikService.generateVoucherByAmount === "function") {
-          voucherData = await mikrotikService.generateVoucherByAmount(parseFloat(amount));
-        } else if (typeof mikrotikService.createVoucher === "function") {
-          voucherData = await mikrotikService.createVoucher(amount);
+        // استدعاء الدالة الصحيحة الموجودة في mikrotikService.js
+        if (typeof mikrotikService !== "undefined" && typeof mikrotikService.processPaymentAndCreateCard === "function") {
+          voucherData = await mikrotikService.processPaymentAndCreateCard(amount, "main", txnId);
         } else {
-          // جلب كارت وهمي فقط في حال لم تُعرف الدالة
-          voucherData = {
-            username: `user_${Math.floor(Math.random() * 89999 + 10000)}`,
-            password: `pass_${Math.floor(Math.random() * 89999 + 10000)}`,
-            profile: `${amount} EGP`,
-            server: "Default"
-          };
+          throw new Error("دالة processPaymentAndCreateCard غير موجودة في mikrotikService");
         }
       } catch (err) {
         console.error("❌ خطأ أثناء توليد الكارت من ميكروتيك:", err);
         errorMessage = err.message;
       }
 
-      if (voucherData) {
+      if (voucherData && (voucherData.success || voucherData.cardCode)) {
         // حفظ تفاصيل الكارت الحقيقية في الذاكرة المؤقتة لكي تظهر للعميل في صفحة الانتظار
         if (global.generatedCardsMap) {
           global.generatedCardsMap.set(txnId, {
-            isContribution: false,
+            isContribution: voucherData.isContribution || false,
             success: true,
-            voucher: voucherData,
+            voucher: {
+              username: voucherData.cardCode || voucherData.username || "متاح",
+              password: voucherData.password || ""
+            },
             amount: amount,
             transactionId: txnId,
+            packageName: voucherData.packageName || "باقة إنترنت",
             createdAt: new Date()
           });
         }
 
-        const usernameStr = voucherData.username || voucherData.code || voucherData.pin || "متاح";
+        const usernameStr = voucherData.cardCode || voucherData.username || "متاح";
         const passwordStr = voucherData.password || "";
 
         const updatedText = callbackQuery.message.text + 
-          `\n\n✅ <b>[تم إصدار الكارت بنجاح]</b>\n👤 اسم المستخدم: <code>${usernameStr}</code>` +
+          `\n\n✅ <b>[تم إصدار الكارت بنجاح من الميكروتيك]</b>\n🎟️ الكارت: <code>${usernameStr}</code>` +
           (passwordStr ? `\n🔑 كلمة المرور: <code>${passwordStr}</code>` : ``);
 
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
@@ -336,12 +329,12 @@ async function handleTelegramCallback(callbackQuery) {
           reply_markup: { inline_keyboard: [] }
         });
 
-        console.log(`✅ [Voucher Success] تم إصدار الكارت بنجاح للمعاملة ${txnId} وإرساله لصفحة الانتظار.`);
+        console.log(`✅ [Voucher Success] تم إصدار الكارت بنجاح للميكروتيك للمعاملة ${txnId} وإرساله لصفحة الانتظار.`);
 
       } else {
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
           chat_id: chatId,
-          text: `❌ فشل إصدار الكارت للمعاملة ${txnId}. الخطأ: ${errorMessage || "غير معروف"}`
+          text: `❌ فشل إصدار الكارت من الميكروتيك للمعاملة ${txnId}.\nالسبب: ${errorMessage || "خطأ غير معروف"}`
         });
       }
 
