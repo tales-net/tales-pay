@@ -1,4 +1,4 @@
-const { BRANCH_NAMES } = require('./branches'); // أو عرفها محلياً
+const { BRANCH_NAMES } = require('./branches');
 
 function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
   let inferredBranch = "waitPage";
@@ -8,7 +8,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
   else if (upperTx.includes("MAIN")) inferredBranch = "main";
 
   const activeBranchKey = queryBranch || inferredBranch;
-  const defaultBranchName = BRANCH_NAMES_MAP[activeBranchKey] || BRANCH_NAMES_MAP.waitPage;
+  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.waitPage;
 
   return `
     <!DOCTYPE html>
@@ -87,19 +87,28 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
               attempts++;
               const res = await fetch('/api/check-voucher/' + encodeURIComponent(txId));
               const data = await res.json();
+              
               if (data.success && data.data) {
-                document.getElementById('codeContainer').innerText = data.data.code;
-                document.getElementById('pkgName').innerText = data.data.packageName || "باقة إنترنت شبكة حكايات";
-                if (data.data.branchName) {
-                  document.getElementById('bName').innerText = data.data.branchName;
+                if (data.data.isContribution) {
+                  window.location.href = '/contribution-success?amount=' + data.data.amount + '&tx=' + encodeURIComponent(txId);
+                  return;
                 }
+
+                if (data.data.code) {
+                  document.getElementById('codeContainer').innerText = data.data.code;
+                  document.getElementById('pkgName').innerText = data.data.packageName || "باقة إنترنت شبكة حكايات";
+                  if (data.data.branchName) {
+                    document.getElementById('bName').innerText = data.data.branchName;
+                  }
+                  return;
+                }
+              }
+
+              if (attempts < maxAttempts) {
+                setTimeout(pollVoucher, 2000);
               } else {
-                if (attempts < maxAttempts) {
-                  setTimeout(pollVoucher, 2000);
-                } else {
-                  document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>⚠️ تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: " + txId + "</span>";
-                  document.getElementById('pkgName').innerText = "انتهت مهلة الانتظار";
-                }
+                document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>⚠️ تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: " + txId + "</span>";
+                document.getElementById('pkgName').innerText = "انتهت مهلة الانتظار";
               }
             } catch (e) {
               if (attempts < maxAttempts) {
@@ -125,4 +134,4 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
   `;
 }
 
-module.exports = { generateSuccessPageHtml };
+module.exports = { generateSuccessPageHtml }; 
