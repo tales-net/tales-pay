@@ -22,8 +22,11 @@ function initSocket(io) {
       if (clientId) {
         socket.join(clientId);
         
+        // إذا كانت المحادثة مغلقة، نسمح للعميل ببدء محادثة جديدة نظيفة
         if (chatStatuses.get(clientId) === "closed") {
           chatStatuses.delete(clientId);
+          chatSessions.delete(clientId);
+          clientWaitTimes.delete(clientId);
         }
       }
     });
@@ -52,7 +55,6 @@ async function handleClientMessage(res, sendSupportChatMessageFunc) {
   // تم ترك الدالة متوافقة مع البرامترات
 }
 
-// دالة لمعالجة الرسائل
 async function handleClientMessageRoute(req, res, sendSupportChatMessageFunc) {
   try {
     const clientId = req.body.clientId || req.body.clientID;
@@ -63,8 +65,7 @@ async function handleClientMessageRoute(req, res, sendSupportChatMessageFunc) {
       return res.status(400).json({ success: false, message: "معرف العميل مفقود" });
     }
 
-    // 🔥 حل المشكلة: إذا كانت الحالة مغلقة، قم بمسح الحالة والبيانات القديمة كلياً
-    // لكي يبدأ العميل من جديد تماماً بعد إعادة تحميل الصفحة أو إرسال رسالة جديدة
+    // إذا كانت المحادثة مغلقة، نسمح بإعادة فتحها وبدء دور جديد عند إرسال رسالة جديدة
     if (chatStatuses.get(clientId) === "closed") {
       chatStatuses.delete(clientId);
       chatSessions.delete(clientId);
@@ -77,8 +78,8 @@ async function handleClientMessageRoute(req, res, sendSupportChatMessageFunc) {
       chatSessions.set(clientId, []);
     }
 
-    let totalSeconds = 360; // افتراضي
-    let initialQueue = 3;   // افتراضي
+    let totalSeconds = 360; 
+    let initialQueue = 3;   
 
     if (isFirstMessage) {
       initialQueue = Math.floor(Math.random() * (10 - 3 + 1)) + 3;  
@@ -183,7 +184,6 @@ async function sendSupportChatMessage(clientId, messageText, imageBuffer = null,
 
 async function handleTelegramReply(body) {
   try {
-    // 1. معالجة ضغطات الأزرار (Callback Queries)
     if (body.callback_query) {
       const callbackQuery = body.callback_query;
       const data = callbackQuery.data;
@@ -191,14 +191,11 @@ async function handleTelegramReply(body) {
       const messageId = callbackQuery.message.message_id;
       const originalMessage = callbackQuery.message;
 
-      // أزل علامة التحميل الدائرية من الزر في تليجرام فوراً
       try {
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
           callback_query_id: callbackQuery.id
         });
-      } catch (e) {
-        // تجاهل خطأ انتهاء صلاحية الـ callback id إذا تكرر
-      }
+      } catch (e) {}
 
       if (data.startsWith("reply_")) {
         const clientId = data.replace("reply_", "");
@@ -229,7 +226,6 @@ async function handleTelegramReply(body) {
           global.ioInstance.to(clientId).emit("chat_closed", { message: "تم إغلاق المحادثة من قبل الدعم الفني." });
         }
 
-        // تحديث رسالة تليجرام لتصبح مغلقة
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageReplyMarkup`, {
           chat_id: chatId,
           message_id: messageId,
@@ -245,7 +241,6 @@ async function handleTelegramReply(body) {
       return;
     }
 
-    // 2. معالجة الرسائل النصية الموجهة كـ رد من الآدمن
     const message = body.message;
     if (!message) return;
 
@@ -256,21 +251,15 @@ async function handleTelegramReply(body) {
       const repliedMsgId = String(message.reply_to_message.message_id);
       clientId = telegramToClientMap.get(repliedMsgId);
 
-      // البحث الاحتياطي في النص أو الكابشن واستخراج الـ clientId بدقة
       const targetText = message.reply_to_message.text || message.reply_to_message.caption || "";
       if (!clientId && targetText) {
         const match = targetText.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
-        if (match) {
-          clientId = match[1];
-        }
+        if (match) clientId = match[1];
       }
       
-      // فحص إضافي لو كان الرد على رسالة "أكتب ردك الآن" التي تحتوي على الـ clientId
       if (!clientId && targetText) {
         const matchAlt = targetText.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
-        if (matchAlt) {
-          clientId = matchAlt[1];
-        }
+        if (matchAlt) clientId = matchAlt[1];
       }
     }
 
@@ -307,7 +296,7 @@ async function handleTelegramReply(body) {
 
       chatSessions.get(clientId).push(adminMsgObj);
 
-    if (global.ioInstance) {
+      if (global.ioInstance) {
         global.ioInstance.to(clientId).emit("typing_status", { isTyping: false });
         global.ioInstance.to(clientId).emit("new_message", adminMsgObj);
       }
