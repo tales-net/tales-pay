@@ -9,7 +9,7 @@
     e.preventDefault();
   });
 
-  // 2. منع اختصارات لوحة المفاتيح (عربي وإنجليزي) وأدوات المطور
+  // 2. منع اختصارات لوحة المفاتيح وأدوات المطور
   document.addEventListener('keydown', function (e) {
     const forbiddenKeys = [
       'u', 'U', 's', 'S', 'c', 'C', 'p', 'P', 'a', 'A', 'x', 'X', 'v', 'V', 'h', 'H',
