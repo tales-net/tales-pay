@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="protection.js" defer></script>
     <title>نحن نقوم بتطوير الخدمة لأجلك | صيانة دورية</title>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
     <style>
@@ -68,7 +69,8 @@
 
         <div class="status-badge" id="status-text">🔄 جارِ جلب حالة النظام...</div>
 
-        <div class="admin-trigger" onclick="verifyAndSetTime()">⚙️ اضبط وقت الصيانة (للمشرف)</div>
+        <!-- زر المشرف المخفي افتراضياً ولا يظهر إلا في الرابط السري -->
+        <div class="admin-trigger" id="adminTriggerBtn" style="display: none;" onclick="verifyAndSetTime()">⚙️ اضبط وقت الصيانة (للمشرف)</div>
     </div>
 
     <script>
