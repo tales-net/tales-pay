@@ -5,6 +5,7 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const path = require("path");
 const multer = require("multer");
+const fs = require('fs');
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
@@ -15,7 +16,7 @@ const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateWaitPageHtml } = require('./waitPage'); 
 const { generateSuccessPageHtml } = require('./successPage'); // استدعاء صفحة النجاح المنفصلة
-const { generateFailPageHtml } = require('./failPage');       // استدعاء صفحة الفشل المنفصلة
+const { generateFailPageHtml } = require('./failPage');        // استدعاء صفحة الفشل المنفصلة
 
 // استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
@@ -37,6 +38,22 @@ chatSupport.initSocket(io);
 // إعداد Multer لاستقبال الصور والملفات المرفوعة في الشات
 const upload = multer();
 
+// مسار الملف المؤقت لحفظ وقت الصيانة على السيرفر
+const maintenanceFile = path.join(__dirname, 'maintenance_status.json');
+
+// دالة لجلب وقت الصيانة المحفوظ
+function getMaintenanceEndTime() {
+  try {
+    if (fs.existsSync(maintenanceFile)) {
+      const data = JSON.parse(fs.readFileSync(maintenanceFile, 'utf8'));
+      return data.endTime || 0;
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  return 0;
+}
+
 // تنظيف دوري للذاكرة المؤقتة كل نصف ساعة
 setInterval(() => {
   const oneHourAgo = Date.now() - (60 * 60 * 1000);
@@ -51,26 +68,93 @@ app.use(cors());
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+
+// ==========================================
+// 🛡️ Middleware للتحكم التلقائي بالموقع والصيانة للجميع
+// ==========================================
+app.use((req, res, next) => {
+  const currentTime = Date.now();
+  const maintenanceEndTime = getMaintenanceEndTime();
+  const isMaintenanceActive = maintenanceEndTime > currentTime;
+
+  // 1. استثناءات لكي لا يحدث تعارض (ملفات التصميم، مسار صفحة الصيانة، ومسارات التحقق والـ API)
+  if (
+    req.path === "/dev-panel-lock" ||
+    req.path === "/api/maintenance/status" ||
+    req.path === "/api/maintenance/set" ||
+    req.path === "/api/maintenance/verify" ||
+    req.path.startsWith("/api/") ||
+    req.path.includes(".") // ملفات CSS, JS, صور
+  ) {
+    return next();
+  }
+
+  // 2. إذا انتهى الوقت، نقوم بمسح الملف تلقائياً ليعمل الموقع بشكل طبيعي
+  if (maintenanceEndTime > 0 && currentTime >= maintenanceEndTime) {
+    try {
+      if (fs.existsSync(maintenanceFile)) {
+        fs.unlinkSync(maintenanceFile);
+      }
+    } catch (e) {}
+    return next();
+  }
+
+  // 3. إذا كانت الصيانة مفعلة، قم بعرض صفحة الصيانة مباشرة لأي زائر
+  if (isMaintenanceActive) {
+    return res.sendFile(path.join(__dirname, "public", "maintenance.html"));
+  }
+
+  next();
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 // ==========================================
-// 🛠️ نظام عرض صفحة الصيانة (مستقل وبدون تعارض)
+// 🛠️ نظام عرض صفحة الصيانة ومسارات التحكم الآمنة
 // ==========================================
 app.get("/dev-panel-lock", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "maintenance.html"));
 });
 
-// ==========================================
-// 🔐 مسار التحقق من باسورد المشرف لتفعيل الصيانة
-// ==========================================
+// جلب حالة الوقت الحالية للعميل/السيرفر
+app.get('/api/maintenance/status', (req, res) => {
+  res.json({ endTime: getMaintenanceEndTime() });
+});
+
+// التحقق من الباسورد
 app.post('/api/maintenance/verify', (req, res) => {
   const { password } = req.body;
-  const adminPassword = process.env.MAINTENANCE_PASSWORD || "123456"; // كلمة مرور افتراضية احترازية
+  const adminPassword = process.env.MAINTENANCE_PASSWORD || "123456";
 
   if (password === adminPassword) {
     return res.json({ success: true, message: "تم التحقق بنجاح" });
   } else {
     return res.status(401).json({ success: false, message: "كلمة المرور غير صحيحة!" });
+  }
+});
+
+// تعيين وقت صيانة جديد وحفظه على السيرفر
+app.post('/api/maintenance/set', (req, res) => {
+  const { password, minutes } = req.body;
+  const adminPassword = process.env.MAINTENANCE_PASSWORD || "123456";
+
+  if (password !== adminPassword) {
+    return res.status(401).json({ success: false, message: "كلمة المرور غير صحيحة!" });
+  }
+
+  try {
+    if (minutes === 0) {
+      if (fs.existsSync(maintenanceFile)) {
+        fs.unlinkSync(maintenanceFile);
+      }
+      return res.json({ success: true, message: "تم إلغاء الصيانة وفتح الموقع!" });
+    }
+
+    const endTime = Date.now() + (minutes * 60 * 1000);
+    fs.writeFileSync(maintenanceFile, JSON.stringify({ endTime }));
+    return res.json({ success: true, endTime, message: `تم ضبط الصيانة لمدة ${minutes} دقيقة!` });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: "خطأ أثناء حفظ الوقت." });
   }
 });
 
@@ -107,7 +191,6 @@ app.post('/telegram-webhook', async (req, res) => {
   try {
     const update = req.body;
 
-    // 1. فحص هل الـ Webhook يخص أزرار أو رسائل الدعم الفني المباشر (Chat Support)
     if (update.callback_query) {
       const data = update.callback_query.data || "";
       if (data.startsWith("reply_") || data.startsWith("close_")) {
@@ -116,18 +199,15 @@ app.post('/telegram-webhook', async (req, res) => {
       }
     }
 
-    // فحص إذا كانت رسالة نصية أو صورة رداً على الدعم الفني
     if (update.message && update.message.reply_to_message) {
       await chatSupport.handleTelegramReply(update);
       return res.sendStatus(200);
     }
 
-    // 2. التعامل مع الضغط على الأزرار التفاعلية القديمة (مثل إصدار الكارت ومساهمة)
     if (update.callback_query) {
       await handleTelegramCallback(update.callback_query);
     }
 
-    // 3. التعامل مع باقي رسائل الأدمن أو التحديثات العامة
     if (update.message || update.edited_message) {
       await chatSupport.handleTelegramReply(update);
     }
