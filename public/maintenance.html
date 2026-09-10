@@ -77,13 +77,13 @@
 </head>
 <body>
 
-    <!-- النافذة المنبثقة التفاعلية -->
+    <!-- النافذة المنبثقة التفاعلية (تظهر عند الدخول وتتطلب الضغط لبدء الموسيقى والمتابعة) -->
     <div class="modal-overlay" id="emergencyModal">
         <div class="modal-box">
             <div style="font-size: 50px; margin-bottom: 10px;">⚠️</div>
-            <h2>نعتذر: صيانة طارئة</h2>
+            <h2>تنبيه: صيانة طارئة</h2>
             <p>نعتذر لعملائنا الأعزاء، الموقع خاضع حالياً لتحديثات وصيانة طارئة لتحسين الخدمات. يرجى الانتظار لحين الانتهاء.</p>
-            <button class="modal-btn" onclick="closeModal()">فهمت، متابعة التصفح</button>
+            <button class="modal-btn" onclick="closeModalAndStartAudio()">فهمت، متابعة التصفح</button>
         </div>
     </div>
 
@@ -93,7 +93,7 @@
     </ul>
 
     <div class="container">
-        <div class="icon-box" onclick="closeModal()">🛠️</div>
+        <div class="icon-box" onclick="closeModalAndStartAudio()">🛠️</div>
         <h1>نحن نقوم بتحديثات وتحسينات لأجلك!</h1>
         <p>الموقع خاضع حالياً لصيانة دورية. سيتم فتح الموقع تلقائياً بمجرد انتهاء الوقت أدناه:</p>
 
@@ -115,9 +115,44 @@
             document.getElementById("adminTriggerBtn").style.display = "block";
         }
 
-        // إغلاق النافذة المنبثقة بالضغط على الزر
-        function closeModal() {
+        let audioCtx = null;
+        let isAudioStarted = false;
+
+        // دالة إغلاق النافذة المنبثقة وبدء الموسيقى الخلفية بسلاسة فور الضغط عليها
+        function closeModalAndStartAudio() {
             document.getElementById("emergencyModal").style.display = "none";
+            
+            if (!isAudioStarted) {
+                isAudioStarted = true;
+                try {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    if (audioCtx.state === 'suspended') {
+                        audioCtx.resume();
+                    }
+
+                    const notes = [261.63, 329.63, 392.00, 523.25, 587.33];
+                    setInterval(() => {
+                        let freq = notes[Math.floor(Math.random() * notes.length)];
+                        let osc = audioCtx.createOscillator();
+                        let gainNode = audioCtx.createGain();
+
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+                        gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+                        gainNode.gain.linearRampToValueAtTime(0.025, audioCtx.currentTime + 1.5);
+                        gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 3.5);
+
+                        osc.connect(gainNode);
+                        gainNode.connect(audioCtx.destination);
+
+                        osc.start();
+                        osc.stop(audioCtx.currentTime + 3.5);
+                    }, 3000);
+                } catch (e) {
+                    console.log("Audio not supported");
+                }
+            }
         }
 
         async function fetchServerTime() {
@@ -140,19 +175,13 @@
                 document.getElementById("seconds").innerText = "00";
                 document.getElementById("status-text").innerText = "🟢 الموقع يعمل بشكل طبيعي حالياً";
                 
-                // الانتقال التلقائي للرئيسية فور انتهاء الوقت
-                window.location.href = "/";
+                if (targetTime !== 0 && now >= targetTime) {
+                    window.location.href = "/";
+                }
                 return;
             }
 
             const distance = targetTime - now;
-            
-            // 🚀 ميزة إعادة التحميل التلقائي المتكرر في آخر 10 ثوانٍ (لتحديث الصفحة فوراً على جميع الأجهزة فور انتهاء الصيانة)
-            if (distance <= 10000) {
-                location.reload();
-                return;
-            }
-
             const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
             const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
             const seconds = Math.floor((distance % (1000 * 60)) / 1000);
