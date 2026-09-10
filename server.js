@@ -53,6 +53,29 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
+// ==========================================
+// 🛠️ نظام إدارة الصيانة الذكي
+// ==========================================
+let isUnderMaintenance = false; // يمكنك تغييرها إلى true أو التحكم بها عبر متغير بيئة process.env.MAINTENANCE_MODE === 'true'
+
+app.use((req, res, next) => {
+  // السماح بمرور صفحة الصيانة، مسارات الـ API، وملفات التصميم والثابتة لكي تعمل الصفحة بسلاسة
+  if (
+    req.path.startsWith("/maintenance.html") || 
+    req.path.startsWith("/api/") || 
+    req.path.includes(".") // لملفات الـ CSS و JS والصور
+  ) {
+    return next();
+  }
+
+  // إذا كانت الصيانة مفعلة، يتم توجيه الزائر لصفحة الصيانة
+  if (isUnderMaintenance) {
+    return res.sendFile(path.join(__dirname, "public", "maintenance.html"));
+  }
+
+  next();
+});
+
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
@@ -87,7 +110,6 @@ app.post('/telegram-webhook', async (req, res) => {
     const update = req.body;
 
     // 1. فحص هل الـ Webhook يخص أزرار أو رسائل الدعم الفني المباشر (Chat Support)
-    // نتحقق إذا كان callback_query يبدأ بـ reply_ أو close_ أو أن الرسالة رد على الدعم
     if (update.callback_query) {
       const data = update.callback_query.data || "";
       if (data.startsWith("reply_") || data.startsWith("close_")) {
@@ -118,6 +140,7 @@ app.post('/telegram-webhook', async (req, res) => {
     res.sendStatus(500);
   }
 });
+
 // ==========================================
 // 💳 مسارات المدفوعات وباقي الخدمة
 // ==========================================
@@ -311,7 +334,6 @@ app.get("/success", (req, res) => {
 app.get("/fail", async (req, res) => {
   const errorMessage = req.query.data_message || req.query.error || "حدثت مشكلة أثناء عملية الدفع، حاول مرة أخرى.";
   
-  // جمع بيانات العميل من الرابط إن وجدت للإشعار
   const failData = {
     transactionId: req.query.id || req.query.order || req.query.transaction_id || `FAIL_${Date.now()}`,
     phone: req.query.phone || req.query.user_phone || "غير محدد",
@@ -320,7 +342,6 @@ app.get("/fail", async (req, res) => {
     publicIP: getClientPublicIP(req)
   };
 
-  // إرسال الإشعار لتليجرام بشكل غير متزامن (بدون إبطاء تحميل الصفحة للعميل)
   sendTelegramFailNotification(errorMessage, failData).catch(err => {
     console.error("Failed to send telegram fail notification:", err);
   });
