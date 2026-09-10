@@ -157,7 +157,7 @@
     <div class="container">
         <div class="icon-box">🛠️</div>
         <h1>نقوم بتحديثات وتحسينات لأجلك!</h1>
-        <p>الموقع خاضع حالياً لصيانة دورية لتقديم تجربة أسرع وأفضل. سيتم إعادة فتح الموقع تلقائياً بمجرد انتهاء الوقت أدناه:</p>
+        <p>الموقع خاضع حالياً لصيانة دورية. سيتم فتح الموقع تلقائياً بمجرد انتهاء الوقت أدناه:</p>
 
         <div class="countdown-grid">
             <div class="time-box">
@@ -174,7 +174,7 @@
             </div>
         </div>
 
-        <div class="status-badge">🔄 جارِ العمل على التحديثات</div>
+        <div class="status-badge" id="status-text">🔄 لوحة التحكم الخاصة بالصيانة جاهزة</div>
 
         <div class="admin-trigger" onclick="verifyAndSetTime()">⚙️ اضبط وقت الصيانة (للمشرف)</div>
     </div>
@@ -191,7 +191,15 @@
         function updateCountdown() {
             const targetTime = getTargetTime();
             
-            if (targetTime === 0 || Date.now() >= targetTime) {
+            if (targetTime === 0) {
+                document.getElementById("hours").innerText = "00";
+                document.getElementById("minutes").innerText = "00";
+                document.getElementById("seconds").innerText = "00";
+                document.getElementById("status-text").innerText = "🟢 الصيانة غير مفعلة حالياً (اضبط الوقت من الأسفل عند الحاجة)";
+                return;
+            }
+
+            if (Date.now() >= targetTime) {
                 localStorage.removeItem("maintenance_end_time");
                 window.location.href = "/";
                 return;
@@ -207,15 +215,14 @@
             document.getElementById("hours").innerText = String(hours).padStart(2, '0');
             document.getElementById("minutes").innerText = String(minutes).padStart(2, '0');
             document.getElementById("seconds").innerText = String(seconds).padStart(2, '0');
+            document.getElementById("status-text").innerText = "🔄 جارِ العمل على الصيانة (سيفتح الموقع تلقائياً بعد الفراغ)";
         }
 
-        // دالة طلب كلمة المرور والتحقق منها عبر السيرفر
         async function verifyAndSetTime() {
             let password = prompt("🔒 يرجى إدخال كلمة مرور المشرف:");
             if (!password) return;
 
             try {
-                // إرسال الباسورد للسيرفر للتحقق بأمان
                 let response = await fetch("/api/maintenance/verify", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -225,13 +232,13 @@
                 let result = await response.json();
 
                 if (result.success) {
-                    let minutesInput = prompt("✅ كلمة المرور صحيحة!\nأدخل عدد دقائق الصيانة المطلوبة (أو اكتب 0 لإلغاء الصيانة وفتح الموقع):");
+                    let minutesInput = prompt("✅ كلمة المرور صحيحة!\nأدخل عدد دقائق الصيانة (أو اكتب 0 لإلغاء الصيانة):");
                     if (minutesInput !== null) {
                         let mins = parseInt(minutesInput, 10);
                         if (mins === 0) {
                             localStorage.removeItem("maintenance_end_time");
-                            alert("تم إيقاف الصيانة، سيتم فتح الموقع الآن!");
-                            window.location.href = "/";
+                            alert("تم إيقاف الصيانة بنجاح!");
+                            location.reload();
                         } else if (!isNaN(mins) && mins > 0) {
                             let newTarget = Date.now() + (mins * 60 * 1000);
                             localStorage.setItem("maintenance_end_time", newTarget);
