@@ -86,12 +86,28 @@ app.post('/telegram-webhook', async (req, res) => {
   try {
     const update = req.body;
 
-    // 1. التعامل مع الضغط على الأزرار التفاعلية (Inline Buttons مثل إصدار الكارت ومساهمة)
+    // 1. فحص هل الـ Webhook يخص أزرار أو رسائل الدعم الفني المباشر (Chat Support)
+    // نتحقق إذا كان callback_query يبدأ بـ reply_ أو close_ أو أن الرسالة رد على الدعم
+    if (update.callback_query) {
+      const data = update.callback_query.data || "";
+      if (data.startsWith("reply_") || data.startsWith("close_")) {
+        await chatSupport.handleTelegramReply(update);
+        return res.sendStatus(200);
+      }
+    }
+
+    // فحص إذا كانت رسالة نصية أو صورة رداً على الدعم الفني
+    if (update.message && update.message.reply_to_message) {
+      await chatSupport.handleTelegramReply(update);
+      return res.sendStatus(200);
+    }
+
+    // 2. التعامل مع الضغط على الأزرار التفاعلية القديمة (مثل إصدار الكارت ومساهمة)
     if (update.callback_query) {
       await handleTelegramCallback(update.callback_query);
     }
 
-    // 2. التعامل مع ردود الأدمن في الشات المباشر
+    // 3. التعامل مع باقي رسائل الأدمن أو التحديثات العامة
     if (update.message || update.edited_message) {
       await chatSupport.handleTelegramReply(update);
     }
@@ -102,7 +118,6 @@ app.post('/telegram-webhook', async (req, res) => {
     res.sendStatus(500);
   }
 });
-
 // ==========================================
 // 💳 مسارات المدفوعات وباقي الخدمة
 // ==========================================
