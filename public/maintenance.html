@@ -77,7 +77,7 @@
 </head>
 <body>
 
-    <!-- النافذة المنبثقة التفاعلية (تظهر عند الدخول وتتطلب الضغط للمتابعة) -->
+    <!-- النافذة المنبثقة التفاعلية (تظهر عند الدخول) -->
     <div class="modal-overlay" id="emergencyModal">
         <div class="modal-box">
             <div style="font-size: 50px; margin-bottom: 10px;">⚠️</div>
@@ -115,7 +115,7 @@
             document.getElementById("adminTriggerBtn").style.display = "block";
         }
 
-        // دالة إغلاق النافذة المنبثقة عند الضغط على الزر
+        // إغلاق النافذة المنبثقة عند الضغط عليها
         function closeModal() {
             document.getElementById("emergencyModal").style.display = "none";
         }
@@ -140,8 +140,12 @@
                 document.getElementById("seconds").innerText = "00";
                 document.getElementById("status-text").innerText = "🟢 الموقع يعمل بشكل طبيعي حالياً";
                 
+                // إعادة التوجيه التلقائي للموقع الرئيسي بعد انتهاء الوقت
+                // مع استثناء الرابط السري لكي لا يخرج المشرف من لوحة التحكم
                 if (targetTime !== 0 && now >= targetTime) {
-                    window.location.href = "/";
+                    if (window.location.pathname !== "/dev-panel-lock") {
+                        window.location.href = "/";
+                    }
                 }
                 return;
             }
