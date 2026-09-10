@@ -54,30 +54,10 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
 // ==========================================
-// 🛠️ نظام إدارة الصيانة الذكي (المحدث لمنع التعارض)
+// 🛠️ نظام عرض صفحة الصيانة (مستقل وبدون تعارض)
 // ==========================================
-let isUnderMaintenance = false; // يمكنك جعلها true أو false حسب رغبتك
-
-app.use((req, res, next) => {
-  // 1. استثناء رابط صفحة الصيانة السري تماماً لكي لا تغلق أو تدخل في حلقة توجيه
-  if (req.path === "/dev-panel-lock") {
-    return res.sendFile(path.join(__dirname, "public", "maintenance.html"));
-  }
-
-  // 2. استثناء ملفات التصميم والـ API والمجلدات الثابتة
-  if (
-    req.path.startsWith("/api/") || 
-    req.path.includes(".") // لملفات الـ CSS, JS, الصور وغيرها
-  ) {
-    return next();
-  }
-
-  // 3. إذا كانت الصيانة مفعلة، قم بتوجيه الزوار العاديين إلى رابط الصيانة السري
-  if (isUnderMaintenance) {
-    return res.redirect("/dev-panel-lock");
-  }
-
-  next();
+app.get("/dev-panel-lock", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "maintenance.html"));
 });
 
 // ==========================================
