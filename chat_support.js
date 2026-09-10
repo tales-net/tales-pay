@@ -22,11 +22,8 @@ function initSocket(io) {
       if (clientId) {
         socket.join(clientId);
         
-        // إذا كانت المحادثة مغلقة، نسمح للعميل ببدء محادثة جديدة نظيفة
         if (chatStatuses.get(clientId) === "closed") {
           chatStatuses.delete(clientId);
-          chatSessions.delete(clientId);
-          clientWaitTimes.delete(clientId);
         }
       }
     });
@@ -55,6 +52,7 @@ async function handleClientMessage(res, sendSupportChatMessageFunc) {
   // تم ترك الدالة متوافقة مع البرامترات
 }
 
+// دالة لمعالجة الرسائل
 async function handleClientMessageRoute(req, res, sendSupportChatMessageFunc) {
   try {
     const clientId = req.body.clientId || req.body.clientID;
@@ -65,11 +63,12 @@ async function handleClientMessageRoute(req, res, sendSupportChatMessageFunc) {
       return res.status(400).json({ success: false, message: "معرف العميل مفقود" });
     }
 
-    // إذا كانت المحادثة مغلقة، نسمح بإعادة فتحها وبدء دور جديد عند إرسال رسالة جديدة
     if (chatStatuses.get(clientId) === "closed") {
-      chatStatuses.delete(clientId);
-      chatSessions.delete(clientId);
-      clientWaitTimes.delete(clientId);
+      return res.status(403).json({ 
+        success: false, 
+        closed: true, 
+        message: "تم إغلاق هذه المحادثة من قبل الدعم الفني." 
+      });
     }
 
     const isFirstMessage = !chatSessions.has(clientId) || chatSessions.get(clientId).filter(m => m.sender === 'client').length === 0;
@@ -218,6 +217,8 @@ async function handleTelegramReply(body) {
 
       if (data.startsWith("close_")) {
         const clientId = data.replace("close_", "");
+        
+        // تعيين حالة الشات كمغلق وحذف الجلسات والعدادات تماماً من الذاكرة
         chatStatuses.set(clientId, "closed");
         chatSessions.delete(clientId);
         clientWaitTimes.delete(clientId);
@@ -234,7 +235,7 @@ async function handleTelegramReply(body) {
 
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
           chat_id: chatId,
-          text: `🔒 تم إغلاق المحادثة للعميل: ${clientId} بنجاح.`
+          text: `🔒 تم إغلاق المحادثة للعميل: ${clientId} بنجاح وتم تصفير بياناته.`
         });
         return;
       }
@@ -255,11 +256,6 @@ async function handleTelegramReply(body) {
       if (!clientId && targetText) {
         const match = targetText.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
         if (match) clientId = match[1];
-      }
-      
-      if (!clientId && targetText) {
-        const matchAlt = targetText.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
-        if (matchAlt) clientId = matchAlt[1];
       }
     }
 
@@ -282,9 +278,7 @@ async function handleTelegramReply(body) {
         try {
           const fileRes = await axios.get(`https://api.telegram.org/file/bot${BOT_TOKEN}/getFile?file_id=${photoFileId}`);
           adminImageUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileRes.data.result.file_path}`;
-        } catch (imgErr) {
-          console.error("❌ خطأ في جلب صورة رد الآدمن:", imgErr.message);
-        }
+        } catch (imgErr) {}
       }
 
       const adminMsgObj = {
@@ -313,7 +307,11 @@ async function handleTelegramReply(body) {
 }
 
 function getStoredMessages(clientId) {
-  return chatSessions.get(clientId) || [];
+  // إذا كانت الحالة مغلقة، نعيد مصفوفة فارغة ونظيفة
+  if (chatStatuses.get(clientId) === "closed") {
+    return { messages: [], isClosed: true };
+  }
+  return { messages: chatSessions.get(clientId) || [], isClosed: false };
 }
 
 module.exports = {
