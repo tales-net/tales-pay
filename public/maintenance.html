@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="protection.js" defer></script>
-    <title>نحن نقوم بتطوير الخدمة لأجلك | صيانة دورية</title>
+    <title>نعتذر يوجد صيانة طارئة | توديع الصيانة</title>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Cairo', sans-serif; }
@@ -36,7 +35,7 @@
             -webkit-backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.2);
             padding: 40px 30px; border-radius: 20px; text-align: center; max-width: 550px; width: 90%; box-shadow: 0 15px 35px rgba(0,0,0,0.3);
         }
-        .icon-box { font-size: 60px; margin-bottom: 20px; animation: bounce 2s infinite; }
+        .icon-box { font-size: 60px; margin-bottom: 20px; animation: bounce 2s infinite; cursor: pointer; }
         @keyframes bounce { 0%, 20%, 50%, 80%, 100% {transform: translateY(0);} 40% {transform: translateY(-15px);} 60% {transform: translateY(-7px);} }
         h1 { font-size: 28px; font-weight: 900; margin-bottom: 15px; color: #fff; }
         p { font-size: 15px; color: #e0e0e0; line-height: 1.6; margin-bottom: 30px; }
@@ -45,11 +44,48 @@
         .time-box span { display: block; font-size: 26px; font-weight: 700; color: #ffc107; }
         .time-box label { font-size: 12px; color: #b0c4de; text-transform: uppercase; }
         .status-badge { display: inline-block; background: rgba(40, 167, 69, 0.2); color: #28a745; padding: 6px 15px; border-radius: 20px; font-size: 13px; font-weight: 600; border: 1px solid rgba(40, 167, 69, 0.4); }
+        
+        /* تنسيق النافذة المنبثقة (Popup Modal) */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px);
+            display: flex; align-items: center; justify-content: center; z-index: 999;
+            animation: fadeIn 0.4s ease;
+        }
+        .modal-box {
+            background: linear-gradient(135deg, #01225c 0%, #003380 100%);
+            border: 2px solid rgba(255, 255, 255, 0.25);
+            padding: 35px 25px; border-radius: 20px; text-align: center;
+            max-width: 420px; width: 90%; box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            animation: scaleUp 0.4s ease;
+        }
+        .modal-box h2 { color: #ffc107; font-size: 24px; margin-bottom: 15px; font-weight: 900; }
+        .modal-box p { color: #f1f1f1; font-size: 15px; line-height: 1.6; margin-bottom: 25px; }
+        .modal-btn {
+            background: #ffc107; color: #01225c; border: none; padding: 12px 30px;
+            font-size: 16px; font-weight: 700; border-radius: 30px; cursor: pointer;
+            transition: background 0.3s, transform 0.2s; box-shadow: 0 5px 15px rgba(255, 193, 7, 0.4);
+        }
+        .modal-btn:hover { background: #e0a800; transform: scale(1.05); }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes scaleUp { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
         .admin-trigger { margin-top: 20px; font-size: 11px; color: rgba(255,255,255,0.4); cursor: pointer; transition: color 0.3s; }
         .admin-trigger:hover { color: rgba(255,255,255,0.8); }
     </style>
 </head>
 <body>
+
+    <!-- النافذة المنبثقة التفاعلية (تظهر عند الدخول وتتطلب الضغط لبدء الموسيقى والمتابعة) -->
+    <div class="modal-overlay" id="emergencyModal">
+        <div class="modal-box">
+            <div style="font-size: 50px; margin-bottom: 10px;">⚠️</div>
+            <h2>تنبيه: صيانة طارئة</h2>
+            <p>نعتذر لعملائنا الأعزاء، الموقع خاضع حالياً لتحديثات وصيانة طارئة لتحسين الخدمات. يرجى الانتظار لحين الانتهاء.</p>
+            <button class="modal-btn" onclick="closeModalAndStartAudio()">فهمت، متابعة التصفح</button>
+        </div>
+    </div>
 
     <ul class="circles">
         <li></li><li></li><li></li><li></li><li></li>
@@ -57,9 +93,9 @@
     </ul>
 
     <div class="container">
-        <div class="icon-box">🛠️</div>
-        <h1>نقوم بتحديثات وتحسينات لأجلك!</h1>
-        <p>الموقع خاضع حالياً لصيانة دورية. يمكنك تنشيط الموقع بمجرد أنتهاء الوقت أدناه:</p>
+        <div class="icon-box" onclick="closeModalAndStartAudio()">🛠️</div>
+        <h1>نحن نقوم بتحديثات وتحسينات لأجلك!</h1>
+        <p>الموقع خاضع حالياً لصيانة دورية. سيتم فتح الموقع تلقائياً بمجرد انتهاء الوقت أدناه:</p>
 
         <div class="countdown-grid">
             <div class="time-box"><span id="hours">00</span><label>ساعات</label></div>
@@ -69,14 +105,54 @@
 
         <div class="status-badge" id="status-text">🔄 جارِ جلب حالة النظام...</div>
 
-        <!-- زر المشرف المخفي ولا يظهر نهائياً إلا عند الدخول حصرياً عبر الرابط السري /dev-panel-lock -->
-        <div class="admin-trigger" id="adminTriggerBtn" style="display: none;" onclick="verifyAndSetTime()">⚙️ أضبط وقت الصيانة (للمشرف)</div>
+        <!-- زر المشرف المخفي افتراضياً ولا يظهر إلا في الرابط السري -->
+        <div class="admin-trigger" id="adminTriggerBtn" style="display: none;" onclick="verifyAndSetTime()">⚙️ اضبط وقت الصيانة (للمشرف)</div>
     </div>
 
     <script>
-        // إظهار زر المشرف حصرياً في الرابط السري فقط
+        // إظهار زر التحكم بالمشرف فقط إذا كان في الرابط السري /dev-panel-lock
         if (window.location.pathname === "/dev-panel-lock") {
             document.getElementById("adminTriggerBtn").style.display = "block";
+        }
+
+        let audioCtx = null;
+        let isAudioStarted = false;
+
+        // دالة إغلاق النافذة المنبثقة وبدء الموسيقى الخلفية بسلاسة فور الضغط عليها
+        function closeModalAndStartAudio() {
+            document.getElementById("emergencyModal").style.display = "none";
+            
+            if (!isAudioStarted) {
+                isAudioStarted = true;
+                try {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    if (audioCtx.state === 'suspended') {
+                        audioCtx.resume();
+                    }
+
+                    const notes = [261.63, 329.63, 392.00, 523.25, 587.33];
+                    setInterval(() => {
+                        let freq = notes[Math.floor(Math.random() * notes.length)];
+                        let osc = audioCtx.createOscillator();
+                        let gainNode = audioCtx.createGain();
+
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+                        gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+                        gainNode.gain.linearRampToValueAtTime(0.025, audioCtx.currentTime + 1.5);
+                        gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 3.5);
+
+                        osc.connect(gainNode);
+                        gainNode.connect(audioCtx.destination);
+
+                        osc.start();
+                        osc.stop(audioCtx.currentTime + 3.5);
+                    }, 3000);
+                } catch (e) {
+                    console.log("Audio not supported");
+                }
+            }
         }
 
         async function fetchServerTime() {
@@ -99,7 +175,6 @@
                 document.getElementById("seconds").innerText = "00";
                 document.getElementById("status-text").innerText = "🟢 الموقع يعمل بشكل طبيعي حالياً";
                 
-                // إذا كنا على صفحة الصيانة وانتهى الوقت، ننتقل تلقائياً للرئيسية
                 if (targetTime !== 0 && now >= targetTime) {
                     window.location.href = "/";
                 }
@@ -151,7 +226,6 @@
             }
         }
 
-        // تحديث العداد كل ثانية
         setInterval(updateCountdown, 1000);
         updateCountdown();
     </script>
