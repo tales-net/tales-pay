@@ -107,12 +107,15 @@
     });
 
     socket.on("chat_closed", (data) => {
-      // مسح بيانات العد التنازلي والجلسة من المتصفح بالكامل عند الإغلاق
-      if (countdownInterval) clearInterval(countdownInterval);
+      // عند إغلاق المحادثة، نمسح بيانات العداد والجلسة من المتصفح ليبدأ العميل بمعرف وجلسة جديدة تماماً لاحقاً
       localStorage.removeItem("hikayat_queue_end_time");
       localStorage.removeItem("hikayat_total_seconds");
       localStorage.removeItem("hikayat_initial_queue");
       sessionStorage.removeItem("waiting_notice_sent");
+      
+      // توليد معرف جديد للعميل للمستقبل
+      const newClientId = "client_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
+      localStorage.setItem("hikayat_client_id", newClientId);
 
       lockChatInterface(data.message || "تم إغلاق المحادثة بواسطة الدعم الفني.");
     });
@@ -129,9 +132,23 @@
       startDynamicCountdown(endTime, totalSeconds, initialQueue);
     });
 
+    // جلب رسائل وحالة الشات عند التحميل
     fetch(`/api/support/messages/${clientId}`)
       .then(res => res.json())
       .then(data => {
+        if (data.isClosed) {
+          // إذا كان السيرفر يعتبر الشات مغلقاً، نقوم بتصفير التخزين المحلي فوراً
+          localStorage.removeItem("hikayat_queue_end_time");
+          localStorage.removeItem("hikayat_total_seconds");
+          localStorage.removeItem("hikayat_initial_queue");
+          sessionStorage.removeItem("waiting_notice_sent");
+          
+          const newClientId = "client_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
+          localStorage.setItem("hikayat_client_id", newClientId);
+          clientId = newClientId;
+          return;
+        }
+
         if (data.success && data.messages) {
           data.messages.forEach(m => appendMessage(m.sender, m.text, m.image));
         }
@@ -143,6 +160,10 @@
 
     if (savedEndTime && Number(savedEndTime) > Date.now()) {
       startDynamicCountdown(Number(savedEndTime), Number(savedTotalSecs) || 360, Number(savedQueueNo) || 3);
+    } else {
+      localStorage.removeItem("hikayat_queue_end_time");
+      localStorage.removeItem("hikayat_total_seconds");
+      localStorage.removeItem("hikayat_initial_queue");
     }
   }
 
@@ -236,8 +257,6 @@
     input.placeholder = reason;
     imgInput.disabled = true;
     sendBtn.disabled = true;
-
-    if (queueBanner) queueBanner.style.display = "none";
 
     const notice = document.createElement("div");
     notice.className = "chat-notice";
