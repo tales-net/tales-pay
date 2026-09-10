@@ -277,30 +277,67 @@ async function handleTelegramCallback(callbackQuery) {
 
     if (data.startsWith("create_voucher")) {
       // الصيغة: create_voucher_{txnId}_{amount}
-      const txnId = parts[2];
-      const amount = parts[3] || "0";
+      const txnId = parts[2] || parts[1]; 
+      const amount = parts[3] || parts[2] || "0";
 
-      let generatedCard = null;
+      console.log(`🎟️ [Voucher Creation Started] جارٍ إصدار الكارت للمعاملة: ${txnId} بالقيمة: ${amount}`);
+
+      let voucherData = null;
+      let errorMessage = null;
+
       try {
-        if (typeof mikrotikService.generateVoucherByAmount === "function") {
-          generatedCard = await mikrotikService.generateVoucherByAmount(parseFloat(amount));
-        } else if (typeof mikrotikService.createVoucher === "function") {
-          generatedCard = await mikrotikService.createVoucher(amount);
+        // استدعاء الدالة الصحيحة الموجودة في mikrotikService.js
+        if (typeof mikrotikService !== "undefined" && typeof mikrotikService.processPaymentAndCreateCard === "function") {
+          voucherData = await mikrotikService.processPaymentAndCreateCard(amount, "main", txnId);
+        } else {
+          throw new Error("دالة processPaymentAndCreateCard غير موجودة في mikrotikService");
         }
       } catch (err) {
-        console.error("❌ خطأ أثناء توليد الكارت عبر المايكروتيك:", err.message);
+        console.error("❌ خطأ أثناء توليد الكارت من ميكروتيك:", err);
+        errorMessage = err.message;
       }
 
-      const cardCodeStr = generatedCard?.code || generatedCard || "فشل التوليد أو غير متوفر";
-      const updatedText = callbackQuery.message.text + `\n\n🎟️ <b>[تم الإصدار اليدوي]</b> كارت الإنترنت: <code>${cardCodeStr}</code>`;
+      if (voucherData && (voucherData.success || voucherData.cardCode)) {
+        // حفظ تفاصيل الكارت الحقيقية في الذاكرة المؤقتة لكي تظهر للعميل في صفحة الانتظار
+        if (global.generatedCardsMap) {
+          global.generatedCardsMap.set(txnId, {
+            isContribution: voucherData.isContribution || false,
+            success: true,
+            code: voucherData.cardCode || voucherData.username || "متاح", // <-- إضافة المفتاح مباشرة ليتم قراءته في صفحة النجاح
+            voucher: {
+              username: voucherData.cardCode || voucherData.username || "متاح",
+              password: voucherData.password || ""
+            },
+            amount: amount,
+            transactionId: txnId,
+            packageName: voucherData.packageName || "باقة إنترنت",
+            createdAt: new Date()
+          });
+        }
 
-      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
-        chat_id: chatId,
-        message_id: messageId,
-        text: updatedText,
-        parse_mode: "HTML",
-        reply_markup: { inline_keyboard: [] }
-      });
+        const usernameStr = voucherData.cardCode || voucherData.username || "متاح";
+        const passwordStr = voucherData.password || "";
+
+        const updatedText = callbackQuery.message.text + 
+          `\n\n✅ <b>[تم إصدار الكارت بنجاح من الميكروتيك]</b>\n🎟️ الكارت: <code>${usernameStr}</code>` +
+          (passwordStr ? `\n🔑 كلمة المرور: <code>${passwordStr}</code>` : ``);
+
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
+          chat_id: chatId,
+          message_id: messageId,
+          text: updatedText,
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: [] }
+        });
+
+        console.log(`✅ [Voucher Success] تم إصدار الكارت بنجاح للميكروتيك للمعاملة ${txnId} وإرساله لصفحة الانتظار.`);
+
+      } else {
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          chat_id: chatId,
+          text: `❌ فشل إصدار الكارت من الميكروتيك للمعاملة ${txnId}.\nالسبب: ${errorMessage || "خطأ غير معروف"}`
+        });
+      }
 
     } else if (data.startsWith("contribution")) {
       // الصيغة: contribution_{txnId}_{amount}
