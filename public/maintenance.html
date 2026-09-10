@@ -77,7 +77,7 @@
 </head>
 <body>
 
-    <!-- النافذة المنبثقة التفاعلية (تظهر عند الدخول وتغلق بالضغط على الزر) -->
+    <!-- النافذة المنبثقة التفاعلية (تظهر عند الدخول وتتطلب الضغط للمتابعة) -->
     <div class="modal-overlay" id="emergencyModal">
         <div class="modal-box">
             <div style="font-size: 50px; margin-bottom: 10px;">⚠️</div>
@@ -115,7 +115,7 @@
             document.getElementById("adminTriggerBtn").style.display = "block";
         }
 
-        // دالة إغلاق النافذة المنبثقة بالضغط
+        // دالة إغلاق النافذة المنبثقة عند الضغط على الزر
         function closeModal() {
             document.getElementById("emergencyModal").style.display = "none";
         }
