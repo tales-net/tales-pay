@@ -22,7 +22,6 @@
             overflow: hidden;
             position: relative;
         }
-        /* خلفية مبهجة متحركة */
         .circles {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -96,7 +95,6 @@
             margin-bottom: 30px;
         }
 
-        /* تصميم عداد التنازلي الاحترافي */
         .countdown-grid {
             display: flex;
             justify-content: center;
@@ -137,7 +135,6 @@
             border: 1px solid rgba(40, 167, 69, 0.4);
         }
 
-        /* زر خفي أو خاص لتعديل وقت الصيانة مستقبلاً بسهولة */
         .admin-trigger {
             margin-top: 20px;
             font-size: 11px;
@@ -162,7 +159,6 @@
         <h1>نقوم بتحديثات وتحسينات لأجلك!</h1>
         <p>الموقع خاضع حالياً لصيانة دورية لتقديم تجربة أسرع وأفضل. سيتم إعادة فتح الموقع تلقائياً بمجرد انتهاء الوقت أدناه:</p>
 
-        <!-- صندوق العد التنازلي -->
         <div class="countdown-grid">
             <div class="time-box">
                 <span id="hours">00</span>
@@ -180,19 +176,13 @@
 
         <div class="status-badge">🔄 جارِ العمل على التحديثات</div>
 
-        <div class="admin-trigger" onclick="setMaintenanceTime()">⚙️ اضبط وقت الصيانة (للمشرف)</div>
+        <div class="admin-trigger" onclick="verifyAndSetTime()">⚙️ اضبط وقت الصيانة (للمشرف)</div>
     </div>
 
     <script>
-        // دالة لجلب أو تعيين وقت انتهاء الصيانة
-        // يمكنك تعديل الوقت الافتراشي هنا، أو الضغط على زر المشرف في الأسفل لتحديد وقت جديد بسهولة
         function getTargetTime() {
             let savedTime = localStorage.getItem("maintenance_end_time");
-            
-            // إذا لم يتم ضبط وقت مسبقاً، نجعل وقت الصيانة الافتراضي مثلاً بعد 30 دقيقة من الآن
-            // أو يمكنك جعله 00:00:00 إذا كنت تريد إيقاف الصيانة تماماً وفتح الموقع
             if (!savedTime) {
-                // افتراضياً: 0 يعني لا توجد صيانة مفعلة ويفتح الموقع طبيعياً
                 return 0; 
             }
             return parseInt(savedTime, 10);
@@ -201,10 +191,8 @@
         function updateCountdown() {
             const targetTime = getTargetTime();
             
-            // إذا كان وقت الانتهاء 0 أو مضى وقته، افتح الموقع فوراً
             if (targetTime === 0 || Date.now() >= targetTime) {
                 localStorage.removeItem("maintenance_end_time");
-                // إعادة توجيه للرئيسية لفتح الموقع بشكل طبيعي
                 window.location.href = "/";
                 return;
             }
@@ -221,27 +209,47 @@
             document.getElementById("seconds").innerText = String(seconds).padStart(2, '0');
         }
 
-        // زر سري لضبط الوقت عند الحاجة لعمل صيانة جديدة دون تعديل الكود
-        function setMaintenanceTime() {
-            let minutesInput = prompt("أدخل عدد دقائق الصيانة المطلوبة (مثال: 30 للدقائق، أو اكتب 0 لإلغاء الصيانة وفتح الموقع):");
-            if (minutesInput !== null) {
-                let mins = parseInt(minutesInput, 10);
-                if (mins === 0) {
-                    localStorage.removeItem("maintenance_end_time");
-                    alert("تم إيقاف الصيانة، سيتم فتح الموقع الآن!");
-                    window.location.href = "/";
-                } else if (!isNaN(mins) && mins > 0) {
-                    let newTarget = Date.now() + (mins * 60 * 1000);
-                    localStorage.setItem("maintenance_end_time", newTarget);
-                    alert(`تم ضبط وقت الصيانة لمدة ${mins} دقيقة بنجاح!`);
-                    location.reload();
+        // دالة طلب كلمة المرور والتحقق منها عبر السيرفر
+        async function verifyAndSetTime() {
+            let password = prompt("🔒 يرجى إدخال كلمة مرور المشرف:");
+            if (!password) return;
+
+            try {
+                // إرسال الباسورد للسيرفر للتحقق بأمان
+                let response = await fetch("/api/maintenance/verify", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ password: password })
+                });
+
+                let result = await response.json();
+
+                if (result.success) {
+                    let minutesInput = prompt("✅ كلمة المرور صحيحة!\nأدخل عدد دقائق الصيانة المطلوبة (أو اكتب 0 لإلغاء الصيانة وفتح الموقع):");
+                    if (minutesInput !== null) {
+                        let mins = parseInt(minutesInput, 10);
+                        if (mins === 0) {
+                            localStorage.removeItem("maintenance_end_time");
+                            alert("تم إيقاف الصيانة، سيتم فتح الموقع الآن!");
+                            window.location.href = "/";
+                        } else if (!isNaN(mins) && mins > 0) {
+                            let newTarget = Date.now() + (mins * 60 * 1000);
+                            localStorage.setItem("maintenance_end_time", newTarget);
+                            alert(`تم ضبط وقت الصيانة لمدة ${mins} دقيقة بنجاح!`);
+                            location.reload();
+                        } else {
+                            alert("قيمة غير صالحة!");
+                        }
+                    }
                 } else {
-                    alert("قيمة غير صالحة!");
+                    alert("❌ كلمة المرور غير صحيحة!");
                 }
+            } catch (err) {
+                console.error(err);
+                alert("حدث خطأ أثناء الاتصال بالخادم.");
             }
         }
 
-        // تشغيل العداد فوراً كل ثانية
         setInterval(updateCountdown, 1000);
         updateCountdown();
     </script>
