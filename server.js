@@ -40,6 +40,18 @@ const upload = multer();
 // مسار الملف المؤقت لحفظ وقت الصيانة على السيرفر
 const maintenanceFile = path.join(__dirname, 'maintenance_status.json');
 
+// استبدل السطر القديم app.use(cors()); بهذا الكود:
+app.use(cors({
+    origin: "*", // يسمح لأي موقع (مثل بلوجر) بالاتصال بالسيرفر
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true
+}));
+
+app.use(express.json());
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
 // دالة لجلب وقت الصيانة المحفوظ
 function getMaintenanceEndTime() {
   try {
