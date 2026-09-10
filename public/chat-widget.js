@@ -316,18 +316,31 @@
     welcomeBubble.innerHTML = '💬 تحدث معنا مباشرة';
     
     Object.assign(welcomeBubble.style, {
-      position: 'fixed', bottom: '27px', right: '85px', backgroundColor: '#01338D', color: '#ffffff',
-      padding: '10px 16px', borderRadius: '20px 20px 2px 20px', boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
-      fontFamily: 'Segoe UI, Tahoma, Cairo, sans-serif', fontSize: '13px', fontWeight: 'bold',
-      zIndex: '999998', cursor: 'pointer', direction: 'rtl', opacity: '0', transform: 'translateY(15px)',
-      transition: 'all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+      position: 'fixed', 
+      bottom: '26px', // نفس ارتفاع فقاعة الشات تقريباً لتخرج من جوارها
+      right: '85px',  // تبدأ من مكان فقاعة الشات (التي تبعد 20px وتعرُضها 55px)
+      backgroundColor: '#01338D', 
+      color: '#ffffff',
+      padding: '10px 16px', 
+      borderRadius: '20px', 
+      boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+      fontFamily: 'Segoe UI, Tahoma, Cairo, sans-serif', 
+      fontSize: '13px', 
+      fontWeight: 'bold',
+      zIndex: '999998', 
+      cursor: 'pointer', 
+      direction: 'rtl', 
+      opacity: '0', 
+      transform: 'scale(0.5) translateX(20px)', // تبدأ مختبئة وصغيرة داخل مكان الفقاعة
+      transition: 'all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
     });
 
     document.body.appendChild(welcomeBubble);
 
+    // حركة الظهور: الانزلاق والخروج نحو اليسار بجانب فقاعة الشات
     setTimeout(() => {
       welcomeBubble.style.opacity = '1';
-      welcomeBubble.style.transform = 'translateY(0)';
+      welcomeBubble.style.transform = 'scale(1) translateX(0)';
     }, 1000);
 
     welcomeBubble.onclick = function() {
@@ -335,9 +348,11 @@
       if (welcomeBubble && welcomeBubble.parentNode) welcomeBubble.remove();
     };
 
+    // الاختفاء تلقائياً بعد مرور دقيقة
     setTimeout(() => {
       if (welcomeBubble && welcomeBubble.parentNode) {
         welcomeBubble.style.opacity = '0';
+        welcomeBubble.style.transform = 'scale(0.5) translateX(20px)';
         setTimeout(() => welcomeBubble.remove(), 500);
       }
     }, 61000);
