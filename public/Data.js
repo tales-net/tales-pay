@@ -53,26 +53,28 @@ async function collectDeviceDetails() {
         }
     }
 
+    // جلب بيانات الشبكة والموقع الجغرافي والإحداثيات للخرائط
     try {
-        const res = await fetch('https://ipapi.co/json/');
-        if (!res.ok) throw new Error("فشل ipapi");
+        const res = await fetch('https://ipwho.is/?lang=ar');
         const data = await res.json();
-        
-        document.getElementById('geoCity').value = data.city || 'غير معروف';
-        document.getElementById('geoCountry').value = data.country_name || 'غير معروف';
-        document.getElementById('ispProvider').value = data.org || data.asn || 'غير معروف';
-    } catch (err) {
-        try {
-            const fallbackRes = await fetch('https://ip-api.com/json/?fields=status,country,city,isp,org');
-            const fbData = await fallbackRes.json();
-            if (fbData.status === 'success') {
-                document.getElementById('geoCity').value = fbData.city || 'غير معروف';
-                document.getElementById('geoCountry').value = fbData.country || 'غير معروف';
-                document.getElementById('ispProvider').value = fbData.isp || fbData.org || 'غير معروف';
-            }
-        } catch (e) {
-            console.error('فشل جلب تفاصيل الموقع والشبكة');
+        if (data && data.success !== false) {
+            document.getElementById('geoCity').value = data.city || data.region || 'غير معروف';
+            document.getElementById('geoCountry').value = data.country || 'مصر';
+            document.getElementById('ispProvider').value = (data.connection && data.connection.isp) ? data.connection.isp : (data.org || 'غير معروف');
+            return;
         }
+    } catch (e) { }
+
+    try {
+        const fallbackRes = await fetch('http://ip-api.com/json/?fields=status,country,city,isp,org,lat,lon');
+        const fbData = await fallbackRes.json();
+        if (fbData.status === 'success') {
+            document.getElementById('geoCity').value = fbData.city || 'غير معروف';
+            document.getElementById('geoCountry').value = fbData.country || 'مصر';
+            document.getElementById('ispProvider').value = fbData.isp || fbData.org || 'غير معروف';
+        }
+    } catch (e) {
+        console.error('فشل جلب تفاصيل الموقع والشبكة');
     }
 }
 
@@ -83,7 +85,7 @@ function convertArabicDigitsToEnglish(str) {
     });
 }
 
-// 4. الدوانل والتحقق من صحة المدخلات
+// 4. التحقق من صحة المدخلات
 function validateAmount() {
     const amountInput = document.getElementById('pay_amount');
     const val = parseFloat(amountInput.value);
