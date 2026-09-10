@@ -81,14 +81,8 @@ async function handleClientMessageRoute(req, res, sendSupportChatMessageFunc) {
     let initialQueue = 3;   // افتراضي
 
     if (isFirstMessage) {
-      // اختيار رقم انتظار عشوائي ضمن النطاق المطلوب (مثلاً بين 3 إلى 10، أو بناءً على رغبتك)
-      // لنجعل النطاق العشوائي يبدأ من 3 كحد أدنى وحتى 6 أو 10 بناءً على طلبك السابق
-      initialQueue = Math.floor(Math.random() * (10 - 3 + 1)) + 3; 
-      
-      // تعيين وقت عشوائي إجمالي يتناسب مع الرقم (مثلاً كل رقم يحمل وقتاً عشوائياً مختلفاً)
-      // إذا كان رقم الانتظار 3 قد يصل الوقت الإجمالي إلى ما بين 5 إلى 7 دقائق (300 إلى 420 ثانية)
-      // لتوليد عشوائية ذكية ومختلفة لكل عميل:
-      totalSeconds = initialQueue * 60 + Math.floor(Math.random() * 120); // إضافة ثوانٍ عشوائية إضافية للتنوع
+      initialQueue = Math.floor(Math.random() * (10 - 3 + 1)) + 3;  
+      totalSeconds = initialQueue * 60 + Math.floor(Math.random() * 120);
 
       clientWaitTimes.set(clientId, { totalSeconds, initialQueue });
       
@@ -189,6 +183,7 @@ async function sendSupportChatMessage(clientId, messageText, imageBuffer = null,
 
 async function handleTelegramReply(body) {
   try {
+    // 1. معالجة ضغطات الأزرار (Callback Queries)
     if (body.callback_query) {
       const callbackQuery = body.callback_query;
       const data = callbackQuery.data;
@@ -196,17 +191,21 @@ async function handleTelegramReply(body) {
       const messageId = callbackQuery.message.message_id;
       const originalMessage = callbackQuery.message;
 
+      // أزل علامة التحميل الدائرية من الزر في تليجرام فوراً
+      try {
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+          callback_query_id: callbackQuery.id
+        });
+      } catch (e) {
+        // تجاهل خطأ انتهاء صلاحية الـ callback id إذا تكرر
+      }
+
       if (data.startsWith("reply_")) {
         const clientId = data.replace("reply_", "");
         
         if (global.ioInstance) {
           global.ioInstance.to(clientId).emit("typing_status", { isTyping: true });
         }
-
-        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
-          callback_query_id: callbackQuery.id,
-          text: "✍️ اكتب ردك الآن في المحادثة..."
-        });
 
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
           chat_id: chatId,
@@ -230,20 +229,23 @@ async function handleTelegramReply(body) {
           global.ioInstance.to(clientId).emit("chat_closed", { message: "تم إغلاق المحادثة من قبل الدعم الفني." });
         }
 
-        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
-          callback_query_id: callbackQuery.id,
-          text: "🔒 تم إغلاق الشات بنجاح."
-        });
-
+        // تحديث رسالة تليجرام لتصبح مغلقة
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageReplyMarkup`, {
           chat_id: chatId,
           message_id: messageId,
           reply_markup: { inline_keyboard: [[{ text: "🔒 المحادثة مغلقة", callback_data: "closed" }]] }
         });
+
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          chat_id: chatId,
+          text: `🔒 تم إغلاق المحادثة للعميل: ${clientId} بنجاح.`
+        });
+        return;
       }
       return;
     }
 
+    // 2. معالجة الرسائل النصية الموجهة كـ رد من الآدمن
     const message = body.message;
     if (!message) return;
 
@@ -254,13 +256,21 @@ async function handleTelegramReply(body) {
       const repliedMsgId = String(message.reply_to_message.message_id);
       clientId = telegramToClientMap.get(repliedMsgId);
 
-      if (!clientId && message.reply_to_message.text) {
-        const match = message.reply_to_message.text.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
-        if (match) clientId = match[1];
+      // البحث الاحتياطي في النص أو الكابشن واستخراج الـ clientId بدقة
+      const targetText = message.reply_to_message.text || message.reply_to_message.caption || "";
+      if (!clientId && targetText) {
+        const match = targetText.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
+        if (match) {
+          clientId = match[1];
+        }
       }
-      if (!clientId && message.reply_to_message.caption) {
-        const match = message.reply_to_message.caption.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
-        if (match) clientId = match[1];
+      
+      // فحص إضافي لو كان الرد على رسالة "أكتب ردك الآن" التي تحتوي على الـ clientId
+      if (!clientId && targetText) {
+        const matchAlt = targetText.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
+        if (matchAlt) {
+          clientId = matchAlt[1];
+        }
       }
     }
 
@@ -268,7 +278,7 @@ async function handleTelegramReply(body) {
       if (chatStatuses.get(clientId) === "closed") {
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
           chat_id: message.chat.id,
-          text: "⚠️ عذراً، هذه المحادثة مغلقة."
+          text: "⚠️ عذراً، هذه المحادثة مغلقة من قبل ولا يمكن الرد عليها."
         });
         return;
       }
@@ -297,7 +307,7 @@ async function handleTelegramReply(body) {
 
       chatSessions.get(clientId).push(adminMsgObj);
 
-      if (global.ioInstance) {
+    if (global.ioInstance) {
         global.ioInstance.to(clientId).emit("typing_status", { isTyping: false });
         global.ioInstance.to(clientId).emit("new_message", adminMsgObj);
       }
