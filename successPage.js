@@ -108,7 +108,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
                 setTimeout(pollVoucher, 2000); // الفحص كل ثانيتين
               } else {
                 // إعادة التوجيه إلى صفحة الفشل بعد انقضاء الـ 5 دقائق كاملة
-                const errorMsg = encodeURIComponent("⚠️ انتهت مهلة الانتظار ولم يتم الدفع بنجاح. تواصل مع الدعم برقم المعاملة: " + txId);
+                const errorMsg = encodeURIComponent("⚠️ انتهت مهلة الانتظار ولم يتم الدفع بنجاح. تواصل مع الدعم أذا تم الدفع برقم المعاملة: " + txId);
                 window.location.href = '/fail?error=' + errorMsg;
               }
             } catch (e) {
