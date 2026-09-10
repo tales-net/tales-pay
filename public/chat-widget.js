@@ -316,7 +316,7 @@
     welcomeBubble.innerHTML = '💬 تحدث معنا مباشرة';
     
     Object.assign(welcomeBubble.style, {
-      position: 'fixed', bottom: '85px', right: '20px', backgroundColor: '#01338D', color: '#ffffff',
+      position: 'fixed', bottom: '27px', right: '85px', backgroundColor: '#01338D', color: '#ffffff',
       padding: '10px 16px', borderRadius: '20px 20px 2px 20px', boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
       fontFamily: 'Segoe UI, Tahoma, Cairo, sans-serif', fontSize: '13px', fontWeight: 'bold',
       zIndex: '999998', cursor: 'pointer', direction: 'rtl', opacity: '0', transform: 'translateY(15px)',
