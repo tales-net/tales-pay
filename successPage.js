@@ -76,7 +76,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
           const urlParams = new URLSearchParams(window.location.search);
           const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
           let attempts = 0;
-          const maxAttempts = 30;
+          const maxAttempts = 150; // تم التعديل إلى 150 محاولة × ثانيتين = 300 ثانية (5 دقائق كاملة)
 
           async function pollVoucher() {
             if (!txId || txId === "غير محدد") {
@@ -105,17 +105,16 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
               }
 
               if (attempts < maxAttempts) {
-                setTimeout(pollVoucher, 2000);
+                setTimeout(pollVoucher, 2000); // الفحص كل ثانيتين
               } else {
-                // إعادة التوجيه إلى صفحة الفشل عند انتهاء مهلة الانتظار
-                const errorMsg = encodeURIComponent("⚠️ تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: " + txId);
+                // إعادة التوجيه إلى صفحة الفشل بعد انقضاء الـ 5 دقائق كاملة
+                const errorMsg = encodeURIComponent("⚠️ انتهت مهلة الانتظار (5 دقائق) ولم يتم إصدار الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: " + txId);
                 window.location.href = '/fail?error=' + errorMsg;
               }
             } catch (e) {
               if (attempts < maxAttempts) {
                 setTimeout(pollVoucher, 2500);
               } else {
-                // إعادة التوجيه إلى صفحة الفشل عند حدوث خطأ في الاتصال
                 const errorMsg = encodeURIComponent("خطأ في الاتصال بالسيرفر أثناء جلب الكارت للمعاملة: " + txId);
                 window.location.href = '/fail?error=' + errorMsg;
               }
