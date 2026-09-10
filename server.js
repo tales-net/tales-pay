@@ -8,7 +8,7 @@ const multer = require("multer");
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
-const { sendTelegramMessage, handleTelegramCallback } = require("./telegram");
+const { sendTelegramMessage, handleTelegramCallback, sendTelegramFailNotification } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
@@ -307,9 +307,24 @@ app.get("/success", (req, res) => {
   return res.send(pageHtml);
 });
 
-// استدعاء واجهة الفشل المنفصلة
-app.get("/fail", (req, res) => {
-  const errorMessage = req.query.data_message || "حدثت مشكلة أثناء عملية الدفع، حاول مرة أخرى.";
+// استعراض واجهة الفشل وإرسال إشعار لتليجرام
+app.get("/fail", async (req, res) => {
+  const errorMessage = req.query.data_message || req.query.error || "حدثت مشكلة أثناء عملية الدفع، حاول مرة أخرى.";
+  
+  // جمع بيانات العميل من الرابط إن وجدت للإشعار
+  const failData = {
+    transactionId: req.query.id || req.query.order || req.query.transaction_id || `FAIL_${Date.now()}`,
+    phone: req.query.phone || req.query.user_phone || "غير محدد",
+    amount: req.query.amount || req.query.price || "غير محدد",
+    branchName: req.query.branch || "حكايات نت رئيسي",
+    publicIP: getClientPublicIP(req)
+  };
+
+  // إرسال الإشعار لتليجرام بشكل غير متزامن (بدون إبطاء تحميل الصفحة للعميل)
+  sendTelegramFailNotification(errorMessage, failData).catch(err => {
+    console.error("Failed to send telegram fail notification:", err);
+  });
+
   const pageHtml = generateFailPageHtml(errorMessage);
   return res.send(pageHtml);
 });
