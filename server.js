@@ -15,7 +15,7 @@ const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateSuccessPageHtml } = require('./successPage'); // استدعاء صفحة النجاح المنفصلة
-const { generateFailPageHtml } = require('./failPage');        // استدعاء صفحة الفشل المنفصلة
+const { generateFailPageHtml } = require('./failPage');         // استدعاء صفحة الفشل المنفصلة
 
 // استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
@@ -288,7 +288,8 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
+      // توجيه العميل مباشرة إلى صفحة النجاح/الانتظار النشطة بدلاً من الملف المحذوف
+      return res.redirect(`/success?id=${transactionId}&branch=${selectedBranch}`);
     }
   } catch (err) {
     console.error("❌ خطأ في معالجة طلب الدفع:", err.response?.data || err.message);
