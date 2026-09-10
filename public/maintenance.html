@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>نعتذر يوجد صيانة طارئة | بيتهوفن</title>
+    <title>نعتذر يوجد صيانة طارئة | توديع الصيانة</title>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Cairo', sans-serif; }
@@ -45,7 +45,7 @@
         .time-box label { font-size: 12px; color: #b0c4de; text-transform: uppercase; }
         .status-badge { display: inline-block; background: rgba(40, 167, 69, 0.2); color: #28a745; padding: 6px 15px; border-radius: 20px; font-size: 13px; font-weight: 600; border: 1px solid rgba(40, 167, 69, 0.4); }
         
-        /* تنسيق النافذة المنبثقة */
+        /* تنسيق النافذة المنبثقة (Popup Modal) */
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px);
@@ -77,13 +77,13 @@
 </head>
 <body>
 
-    <!-- النافذة المنبثقة للصيانة الطارئة -->
+    <!-- النافذة المنبثقة التفاعلية (تظهر عند الدخول وتغلق بالضغط على الزر) -->
     <div class="modal-overlay" id="emergencyModal">
         <div class="modal-box">
-            <div style="font-size: 50px; margin-bottom: 10px;">🎹</div>
-            <h2>نعتذر: صيانة طارئة</h2>
-            <p>الموقع خاضع حالياً لتحديثات وصيانة طارئة لتحسين الخدمات. اضغط أدناه للمتابعة والاستماع لعزف هادئ.</p>
-            <button class="modal-btn" onclick="closeModalAndStartBeethoven()">فهمت، متابعة التصفح</button>
+            <div style="font-size: 50px; margin-bottom: 10px;">⚠️</div>
+            <h2>تنبيه: صيانة طارئة</h2>
+            <p>نعتذر لعملائنا الأعزاء، الموقع خاضع حالياً لتحديثات وصيانة طارئة لتحسين الخدمات. يرجى الانتظار لحين الانتهاء.</p>
+            <button class="modal-btn" onclick="closeModal()">فهمت، متابعة التصفح</button>
         </div>
     </div>
 
@@ -93,7 +93,7 @@
     </ul>
 
     <div class="container">
-        <div class="icon-box" onclick="closeModalAndStartBeethoven()">🎹</div>
+        <div class="icon-box" onclick="closeModal()">🛠️</div>
         <h1>نحن نقوم بتحديثات وتحسينات لأجلك!</h1>
         <p>الموقع خاضع حالياً لصيانة دورية. سيتم فتح الموقع تلقائياً بمجرد انتهاء الوقت أدناه:</p>
 
@@ -115,57 +115,9 @@
             document.getElementById("adminTriggerBtn").style.display = "block";
         }
 
-        let audioCtx = null;
-        let isMusicStarted = false;
-        let melodyInterval = null;
-
-        // دالة تشغيل عزف بيانو مستوحى من نغمات بيتهوفن الهادئة (مثل إيحاءات Für Elise)
-        function closeModalAndStartBeethoven() {
+        // دالة إغلاق النافذة المنبثقة بالضغط
+        function closeModal() {
             document.getElementById("emergencyModal").style.display = "none";
-
-            if (!isMusicStarted) {
-                isMusicStarted = true;
-                try {
-                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                    if (audioCtx.state === 'suspended') {
-                        audioCtx.resume();
-                    }
-
-                    // ترددات النغمات الكلاسيكية (تدريج بيانو عذب)
-                    // E5, D#5, E5, D#5, E5, B4, D5, C5, A4 ...
-                    const beethovenNotes = [
-                        659.25, 622.25, 659.25, 622.25, 659.25, 493.88, 587.33, 523.25, 440.00,
-                        349.23, 415.30, 493.88, 523.25, 329.63, 415.30, 493.88, 659.25
-                    ];
-                    let noteIndex = 0;
-
-                    melodyInterval = setInterval(() => {
-                        let freq = beethovenNotes[noteIndex];
-                        noteIndex = (noteIndex + 1) % beethovenNotes.length;
-
-                        let osc = audioCtx.createOscillator();
-                        let gainNode = audioCtx.createGain();
-
-                        // استخدام موجة 'triangle' أو 'sine' لتقترب من نعومة صوت البيانو الكلاسيكي
-                        osc.type = 'triangle';
-                        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-
-                        // تأثير ضربة البيانو (Attack سريع و Decay هادئ)
-                        gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-                        gainNode.gain.linearRampToValueAtTime(0.04, audioCtx.currentTime + 0.05);
-                        gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 1.8);
-
-                        osc.connect(gainNode);
-                        gainNode.connect(audioCtx.destination);
-
-                        osc.start();
-                        osc.stop(audioCtx.currentTime + 1.8);
-                    }, 650); // إيقاع انسيابي هادئ ومريح
-
-                } catch (e) {
-                    console.log("Audio Error", e);
-                }
-            }
         }
 
         async function fetchServerTime() {
