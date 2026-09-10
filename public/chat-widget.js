@@ -11,7 +11,6 @@
     #hikayat-chat-bubble:hover { transform: scale(1.05); }
     #hikayat-chat-box { position: fixed; bottom: 90px; right: 20px; width: 340px; height: 480px; background: white; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); display: none; flex-direction: column; z-index: 99999; direction: rtl; font-family: Tahoma, Cairo, sans-serif; overflow: hidden; border: 1px solid #e0e0e0; }
     
-    /* توسيط عنوان الدعم الفني المباشر وجعل زر الإغلاق على اليسار */
     #hikayat-chat-header { background: #01338D; color: white; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 15px; position: relative; }
     #hikayat-chat-header span { flex: 1; text-align: center; }
     #hikayat-chat-close { background: none; border: none; color: white; font-size: 18px; cursor: pointer; position: absolute; left: 15px; }
@@ -40,7 +39,6 @@
         <span>الدعم الفني المباشر</span>
         <button id="hikayat-chat-close">&times;</button>
       </div>
-      <!-- تم إخفاء نص الوقت وتعديل البانر ليظهر رقم الانتظار فقط بشكل خفي أو مبسط -->
       <div id="hikayat-queue-banner">⏳ ترتيبك الحالي في الانتظار: <span id="queue-number-badge">#--</span></div>
       <div id="hikayat-chat-messages">
         <div id="hikayat-typing-indicator">الدعم الفني يكتب الآن...</div>
@@ -109,6 +107,13 @@
     });
 
     socket.on("chat_closed", (data) => {
+      // مسح بيانات العد التنازلي والجلسة من المتصفح بالكامل عند الإغلاق
+      if (countdownInterval) clearInterval(countdownInterval);
+      localStorage.removeItem("hikayat_queue_end_time");
+      localStorage.removeItem("hikayat_total_seconds");
+      localStorage.removeItem("hikayat_initial_queue");
+      sessionStorage.removeItem("waiting_notice_sent");
+
       lockChatInterface(data.message || "تم إغلاق المحادثة بواسطة الدعم الفني.");
     });
 
@@ -182,7 +187,6 @@
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 
-  // العد التنازلي يعمل في الخلفية لتغيير أرقام الانتظار دون إظهار الوقت للعميل
   function startDynamicCountdown(endTime, totalSeconds, initialQueue) {
     queueBanner.style.display = "block";
 
@@ -219,7 +223,6 @@
         return;
       }
 
-      // حساب رقم الانتظار الحالي بناءً على نسبة الوقت المتبقي
       const progress = remainingSeconds / totalSeconds;
       let currentQueue = Math.ceil(progress * initialQueue);
       if (currentQueue < 1) currentQueue = 1;
@@ -233,6 +236,8 @@
     input.placeholder = reason;
     imgInput.disabled = true;
     sendBtn.disabled = true;
+
+    if (queueBanner) queueBanner.style.display = "none";
 
     const notice = document.createElement("div");
     notice.className = "chat-notice";
