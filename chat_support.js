@@ -63,12 +63,12 @@ async function handleClientMessageRoute(req, res, sendSupportChatMessageFunc) {
       return res.status(400).json({ success: false, message: "معرف العميل مفقود" });
     }
 
+    // 🔥 حل المشكلة: إذا كانت الحالة مغلقة، قم بمسح الحالة والبيانات القديمة كلياً
+    // لكي يبدأ العميل من جديد تماماً بعد إعادة تحميل الصفحة أو إرسال رسالة جديدة
     if (chatStatuses.get(clientId) === "closed") {
-      return res.status(403).json({ 
-        success: false, 
-        closed: true, 
-        message: "تم إغلاق هذه المحادثة من قبل الدعم الفني." 
-      });
+      chatStatuses.delete(clientId);
+      chatSessions.delete(clientId);
+      clientWaitTimes.delete(clientId);
     }
 
     const isFirstMessage = !chatSessions.has(clientId) || chatSessions.get(clientId).filter(m => m.sender === 'client').length === 0;
