@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="protection.js" defer></script>
     <title>نعتذر يوجد صيانة طارئة | توديع الصيانة</title>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
     <style>
@@ -78,13 +77,13 @@
 </head>
 <body>
 
-    <!-- النافذة المنبثقة التفاعلية (تظهر عند الدخول وتتطلب الضغط لبدء الموسيقى والمتابعة) -->
+    <!-- النافذة المنبثقة التفاعلية (تظهر عند الدخول وتتطلب الضغط للمتابعة) -->
     <div class="modal-overlay" id="emergencyModal">
         <div class="modal-box">
             <div style="font-size: 50px; margin-bottom: 10px;">⚠️</div>
             <h2>تنبيه: صيانة طارئة</h2>
             <p>نعتذر لعملائنا الأعزاء، الموقع خاضع حالياً لتحديثات وصيانة طارئة لتحسين الخدمات. يرجى الانتظار لحين الانتهاء.</p>
-            <button class="modal-btn" onclick="closeModalAndStartAudio()">فهمت، متابعة التصفح</button>
+            <button class="modal-btn" onclick="closeModal()">فهمت، متابعة التصفح</button>
         </div>
     </div>
 
@@ -94,9 +93,9 @@
     </ul>
 
     <div class="container">
-        <div class="icon-box" onclick="closeModalAndStartAudio()">🛠️</div>
+        <div class="icon-box" onclick="closeModal()">🛠️</div>
         <h1>نحن نقوم بتحديثات وتحسينات لأجلك!</h1>
-        <p>الموقع خاضع حالياً لصيانة دورية. يمكنك تنشيط الموقع بمجرد أنتهاء الوقت أدناه:</p>
+        <p>الموقع خاضع حالياً لصيانة دورية. سيتم فتح الموقع تلقائياً بمجرد انتهاء الوقت أدناه:</p>
 
         <div class="countdown-grid">
             <div class="time-box"><span id="hours">00</span><label>ساعات</label></div>
@@ -116,44 +115,9 @@
             document.getElementById("adminTriggerBtn").style.display = "block";
         }
 
-        let audioCtx = null;
-        let isAudioStarted = false;
-
-        // دالة إغلاق النافذة المنبثقة وبدء الموسيقى الخلفية بسلاسة فور الضغط عليها
-        function closeModalAndStartAudio() {
+        // دالة إغلاق النافذة المنبثقة عند الضغط على الزر
+        function closeModal() {
             document.getElementById("emergencyModal").style.display = "none";
-            
-            if (!isAudioStarted) {
-                isAudioStarted = true;
-                try {
-                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                    if (audioCtx.state === 'suspended') {
-                        audioCtx.resume();
-                    }
-
-                    const notes = [261.63, 329.63, 392.00, 523.25, 587.33];
-                    setInterval(() => {
-                        let freq = notes[Math.floor(Math.random() * notes.length)];
-                        let osc = audioCtx.createOscillator();
-                        let gainNode = audioCtx.createGain();
-
-                        osc.type = 'sine';
-                        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-
-                        gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-                        gainNode.gain.linearRampToValueAtTime(0.025, audioCtx.currentTime + 1.5);
-                        gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 3.5);
-
-                        osc.connect(gainNode);
-                        gainNode.connect(audioCtx.destination);
-
-                        osc.start();
-                        osc.stop(audioCtx.currentTime + 3.5);
-                    }, 3000);
-                } catch (e) {
-                    console.log("Audio not supported");
-                }
-            }
         }
 
         async function fetchServerTime() {
