@@ -16,10 +16,6 @@ global.clientWaitTimes = clientWaitTimes;
 const telegramToClientMap = global.telegramToClientMap || new Map();
 global.telegramToClientMap = telegramToClientMap;
 
-// تخزين مؤقت لبيانات الأدمين الذين يضغطون على زر "أكتب الرد"
-const adminReplyState = global.adminReplyState || new Map();
-global.adminReplyState = adminReplyState;
-
 function initSocket(io) {
   io.on("connection", (socket) => {
     socket.on("join_chat", (clientId) => {
@@ -52,11 +48,11 @@ function initSocket(io) {
   global.ioInstance = io;
 }
 
-// دالة لمعالجة الرسائل القادمة من العميل
-async function handleClientMessage(req, res, sendSupportChatMessageFunc) {
-  return handleClientMessageRoute(req, res, sendSupportChatMessageFunc);
+async function handleClientMessage(res, sendSupportChatMessageFunc) {
+  // تم ترك الدالة متوافقة مع البرامترات
 }
 
+// دالة لمعالجة الرسائل
 async function handleClientMessageRoute(req, res, sendSupportChatMessageFunc) {
   try {
     const clientId = req.body.clientId || req.body.clientID;
@@ -81,12 +77,18 @@ async function handleClientMessageRoute(req, res, sendSupportChatMessageFunc) {
       chatSessions.set(clientId, []);
     }
 
-    let totalSeconds = 360; 
-    let initialQueue = 3;   
+    let totalSeconds = 360; // افتراضي
+    let initialQueue = 3;   // افتراضي
 
     if (isFirstMessage) {
+      // اختيار رقم انتظار عشوائي ضمن النطاق المطلوب (مثلاً بين 3 إلى 10، أو بناءً على رغبتك)
+      // لنجعل النطاق العشوائي يبدأ من 3 كحد أدنى وحتى 6 أو 10 بناءً على طلبك السابق
       initialQueue = Math.floor(Math.random() * (10 - 3 + 1)) + 3; 
-      totalSeconds = initialQueue * 60 + Math.floor(Math.random() * 120); 
+      
+      // تعيين وقت عشوائي إجمالي يتناسب مع الرقم (مثلاً كل رقم يحمل وقتاً عشوائياً مختلفاً)
+      // إذا كان رقم الانتظار 3 قد يصل الوقت الإجمالي إلى ما بين 5 إلى 7 دقائق (300 إلى 420 ثانية)
+      // لتوليد عشوائية ذكية ومختلفة لكل عميل:
+      totalSeconds = initialQueue * 60 + Math.floor(Math.random() * 120); // إضافة ثوانٍ عشوائية إضافية للتنوع
 
       clientWaitTimes.set(clientId, { totalSeconds, initialQueue });
       
@@ -136,7 +138,6 @@ async function handleClientMessageRoute(req, res, sendSupportChatMessageFunc) {
   }
 }
 
-// دالة إرسال رسالة العميل إلى جروب التليجرام (مكتملة وصحيحة)
 async function sendSupportChatMessage(clientId, messageText, imageBuffer = null, waitMinutes = 6, isFirst = false, queueNumber = 3) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) return null;
@@ -144,8 +145,7 @@ async function sendSupportChatMessage(clientId, messageText, imageBuffer = null,
     const headerText = `💬 <b>${isFirst ? '⚠️ عميل جديد في طابور الانتظار الديناميكي' : 'رسالة جديدة من العميل'}</b>\n` +
                        `🆔 معرف العميل: <code>${clientId}</code>\n` +
                        (isFirst ? `📌 رقم الانتظار الابتدائي: <b># ${queueNumber}</b>\n⏳ الوقت التقديري المتغير: <b>~ ${waitMinutes} دقائق</b>\n` : ``) +
-                       `----------------------------------------\n` +
-                       (messageText ? `الرسالة: ${messageText}` : `[مرفق صورة]`);
+                       `----------------------------------------\n`;
 
     const replyMarkup = {
       inline_keyboard: [
@@ -164,114 +164,152 @@ async function sendSupportChatMessage(clientId, messageText, imageBuffer = null,
         filename: `support_${clientId}.png`,
         contentType: "image/png"
       });
-      form.append("caption", headerText);
+      form.append("caption", headerText + (messageText ? `📝 النص: ${messageText}` : "صورة مرسلة"));
       form.append("parse_mode", "HTML");
       form.append("reply_markup", JSON.stringify(replyMarkup));
 
       response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
-        headers: form.getHeaders()
+        headers: { ...form.getHeaders() }
       });
     } else {
       response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
         chat_id: CHAT_ID,
-        text: headerText,
+        text: headerText + (messageText || "صورة مرسلة"),
         parse_mode: "HTML",
         reply_markup: replyMarkup
       });
     }
 
-    if (response.data && response.data.result) {
-      return response.data.result.message_id;
-    }
-    return null;
+    return response.data?.result?.message_id;
   } catch (err) {
-    console.error("❌ خطأ في إرسال رسالة الدعم لتليجرام:", err.response?.data || err.message);
+    console.error("❌ Telegram Send Error:", err.response?.data || err.message);
     return null;
   }
 }
 
-// معالجة ضغط الأزرار الخاصة بالشات (أكتب الرد / إغلاق الشات)
-async function handleChatCallback(callbackQuery) {
+async function handleTelegramReply(body) {
   try {
-    const data = callbackQuery.data;
-    const chatId = callbackQuery.message.chat.id;
-    const queryId = callbackQuery.id;
-    const userId = callbackQuery.from.id;
+    if (body.callback_query) {
+      const callbackQuery = body.callback_query;
+      const data = callbackQuery.data;
+      const chatId = callbackQuery.message.chat.id;
+      const messageId = callbackQuery.message.message_id;
+      const originalMessage = callbackQuery.message;
 
-    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
-      callback_query_id: queryId,
-      text: "تم الطلب..."
-    });
+      if (data.startsWith("reply_")) {
+        const clientId = data.replace("reply_", "");
+        
+        if (global.ioInstance) {
+          global.ioInstance.to(clientId).emit("typing_status", { isTyping: true });
+        }
 
-    if (data.startsWith("reply_")) {
-      const clientId = data.replace("reply_", "");
-      adminReplyState.set(userId, clientId);
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+          callback_query_id: callbackQuery.id,
+          text: "✍️ اكتب ردك الآن في المحادثة..."
+        });
 
-      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        chat_id: chatId,
-        text: `✍️ **أدخل ردك الآن للعميل (معرف: ${clientId}):**\nاكتب رسالتك في الرد مباشرة وسيتم إرسالها فوراً للعميل.`
-      });
-    } else if (data.startsWith("close_")) {
-      const clientId = data.replace("close_", "");
-      chatStatuses.set(clientId, "closed");
-
-      if (global.ioInstance) {
-        global.ioInstance.to(clientId).emit("chat_closed", { message: "تم إغلاق المحادثة من قبل الدعم الفني." });
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          chat_id: chatId,
+          text: `👉 أكتب ردك الآن للعميل (معرف العميل: ${clientId}):\n(قم بالرد مباشرة على هذه الرسالة)`,
+          reply_to_message_id: originalMessage.message_id,
+          reply_markup: {
+            force_reply: true,
+            input_field_placeholder: `اكتب الرد للعميل ${clientId}...`
+          }
+        });
+        return;
       }
 
-      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        chat_id: chatId,
-        text: `🔒 تم إغلاق الشات للعميل (${clientId}) بنجاح.`
-      });
-    }
-  } catch (err) {
-    console.error("❌ خطأ في معالجة أزرار الشات:", err.message);
-  }
-}
+      if (data.startsWith("close_")) {
+        const clientId = data.replace("close_", "");
+        chatStatuses.set(clientId, "closed");
+        chatSessions.delete(clientId);
+        clientWaitTimes.delete(clientId);
 
-// معالجة ردود الأدمن النصية من تليجرام وإرسالها للعميل
-async function handleTelegramReply(update) {
-  try {
-    // 1. فحص هل هو ضغطة زر تخص الشات؟
-    if (update.callback_query && (update.callback_query.data.startsWith("reply_") || update.callback_query.data.startsWith("close_"))) {
-      await handleChatCallback(update.callback_query);
+        if (global.ioInstance) {
+          global.ioInstance.to(clientId).emit("chat_closed", { message: "تم إغلاق المحادثة من قبل الدعم الفني." });
+        }
+
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+          callback_query_id: callbackQuery.id,
+          text: "🔒 تم إغلاق الشات بنجاح."
+        });
+
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageReplyMarkup`, {
+          chat_id: chatId,
+          message_id: messageId,
+          reply_markup: { inline_keyboard: [[{ text: "🔒 المحادثة مغلقة", callback_data: "closed" }]] }
+        });
+      }
       return;
     }
 
-    const message = update.message || update.edited_message;
-    if (!message || !message.text) return;
+    const message = body.message;
+    if (!message) return;
 
-    const adminId = message.from.id;
-    const text = message.text;
+    let clientId = null;
+    let replyText = message.text || message.caption || "";
 
-    // التحقق هل الأدمن في وضع الرد على عميل معين
-    if (adminReplyState.has(adminId)) {
-      const clientId = adminReplyState.get(adminId);
-      adminReplyState.delete(adminId); // إزالة الحالة بعد الرد
+    if (message.reply_to_message) {
+      const repliedMsgId = String(message.reply_to_message.message_id);
+      clientId = telegramToClientMap.get(repliedMsgId);
 
-      const messageObj = {
-        sender: "support",
-        text: text,
-        image: null,
-        timestamp: new Date()
-      };
+      if (!clientId && message.reply_to_message.text) {
+        const match = message.reply_to_message.text.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
+        if (match) clientId = match[1];
+      }
+      if (!clientId && message.reply_to_message.caption) {
+        const match = message.reply_to_message.caption.match(/معرف العميل:\s*([a-zA-Z0-9_-]+)/);
+        if (match) clientId = match[1];
+      }
+    }
+
+    if (clientId) {
+      if (chatStatuses.get(clientId) === "closed") {
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          chat_id: message.chat.id,
+          text: "⚠️ عذراً، هذه المحادثة مغلقة."
+        });
+        return;
+      }
 
       if (!chatSessions.has(clientId)) {
         chatSessions.set(clientId, []);
       }
-      chatSessions.get(clientId).push(messageObj);
+
+      let adminImageUrl = null;
+      if (message.photo && message.photo.length > 0) {
+        const photoFileId = message.photo[message.photo.length - 1].file_id;
+        try {
+          const fileRes = await axios.get(`https://api.telegram.org/file/bot${BOT_TOKEN}/getFile?file_id=${photoFileId}`);
+          adminImageUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileRes.data.result.file_path}`;
+        } catch (imgErr) {
+          console.error("❌ خطأ في جلب صورة رد الآدمن:", imgErr.message);
+        }
+      }
+
+      const adminMsgObj = {
+        sender: "admin",
+        text: replyText,
+        image: adminImageUrl,
+        timestamp: new Date()
+      };
+
+      chatSessions.get(clientId).push(adminMsgObj);
 
       if (global.ioInstance) {
-        global.ioInstance.to(clientId).emit("new_message", messageObj);
+        global.ioInstance.to(clientId).emit("typing_status", { isTyping: false });
+        global.ioInstance.to(clientId).emit("new_message", adminMsgObj);
       }
 
       await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        chat_id: CHAT_ID,
-        text: `✅ تم إرسال الرد إلى العميل (${clientId}) بنجاح.`
+        chat_id: message.chat.id,
+        reply_to_message_id: message.message_id,
+        text: "✅ تم إرسال الرد إلى العميل بنجاح."
       });
     }
   } catch (err) {
-    console.error("❌ خطأ في معالجة رد الأدمن في تليجرام:", err.message);
+    console.error("❌ خطأ في معالجة رد المحادثة:", err.message);
   }
 }
 
@@ -281,7 +319,7 @@ function getStoredMessages(clientId) {
 
 module.exports = {
   initSocket,
-  handleClientMessage,
+  handleClientMessage: handleClientMessageRoute,
   sendSupportChatMessage,
   handleTelegramReply,
   getStoredMessages
