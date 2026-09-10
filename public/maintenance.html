@@ -77,11 +77,11 @@
 </head>
 <body>
 
-    <!-- النافذة المنبثقة التفاعلية (صيانة طارئة) -->
+    <!-- النافذة المنبثقة التفاعلية -->
     <div class="modal-overlay" id="emergencyModal">
         <div class="modal-box">
             <div style="font-size: 50px; margin-bottom: 10px;">⚠️</div>
-            <h2>تنبيه: صيانة طارئة</h2>
+            <h2>نعتذر: صيانة طارئة</h2>
             <p>نعتذر لعملائنا الأعزاء، الموقع خاضع حالياً لتحديثات وصيانة طارئة لتحسين الخدمات. يرجى الانتظار لحين الانتهاء.</p>
             <button class="modal-btn" onclick="closeModal()">فهمت، متابعة التصفح</button>
         </div>
@@ -115,6 +115,7 @@
             document.getElementById("adminTriggerBtn").style.display = "block";
         }
 
+        // إغلاق النافذة المنبثقة بالضغط على الزر
         function closeModal() {
             document.getElementById("emergencyModal").style.display = "none";
         }
@@ -139,19 +140,17 @@
                 document.getElementById("seconds").innerText = "00";
                 document.getElementById("status-text").innerText = "🟢 الموقع يعمل بشكل طبيعي حالياً";
                 
-                // الانتقال التلقائي فور انتهاء الوقت
+                // الانتقال التلقائي للرئيسية فور انتهاء الوقت
                 window.location.href = "/";
                 return;
             }
 
             const distance = targetTime - now;
-
-            // --- ميزة الـ 12 ثانية الأخيرة: إعادة تحميل متكررة لتجاوز أي تعليق في الموبايل والكمبيوتر ---
-            if (distance <= 12000) {
-                document.getElementById("status-text").innerText = "⚡ جاري إعادة توجيهك للموقع فوراً...";
-                setTimeout(() => {
-                    window.location.reload();
-                }, 1500); // يقوم بعمل تحديث للصفحة كل 1.5 ثانية حتى يفتح الموقع تلقائياً بمجرد انتهاء الـ Backend
+            
+            // 🚀 ميزة إعادة التحميل التلقائي المتكرر في آخر 10 ثوانٍ (لتحديث الصفحة فوراً على جميع الأجهزة فور انتهاء الصيانة)
+            if (distance <= 10000) {
+                location.reload();
+                return;
             }
 
             const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -161,10 +160,7 @@
             document.getElementById("hours").innerText = String(hours).padStart(2, '0');
             document.getElementById("minutes").innerText = String(minutes).padStart(2, '0');
             document.getElementById("seconds").innerText = String(seconds).padStart(2, '0');
-            
-            if (distance > 12000) {
-                document.getElementById("status-text").innerText = "🔄 الصيانة مفعلة وتعمل الآن للجميع";
-            }
+            document.getElementById("status-text").innerText = "🔄 الصيانة مفعلة وتعمل الآن للجميع";
         }
 
         async function verifyAndSetTime() {
