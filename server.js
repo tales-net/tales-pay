@@ -15,7 +15,7 @@ const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateWaitPageHtml } = require('./waitPage'); 
 const { generateSuccessPageHtml } = require('./successPage'); // استدعاء صفحة النجاح المنفصلة
-const { generateFailPageHtml } = require('./failPage');      // استدعاء صفحة الفشل المنفصلة
+const { generateFailPageHtml } = require('./failPage');       // استدعاء صفحة الفشل المنفصلة
 
 // استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
@@ -54,26 +54,44 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
 // ==========================================
-// 🛠️ نظام إدارة الصيانة الذكي
+// 🛠️ نظام إدارة الصيانة الذكي (المحدث لمنع التعارض)
 // ==========================================
-let isUnderMaintenance = false; // يمكنك تغييرها إلى true أو التحكم بها عبر متغير بيئة process.env.MAINTENANCE_MODE === 'true'
+let isUnderMaintenance = false; // يمكنك جعلها true أو false حسب رغبتك
 
 app.use((req, res, next) => {
-  // السماح بمرور صفحة الصيانة، مسارات الـ API، وملفات التصميم والثابتة لكي تعمل الصفحة بسلاسة
+  // 1. استثناء رابط صفحة الصيانة السري تماماً لكي لا تغلق أو تدخل في حلقة توجيه
+  if (req.path === "/dev-panel-lock") {
+    return res.sendFile(path.join(__dirname, "public", "maintenance.html"));
+  }
+
+  // 2. استثناء ملفات التصميم والـ API والمجلدات الثابتة
   if (
-    req.path.startsWith("/maintenance.html") || 
     req.path.startsWith("/api/") || 
-    req.path.includes(".") // لملفات الـ CSS و JS والصور
+    req.path.includes(".") // لملفات الـ CSS, JS, الصور وغيرها
   ) {
     return next();
   }
 
-  // إذا كانت الصيانة مفعلة، يتم توجيه الزائر لصفحة الصيانة
+  // 3. إذا كانت الصيانة مفعلة، قم بتوجيه الزوار العاديين إلى رابط الصيانة السري
   if (isUnderMaintenance) {
-    return res.sendFile(path.join(__dirname, "public", "maintenance.html"));
+    return res.redirect("/dev-panel-lock");
   }
 
   next();
+});
+
+// ==========================================
+// 🔐 مسار التحقق من باسورد المشرف لتفعيل الصيانة
+// ==========================================
+app.post('/api/maintenance/verify', (req, res) => {
+  const { password } = req.body;
+  const adminPassword = process.env.MAINTENANCE_PASSWORD || "123456"; // كلمة مرور افتراضية احترازية
+
+  if (password === adminPassword) {
+    return res.json({ success: true, message: "تم التحقق بنجاح" });
+  } else {
+    return res.status(401).json({ success: false, message: "كلمة المرور غير صحيحة!" });
+  }
 });
 
 app.get("/", (req, res) => {
