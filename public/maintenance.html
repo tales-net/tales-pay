@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="protection.js" defer></script>
     <title>نعتذر يوجد صيانة طارئة | توديع الصيانة</title>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
     <style>
@@ -96,7 +95,7 @@
     <div class="container">
         <div class="icon-box" onclick="closeModal()">🛠️</div>
         <h1>نحن نقوم بتحديثات وتحسينات لأجلك!</h1>
-        <p>الموقع خاضع حالياً لصيانة دورية. يمكنك تنشيط الموقع بمجرد أنتهاء الوقت أدناه:</p>
+        <p>الموقع خاضع حالياً لصيانة دورية. سيتم فتح الموقع تلقائياً بمجرد انتهاء الوقت أدناه:</p>
 
         <div class="countdown-grid">
             <div class="time-box"><span id="hours">00</span><label>ساعات</label></div>
@@ -121,45 +120,39 @@
             document.getElementById("emergencyModal").style.display = "none";
         }
 
-        async function fetchServerTime() {
+        async function updateCountdown() {
             try {
                 let res = await fetch('/api/maintenance/status');
                 let data = await res.json();
-                return data.endTime || 0;
-            } catch (e) {
-                return 0;
-            }
-        }
+                let targetTime = data.endTime || 0;
+                let now = Date.now();
 
-        async function updateCountdown() {
-            const targetTime = await fetchServerTime();
-            const now = Date.now();
-
-            if (targetTime === 0 || now >= targetTime) {
-                document.getElementById("hours").innerText = "00";
-                document.getElementById("minutes").innerText = "00";
-                document.getElementById("seconds").innerText = "00";
-                document.getElementById("status-text").innerText = "🟢 الموقع يعمل بشكل طبيعي حالياً";
-                
-                // إعادة التوجيه التلقائي للموقع الرئيسي بعد انتهاء الوقت
-                // مع استثناء الرابط السري لكي لا يخرج المشرف من لوحة التحكم
-                if (targetTime !== 0 && now >= targetTime) {
+                if (targetTime === 0 || now >= targetTime) {
+                    document.getElementById("hours").innerText = "00";
+                    document.getElementById("minutes").innerText = "00";
+                    document.getElementById("seconds").innerText = "00";
+                    document.getElementById("status-text").innerText = "🟢 تم انتهاء الصيانة، جارِ فتح الموقع...";
+                    
+                    // إعادة التوجيه التلقائي مع استثناء الرابط السري للمشرف تماماً
                     if (window.location.pathname !== "/dev-panel-lock") {
-                        window.location.href = "/";
+                        window.location.href = "/?t=" + Date.now();
                     }
+                    return;
                 }
-                return;
+
+                const distance = targetTime - now;
+                const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+                document.getElementById("hours").innerText = String(hours).padStart(2, '0');
+                document.getElementById("minutes").innerText = String(minutes).padStart(2, '0');
+                document.getElementById("seconds").innerText = String(seconds).padStart(2, '0');
+                document.getElementById("status-text").innerText = "🔄 الصيانة مفعلة وتعمل الآن للجميع";
+
+            } catch (e) {
+                console.log("خطأ في الاتصال بالسيرفر، إعادة المحاولة...");
             }
-
-            const distance = targetTime - now;
-            const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-
-            document.getElementById("hours").innerText = String(hours).padStart(2, '0');
-            document.getElementById("minutes").innerText = String(minutes).padStart(2, '0');
-            document.getElementById("seconds").innerText = String(seconds).padStart(2, '0');
-            document.getElementById("status-text").innerText = "🔄 الصيانة مفعلة وتعمل الآن للجميع";
         }
 
         async function verifyAndSetTime() {
@@ -196,8 +189,16 @@
             }
         }
 
+        // فحص مستمر كل ثانية
         setInterval(updateCountdown, 1000);
         updateCountdown();
+
+        // إعادة فحص فورية عند فتح شاشة الهاتف أو العودة للتبويب بعد الخمول
+        document.addEventListener("visibilitychange", () => {
+            if (!document.hidden) {
+                updateCountdown();
+            }
+        });
     </script>
 </body>
 </html>
