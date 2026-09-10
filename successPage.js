@@ -131,6 +131,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
             a.click();
           }
         </script>
+        <script src="/chat-widget.js" defer></script>
       </body>
     </html>
   `;
