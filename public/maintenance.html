@@ -59,7 +59,7 @@
     <div class="container">
         <div class="icon-box">🛠️</div>
         <h1>نقوم بتحديثات وتحسينات لأجلك!</h1>
-        <p>الموقع خاضع حالياً لصيانة دورية. سيتم فتح الموقع تلقائياً بمجرد انتهاء الوقت أدناه:</p>
+        <p>الموقع خاضع حالياً لصيانة دورية. يمكنك تنشيط الموقع بمجرد أنتهاء الوقت أدناه:</p>
 
         <div class="countdown-grid">
             <div class="time-box"><span id="hours">00</span><label>ساعات</label></div>
@@ -69,11 +69,16 @@
 
         <div class="status-badge" id="status-text">🔄 جارِ جلب حالة النظام...</div>
 
-        <!-- زر المشرف المخفي افتراضياً ولا يظهر إلا في الرابط السري -->
-        <div class="admin-trigger" id="adminTriggerBtn" style="display: none;" onclick="verifyAndSetTime()">⚙️ اضبط وقت الصيانة (للمشرف)</div>
+        <!-- زر المشرف المخفي ولا يظهر نهائياً إلا عند الدخول حصرياً عبر الرابط السري /dev-panel-lock -->
+        <div class="admin-trigger" id="adminTriggerBtn" style="display: none;" onclick="verifyAndSetTime()">⚙️ أضبط وقت الصيانة (للمشرف)</div>
     </div>
 
     <script>
+        // إظهار زر المشرف حصرياً في الرابط السري فقط
+        if (window.location.pathname === "/dev-panel-lock") {
+            document.getElementById("adminTriggerBtn").style.display = "block";
+        }
+
         async function fetchServerTime() {
             try {
                 let res = await fetch('/api/maintenance/status');
