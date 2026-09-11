@@ -77,7 +77,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
           const urlParams = new URLSearchParams(window.location.search);
           const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
           let attempts = 0;
-          const maxAttempts = 150; // تم التعديل إلى 150 محاولة × ثانيتين = 300 ثانية (5 دقائق كاملة)
+          const maxAttempts = 90; // تم التعديل إلى 90 محاولة × ثانيتين = 180 ثانية (3 دقائق كاملة)
 
           async function pollVoucher() {
             if (!txId || txId === "غير محدد") {
