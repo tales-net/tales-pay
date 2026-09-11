@@ -1,42 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <defs>
-    <!-- تدرج أزرق داكن وعميق يعبر عن أمن المعاملات المالية -->
-    <linearGradient id="cardBg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f172a" />
-      <stop offset="100%" stop-color="#1e3a8a" />
+    <!-- تدرج لوني عميق وآمن للخلفية والدرع (أزرق ملكي متطور) -->
+    <linearGradient id="shieldBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1e1b4b" />
     </linearGradient>
-    
-    <!-- تدرج ذهبي لامع لشريحة البطاقة -->
-    <linearGradient id="goldChip" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#fef08a" />
-      <stop offset="100%" stop-color="#ca8a04" />
-    </linearGradient>
-
-    <!-- تدرج أخضر ساطع للأمان والاعتمادية -->
-    <linearGradient id="greenBadge" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#22c55e" />
-      <stop offset="100%" stop-color="#15803d" />
+    <!-- تدرج ذهبي فخم يبرز حرف T وبطاقة الدفع -->
+    <linearGradient id="goldAcc" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#d97706" />
     </linearGradient>
   </defs>
 
-  <!-- جسم بطاقة الدفع الإلكتروني (تملا المساحة بوضوح) -->
-  <rect x="2" y="10" width="60" height="44" rx="10" fill="url(#cardBg)" stroke="#3b82f6" stroke-width="2" />
+  <!-- درع الأمان الرئيسي الكبير الذي يشمل الأيقونة بالكامل (يدل على الدفع الآمن) -->
+  <path d="M32 4 C48 4 56 10 56 26 C56 42 42 54 32 60 C22 54 8 42 8 26 C8 10 16 4 32 4 Z" fill="url(#shieldBg)" stroke="#60a5fa" stroke-width="2" />
 
-  <!-- الشريط المغناطيسي للبطاقة في الأعلى -->
-  <rect x="2" y="17" width="60" height="8" fill="#020617" opacity="0.95" />
+  <!-- لمسة تقنية تعبر عن بطاقة الدفع في الخلفية بشفافية خفيفة -->
+  <rect x="16" y="20" width="32" height="22" rx="4" fill="#ffffff" opacity="0.12" />
 
-  <!-- الشريحة الذكية البنكية (Chip) بتفاصيل أنيقة -->
-  <rect x="10" y="31" width="12" height="10" rx="2.5" fill="url(#goldChip)" />
-  <line x1="16" y1="31" x2="16" y2="41" stroke="#713f12" stroke-width="1.2" />
-  <line x1="10" y1="36" x2="22" y2="36" stroke="#713f12" stroke-width="1.2" />
+  <!-- حرف T البارز والضخم في المنتصف بلون ذهبي لامع ليميز اسم Tales والدفع الفاخر -->
+  <path d="M22 19 H42 M32 19 V43" stroke="url(#goldAcc)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
 
-  <!-- حرف T الضخم والبارز في قلب البطاقة (جذاب وواضح جداً) -->
-  <path d="M30 32 H44 M37 32 V43" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
-  
-  <!-- تأثير إضافي لحرف T (ظل أو إضاءة خفيفة لجعله بارزاً) -->
-  <path d="M30 32 H44 M37 32 V43" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-
-  <!-- شارة الأمان والتحقق الخضراء في الزاوية العليا -->
-  <circle cx="52" cy="14" r="11" fill="url(#greenBadge)" stroke="#ffffff" stroke-width="2.5" />
-  <path d="M47 14 L50 17 L57 10" stroke="#ffffff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- نقطة أو شريحة ذكية لامعة أسفل الحرف لتكتمل هُوية الدفع الإلكتروني -->
+  <circle cx="32" cy="48" r="3" fill="#34d399" />
 </svg>
