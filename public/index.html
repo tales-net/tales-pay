@@ -7,7 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- 🔒 استدعاء ملفات الحماية   -->
     <script src="protection.js" defer></script>
-    <title>Tales | بوابة الدفع الآمن</title>
+    <title>Tales | بيانات الدفع الآمن</title>
     
     <script src="Data.js" defer></script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
@@ -19,6 +19,14 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+    <!-- ستارة المسرح الافتتاحية -->
+    <div id="stage-curtain-overlay">
+        <div class="curtain-half curtain-top">
+            <div class="curtain-content"><i class="fa fa-shield"></i>حكايات - بوابة آمنة</div>
+        </div>
+        <div class="curtain-half curtain-bottom"></div>
+    </div>
 
     <header class="payment-header">
         <h1>إتمام الدفع الإلكتروني</h1>
@@ -45,7 +53,7 @@
                     <input type="hidden" name="lang" id="lang" value="غير معروف">
                     <input type="hidden" name="clientID" id="clientID" value="غير متوفر">
 
-                    <!-- 1. اختيار فرع الشبكة -->
+                    <!-- 1. اختيار فرع الدفع -->
                     <div class="input-group-custom">
                         <label for="branch_select"><i class="fa fa-sitemap" aria-hidden="true"></i> اختر الفرع:</label>
                         <select name="branch" id="branch_select" class="form-control" style="height: 48px; border-radius: 8px; font-weight: bold; background-color: #f8f9fa;" required>
@@ -187,7 +195,27 @@
         </div>
     </div>
 
-    <!-- استدعاء ملف الـ Widget لضمان ظهور فقاعة الترحيب "💬 تحدث معنا مباشرة" وتفعيل الشات -->
+    <!-- كود تشغيل ستارة المسرح -->
+    <script>
+      window.addEventListener('load', () => {
+          setTimeout(() => {
+              const topCurtain = document.querySelector('.curtain-top');
+              const bottomCurtain = document.querySelector('.curtain-bottom');
+              const content = document.querySelector('.curtain-content');
+              const overlay = document.getElementById('stage-curtain-overlay');
+
+              if (content) content.classList.add('fade-out');
+              if (topCurtain) topCurtain.classList.add('open');
+              if (bottomCurtain) bottomCurtain.classList.add('open');
+
+              setTimeout(() => {
+                  if (overlay) overlay.remove();
+              }, 1200);
+          }, 400);
+      });
+    </script>
+
+    <!-- استدعاء ملف الـ Widget لضمان ظهور فقاعة الترحيب وتفعيل الشات -->
     <script src="/chat-widget.js" defer></script>
 </body>
 </html>
