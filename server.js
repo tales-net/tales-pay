@@ -25,7 +25,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://tales.net";
+const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "https://tales-pay.onrender.com";
 
 const { BRANCH_NAMES } = require('./branches');
 
