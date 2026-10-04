@@ -4,8 +4,7 @@ const router = express.Router();
 const profiles = require("./profiles");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateCardImage } = require("./cardGenerator");
-const { sendTelegramMessage, sendVoucherWithCardImage, handleTelegramCallback } = require("./telegram");
-const chatSupport = require("./chat_support");
+const { sendTelegramMessage, sendVoucherWithCardImage } = require("./telegram");
 
 // خريطة عالمية لحفظ بيانات وكروت المعاملات مؤقتاً لصفحة النجاح
 global.generatedCardsMap = global.generatedCardsMap || new Map();
@@ -75,6 +74,7 @@ function verifyPaymobHmac(req) {
       val = obj[key];
     }
     
+    // تحويل القيمة البولينية والأرقام إلى نصوص دقيقة مطابقة لتوثيق Paymob
     if (val === undefined || val === null) {
       val = "";
     } else if (typeof val === "boolean") {
@@ -117,11 +117,9 @@ function extractBranchKey(obj) {
   return "main";
 }
 
-/**
- * 💳 معالجة إشعارات Paymob
- */
 router.post("/paymob-webhook", async (req, res) => {
   try {
+    // 1. التحقق من التوقيع الرقمي HMAC
     if (!verifyPaymobHmac(req)) {
       console.error("⛔ [Webhook Unauthorized] فشل التحقق من HMAC إشارة غير موثوقة");
       return res.status(401).send("Unauthorized payload HMAC failed");
@@ -140,6 +138,7 @@ router.post("/paymob-webhook", async (req, res) => {
     const orderId = obj.order?.id ? String(obj.order.id) : null;
     const merchantOrderId = obj.order?.merchant_order_id ? String(obj.order.merchant_order_id) : null;
 
+    // 2. حماية ضد التكرار (Idempotency Check)
     if (global.generatedCardsMap.has(transactionId)) {
       console.log(`ℹ️ [Webhook Duplicate] المعاملة ${transactionId} معالجة بالفعل سلفاً.`);
       return res.status(200).send("Transaction already processed");
@@ -169,6 +168,7 @@ router.post("/paymob-webhook", async (req, res) => {
         packageName = profiles[numericAmount] || profiles[String(numericAmount)] || "باقة إنترنت شبكة حكايات";
       }
 
+      // 🚀 توليد الكارت الحقيقي تلقائياً في راوتر الميكروتيك
       const cardResult = await processPaymentAndCreateCard(numericAmount, branchKey, transactionId);
 
       let cardImageBuffer = null;
@@ -181,6 +181,7 @@ router.post("/paymob-webhook", async (req, res) => {
           cardCode = cardResult.cardCode;
           packageName = cardResult.packageName || packageName;
 
+          // توليد صورة الكارت
           cardImageBuffer = await generateCardImage(cardCode, packageName, numericAmount, transactionId, branchDisplayName);
 
           const cardPayload = {
@@ -194,6 +195,7 @@ router.post("/paymob-webhook", async (req, res) => {
             createdAt: new Date()
           };
 
+          // حفظ البيانات للاستعلام عنها من صفحة النجاح
           global.generatedCardsMap.set(transactionId, cardPayload);
           if (orderId) global.generatedCardsMap.set(orderId, cardPayload);
           if (merchantOrderId) global.generatedCardsMap.set(merchantOrderId, cardPayload);
@@ -251,35 +253,6 @@ router.post("/paymob-webhook", async (req, res) => {
   } catch (err) {
     console.error("❌ [Webhook Error] خطأ داخلي في معالجة الإشعار:", err.message);
     return res.status(200).send("Error handled successfully");
-  }
-});
-
-/**
- * 🤖 1. مسار تليجرام لمعالجة أزرار الكروت والمساهمات (من telegram.js)
- */
-router.post("/telegram-webhook", async (req, res) => {
-  try {
-    const update = req.body;
-    if (update.callback_query) {
-      await handleTelegramCallback(update.callback_query);
-    }
-    return res.status(200).send("OK");
-  } catch (err) {
-    console.error("❌ [Telegram Webhook Error]:", err.message);
-    return res.status(200).send("OK");
-  }
-});
-
-/**
- * 💬 2. مسار تليجرام لمعالجة رسائل وأزرار نظام الدعم الفني والشات (من chat_support.js)
- */
-router.post("/chat-telegram-webhook", async (req, res) => {
-  try {
-    await chatSupport.handleTelegramReply(req.body);
-    return res.status(200).send("OK");
-  } catch (err) {
-    console.error("❌ [Chat Telegram Webhook Error]:", err.message);
-    return res.status(200).send("OK");
   }
 });
 
