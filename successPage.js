@@ -71,7 +71,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
             <button onclick="window.print()" class="btn btn-print"><i class="fa fa-print"></i> طباعة / حفظ PDF</button>
             <button onclick="downloadHTML()" class="btn btn-download"><i class="fa fa-download"></i> تنزيل الكارت</button>
           </div>
-          <a href="${networkUrl}" class="btn-home"><i class="fa fa-globe"></i> التوجه للتصفح الآن</a>
+          <a href="${networkUrl}" class="btn-home"><i class="fa fa-globe"></i> التوجه للدفع الآن</a>
         </div>
         <script>
           const urlParams = new URLSearchParams(window.location.search);
