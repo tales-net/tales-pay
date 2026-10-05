@@ -1,14 +1,14 @@
 const { BRANCH_NAMES } = require('./branches');
 
 function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
-  let inferredBranch = "waitPage";
+  let inferredBranch = "main";
   const upperTx = (transactionId || "").toUpperCase();
   if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
   else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
   else if (upperTx.includes("MAIN")) inferredBranch = "main";
 
   const activeBranchKey = queryBranch || inferredBranch;
-  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.waitPage;
+  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.main;
 
   return `
     <!DOCTYPE html>
@@ -71,13 +71,13 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
             <button onclick="window.print()" class="btn btn-print"><i class="fa fa-print"></i> طباعة / حفظ PDF</button>
             <button onclick="downloadHTML()" class="btn btn-download"><i class="fa fa-download"></i> تنزيل الكارت</button>
           </div>
-          <a href="${networkUrl}" class="btn-home"><i class="fa fa-globe"></i> التوجه للدفع الآن</a>
+          <a href="${networkUrl}" class="btn-home"><i class="fa fa-globe"></i> التوجه للتصفح الآن</a>
         </div>
         <script>
           const urlParams = new URLSearchParams(window.location.search);
           const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
           let attempts = 0;
-          const maxAttempts = 90; // تم التعديل إلى 90 محاولة × ثانيتين = 180 ثانية (3 دقائق كاملة)
+          const maxAttempts = 90; // 3 دقائق (90 محاولة × ثانيتين)
 
           async function pollVoucher() {
             if (!txId || txId === "غير محدد") {
@@ -106,10 +106,9 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
               }
 
               if (attempts < maxAttempts) {
-                setTimeout(pollVoucher, 2000); // الفحص كل ثانيتين
+                setTimeout(pollVoucher, 2000);
               } else {
-                // إعادة التوجيه إلى صفحة الفشل بعد انقضاء الـ 3 دقائق كاملة
-                const errorMsg = encodeURIComponent("⚠️ انتهت مهلة الانتظار ولم يتم الدفع بنجاح. تواصل مع الدعم أذا تم الدفع برقم المعاملة: " + txId);
+                const errorMsg = encodeURIComponent("⚠️ انتهت مهلة الانتظار (3 دقائق) ولم يتم إصدار الكارت. تواصل مع الدعم برقم المعاملة: " + txId);
                 window.location.href = '/fail?error=' + errorMsg;
               }
             } catch (e) {
