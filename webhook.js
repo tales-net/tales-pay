@@ -168,7 +168,7 @@ router.post("/paymob-webhook", async (req, res) => {
         packageName = profiles[numericAmount] || profiles[String(numericAmount)] || "باقة إنترنت شبكة حكايات";
       }
 
-      // 🚀 توليد الكارت الحقيقي تلقائياً عبر mikrotikService.js
+      // 🚀 توليد الكارت الحقيقي تلقائياً في راوتر الميكروتيك
       const cardResult = await processPaymentAndCreateCard(numericAmount, branchKey, transactionId);
 
       let cardImageBuffer = null;
@@ -231,7 +231,7 @@ router.post("/paymob-webhook", async (req, res) => {
       console.log(`✅ [Webhook SUCCESS Completed] تم معالجة المعاملة: ${transactionId}`);
 
     } else {
-      const failureReason = 0 || 
+      const failureReason = 
         obj.data?.message || 
         obj.data_message || 
         obj.txn_response_code || 
