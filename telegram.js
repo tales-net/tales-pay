@@ -119,6 +119,7 @@ async function sendTelegramMessage(data, isInitial = true) {
       let ispText = data.ispProvider || data.isp || null;
       let netLocationText = data.netLocation || null;
 
+      // جلب الموقع الجغرافي والإحداثيات ومزود الخدمة عبر IP إذا لم تكن متوفرة مسبقاً
       if (!ispText || ispText === "غير معروف" || !netLocationText || netLocationText === "غير متاح") {
         const netInfo = await fetchNetworkDetailsByIP(publicIP);
         if (netInfo) {
@@ -379,7 +380,7 @@ async function handleTelegramCallback(callbackQuery) {
 }
 
 /**
- * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع استخراج البيانات الحقيقية
+ * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع الموقع الجغرافي للشبكة ورقم المعاملة الحقيقي
  */
 async function sendTelegramFailNotification(errorMessage, data = {}) {
   try {
@@ -387,7 +388,7 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
       return;
     }
 
-    const publicIP = data.publicIP || (data.geoData && data.geoData.publicIP) || data.ip || "غير متوفر";
+    const publicIP = data.publicIP || data.ip || "غير متوفر";
     if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) {
       return;
     }
@@ -399,25 +400,23 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
 
     const branchName = data.branchName || data.branch_name || "حكايات نت رئيسي";
     
-    // استخراج رقم الهاتف الحقيقي بدقة من عدة احتمالات
+    // استخراج رقم الهاتف الحقيقي من مختلف الأماكن المحتملة
     const userPhone = data.phone || 
                       data.billing_data?.phone_number || 
                       data.customer?.phone_number || 
-                      data.order?.shipping_data?.phone_number || 
                       "غير محدد";
 
-    // استخراج المبلغ الحقيقي (مع تحويل قروش Paymob إلى جنيه إن وجدت)
-    const amountEGP = data.amount_cents 
-      ? (data.amount_cents / 100).toFixed(2) 
-      : (data.amount || data.order?.amount_cents ? (data.order.amount_cents / 100).toFixed(2) : "غير محدد");
+    // استخراج المبلغ الحقيقي (مع معالجة القروش إن وجدت)
+    let amountEGP = "غير محدد";
+    if (data.amount_cents) {
+      amountEGP = (data.amount_cents / 100).toFixed(2);
+    } else if (data.amount) {
+      amountEGP = data.amount;
+    }
 
-    // استخراج رقم المعاملة الحقيقي بدقة
-    const txnId = data.transactionId || 
-                  data.id || 
-                  data.order?.id || 
-                  data.merchant_order_id || 
-                  `TX_${Date.now()}`;
-
+    // استخراج رقم المعاملة الحقيقي
+    const txnId = data.id || data.transactionId || data.order?.id || data.merchant_order_id || `TX_${Date.now()}`;
+    
     const dateTimeStr = getFormattedDateTime();
 
     let message = `❌ <b>فشل عملية الدفع! (تنبيه فتح صفحة الخطأ)</b>\n\n` +
