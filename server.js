@@ -5,17 +5,15 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const path = require("path");
 const multer = require("multer");
-const fs = require('fs');
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
-const { sendTelegramMessage, handleTelegramCallback, sendTelegramFailNotification } = require("./telegram");
+const { sendTelegramMessage } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
-const { generateSuccessPageHtml } = require('./successPage'); // استدعاء صفحة النجاح المنفصلة
-const { generateFailPageHtml } = require('./failPage');         // استدعاء صفحة الفشل المنفصلة
+const { generateWaitPageHtml } = require('./waitPage'); // استدعاء ملف صفحة الانتظار
 
 // استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
@@ -25,9 +23,14 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "https://tales-pay.onrender.com";
+const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://tales.net";
 
-const { BRANCH_NAMES } = require('./branches');
+const BRANCH_NAMES = {
+  waitPage: "صفحة الانتظار وتأكيد الدفع من محفظتك",
+  main: "حكايات نت رئيسي",
+  branch2: "حكايات نت فرع ثاني",
+  branch3: "حكايات نت فرع ثالث"
+};
 
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
@@ -36,22 +39,6 @@ chatSupport.initSocket(io);
 
 // إعداد Multer لاستقبال الصور والملفات المرفوعة في الشات
 const upload = multer();
-
-// مسار الملف المؤقت لحفظ وقت الصيانة على السيرفر
-const maintenanceFile = path.join(__dirname, 'maintenance_status.json');
-
-// دالة لجلب وقت الصيانة المحفوظ
-function getMaintenanceEndTime() {
-  try {
-    if (fs.existsSync(maintenanceFile)) {
-      const data = JSON.parse(fs.readFileSync(maintenanceFile, 'utf8'));
-      return data.endTime || 0;
-    }
-  } catch (e) {
-    console.error(e);
-  }
-  return 0;
-}
 
 // تنظيف دوري للذاكرة المؤقتة كل نصف ساعة
 setInterval(() => {
@@ -67,95 +54,7 @@ app.use(cors());
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
-
-// ==========================================
-// 🛡️ Middleware للتحكم التلقائي بالموقع والصيانة للجميع
-// ==========================================
-app.use((req, res, next) => {
-  const currentTime = Date.now();
-  const maintenanceEndTime = getMaintenanceEndTime();
-  const isMaintenanceActive = maintenanceEndTime > currentTime;
-
-  // 1. استثناءات لكي لا يحدث تعارض (ملفات التصميم، مسار صفحة الصيانة، ومسارات التحقق والـ API)
-  if (
-    req.path === "/dev-panel-lock" ||
-    req.path === "/api/maintenance/status" ||
-    req.path === "/api/maintenance/set" ||
-    req.path === "/api/maintenance/verify" ||
-    req.path.startsWith("/api/") ||
-    req.path.includes(".") // ملفات CSS, JS, صور
-  ) {
-    return next();
-  }
-
-  // 2. إذا انتهى الوقت، نقوم بمسح الملف تلقائياً ليعمل الموقع بشكل طبيعي
-  if (maintenanceEndTime > 0 && currentTime >= maintenanceEndTime) {
-    try {
-      if (fs.existsSync(maintenanceFile)) {
-        fs.unlinkSync(maintenanceFile);
-      }
-    } catch (e) {}
-    return next();
-  }
-
-  // 3. إذا كانت الصيانة مفعلة، قم بعرض صفحة الصيانة مباشرة لأي زائر
-  if (isMaintenanceActive) {
-    return res.sendFile(path.join(__dirname, "public", "maintenance.html"));
-  }
-
-  next();
-});
-
 app.use(express.static(path.join(__dirname, "public")));
-
-// ==========================================
-// 🛠️ نظام عرض صفحة الصيانة ومسارات التحكم الآمنة
-// ==========================================
-app.get("/dev-panel-lock", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "maintenance.html"));
-});
-
-// جلب حالة الوقت الحالية للعميل/السيرفر
-app.get('/api/maintenance/status', (req, res) => {
-  res.json({ endTime: getMaintenanceEndTime() });
-});
-
-// التحقق من الباسورد
-app.post('/api/maintenance/verify', (req, res) => {
-  const { password } = req.body;
-  const adminPassword = process.env.MAINTENANCE_PASSWORD || "123456";
-
-  if (password === adminPassword) {
-    return res.json({ success: true, message: "تم التحقق بنجاح" });
-  } else {
-    return res.status(401).json({ success: false, message: "كلمة المرور غير صحيحة!" });
-  }
-});
-
-// تعيين وقت صيانة جديد وحفظه على السيرفر
-app.post('/api/maintenance/set', (req, res) => {
-  const { password, minutes } = req.body;
-  const adminPassword = process.env.MAINTENANCE_PASSWORD || "123456";
-
-  if (password !== adminPassword) {
-    return res.status(401).json({ success: false, message: "كلمة المرور غير صحيحة!" });
-  }
-
-  try {
-    if (minutes === 0) {
-      if (fs.existsSync(maintenanceFile)) {
-        fs.unlinkSync(maintenanceFile);
-      }
-      return res.json({ success: true, message: "تم إلغاء الصيانة وفتح الموقع!" });
-    }
-
-    const endTime = Date.now() + (minutes * 60 * 1000);
-    fs.writeFileSync(maintenanceFile, JSON.stringify({ endTime }));
-    return res.json({ success: true, endTime, message: `تم ضبط الصيانة لمدة ${minutes} دقيقة!` });
-  } catch (e) {
-    return res.status(500).json({ success: false, message: "خطأ أثناء حفظ الوقت." });
-  }
-});
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
@@ -183,39 +82,9 @@ app.get('/api/support/messages/:clientId', (req, res) => {
   res.json({ success: true, messages });
 });
 
-// ==========================================
-// 🤖 مسار تليجرام الموحد (Webhook للرسائل وأزرار التفاعل)
-// ==========================================
 app.post('/telegram-webhook', async (req, res) => {
-  try {
-    const update = req.body;
-
-    if (update.callback_query) {
-      const data = update.callback_query.data || "";
-      if (data.startsWith("reply_") || data.startsWith("close_")) {
-        await chatSupport.handleTelegramReply(update);
-        return res.sendStatus(200);
-      }
-    }
-
-    if (update.message && update.message.reply_to_message) {
-      await chatSupport.handleTelegramReply(update);
-      return res.sendStatus(200);
-    }
-
-    if (update.callback_query) {
-      await handleTelegramCallback(update.callback_query);
-    }
-
-    if (update.message || update.edited_message) {
-      await chatSupport.handleTelegramReply(update);
-    }
-
-    res.sendStatus(200);
-  } catch (e) {
-    console.error("❌ Telegram Webhook Error:", e.message);
-    res.sendStatus(500);
-  }
+  await chatSupport.handleTelegramReply(req.body);
+  res.sendStatus(200);
 });
 
 // ==========================================
@@ -236,14 +105,14 @@ async function handlePaymentRequest(req, res) {
       return res.redirect("/");
     }
 
-    const selectedMethod = payment_method || method || "waitPage";
+    const selectedMethod = payment_method || method || "wallet";
     const rawBranch = branch || branch_key || "branch2";
     const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "branch2";
-    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.waitPage;
+    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.branch2;
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
-    const transactionId = "TX_" + Date.now();
+    const transactionId = "TX_" + Date.now(); // توليد رقم معاملة فريد افتراضي
 
     const paymentPayload = {
       phone: userPhone,
@@ -288,8 +157,8 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      // توجيه العميل مباشرة إلى صفحة النجاح/الانتظار النشطة بدلاً من الملف المحذوف
-      return res.redirect(`/success?id=${transactionId}&branch=${selectedBranch}`);
+      // ✅ التوجيه الافتراضي لملف waitPage.js وعرض صفحة الانتظار برقم المعاملة
+      return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
     }
   } catch (err) {
     console.error("❌ خطأ في معالجة طلب الدفع:", err.response?.data || err.message);
@@ -399,33 +268,165 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-// استدعاء واجهة النجاح المنفصلة وتمرير البيانات والفروع بذكاء
 app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
+  
+  // استدعاء صفحة الانتظار الافتراضية من waitPage.js وعرضها مباشرة للعميل
+  return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
   const queryBranch = req.query.branch || "";
   
-  const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
-  return res.send(pageHtml);
+  let inferredBranch = "waitPage";
+  const upperTx = transactionId.toUpperCase();
+  if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
+  else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
+  else if (upperTx.includes("MAIN")) inferredBranch = "main";
+
+  const activeBranchKey = queryBranch || inferredBranch;
+  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.waitPage;
+
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>تم الدفع بنجاح - شبكة حكايات</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Cairo, sans-serif; background: #f0f2f5; text-align: center; padding: 20px 10px; direction: rtl; }
+          .card-container { background: white; max-width: 480px; margin: auto; padding: 25px 20px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+          .success-badge { color: #27ae60; font-size: 45px; margin-bottom: 5px; }
+          h1 { color: #2c3e50; font-size: 20px; margin-bottom: 15px; }
+          .ticket-card { background: linear-gradient(135deg, #01338D 0%, #001f5c 100%); color: #ffffff; border-radius: 12px; padding: 20px; margin: 20px 0; box-shadow: 0 6px 18px rgba(1, 51, 141, 0.25); text-align: right; }
+          .ticket-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px; margin-bottom: 15px; }
+          .ticket-title { font-size: 16px; font-weight: bold; }
+          .ticket-brand { font-size: 12px; background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 4px; }
+          .code-box { background: #ffffff; color: #01338D; text-align: center; padding: 12px; border-radius: 8px; margin: 15px 0; font-family: monospace; font-size: 24px; font-weight: bold; letter-spacing: 2px; min-height: 50px; display: flex; align-items: center; justify-content: center; }
+          .info-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: #e0e0e0; }
+          .info-row strong { color: #ffffff; }
+          .btn-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px; }
+          .btn { flex: 1; min-width: 140px; padding: 12px; border: none; border-radius: 8px; font-weight: bold; font-size: 14px; cursor: pointer; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; }
+          .btn-print { background: #27ae60; color: white; }
+          .btn-download { background: #01338D; color: white; }
+          .btn-home { background: #e9ecef; color: #333; width: 100%; margin-top: 10px; text-decoration: none; text-align: center; padding: 12px; border-radius: 8px; font-weight: bold; display: block; }
+          .spinner { border: 4px solid rgba(1, 51, 141, 0.2); border-radius: 50%; border-top: 4px solid #01338D; width: 26px; height: 26px; animation: spin 1s linear infinite; margin-left: 10px; display: inline-block; }
+          @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        </style>
+      </head>
+      <body>
+        <div class="card-container">
+          <div class="success-badge"><i class="fa fa-check-circle"></i></div>
+          <h1>تمت عملية الدفع بنجاح</h1>
+          <div class="ticket-card" id="printableCard">
+            <div class="ticket-header">
+              <span class="ticket-title"><i class="fa fa-wifi"></i> كارت إنترنت - <span id="bName">${defaultBranchName}</span></span>
+              <span class="ticket-brand">Hikayat Net</span>
+            </div>
+            <div class="info-row">
+              <span>اسم الباقة:</span>
+              <strong id="pkgName">جاري التحميل...</strong>
+            </div>
+            <div class="code-box" id="codeContainer">
+              <div class="spinner"></div>
+              <span style="font-size: 14px; font-weight: normal;">جاري إصدار الكارت من السيرفر...</span>
+            </div>
+            <div class="info-row">
+              <span>رقم العملية:</span>
+              <strong>${transactionId || "غير محدد"}</strong>
+            </div>
+            <div class="info-row">
+              <span>حالة الدفع:</span>
+              <strong style="color: #2ec771;"><i class="fa fa-shield"></i> مؤكد ومفعل آلياً</strong>
+            </div>
+          </div>
+          <div class="btn-actions">
+            <button onclick="window.print()" class="btn btn-print"><i class="fa fa-print"></i> طباعة / حفظ PDF</button>
+            <button onclick="downloadHTML()" class="btn btn-download"><i class="fa fa-download"></i> تنزيل الكارت</button>
+          </div>
+          <a href="${NETWORK_URL}" class="btn-home"><i class="fa fa-globe"></i> التوجه للتصفح الآن</a>
+        </div>
+        <script>
+          const urlParams = new URLSearchParams(window.location.search);
+          const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
+          let attempts = 0;
+          const maxAttempts = 30;
+
+          async function pollVoucher() {
+            if (!txId || txId === "غير محدد") {
+              document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:14px;'>لم يتم العثور على رقم العملية</span>";
+              document.getElementById('pkgName').innerText = "غير معروف";
+              return;
+            }
+            try {
+              attempts++;
+              const res = await fetch('/api/check-voucher/' + encodeURIComponent(txId));
+              const data = await res.json();
+              if (data.success && data.data) {
+                document.getElementById('codeContainer').innerText = data.data.code;
+                document.getElementById('pkgName').innerText = data.data.packageName || "باقة إنترنت شبكة حكايات";
+                if (data.data.branchName) {
+                  document.getElementById('bName').innerText = data.data.branchName;
+                }
+              } else {
+                if (attempts < maxAttempts) {
+                  setTimeout(pollVoucher, 2000);
+                } else {
+                  document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>⚠️ تعذر جلب الكارت تلقائياً. تواصل مع الدعم برقم المعاملة: " + txId + "</span>";
+                  document.getElementById('pkgName').innerText = "انتهت مهلة الانتظار";
+                }
+              }
+            } catch (e) {
+              if (attempts < maxAttempts) {
+                setTimeout(pollVoucher, 2500);
+              } else {
+                document.getElementById('codeContainer').innerHTML = "<span style='color:#e74c3c; font-size:12px;'>خطأ في الاتصال بالسيرفر</span>";
+              }
+            }
+          }
+          pollVoucher();
+
+          function downloadHTML() {
+            const cardElement = document.getElementById('printableCard').outerHTML;
+            const blob = new Blob(['<html><head><meta charset="utf-8"><title>كارت شبكة حكايات</title></head><body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#f0f2f5;font-family:sans-serif;">' + cardElement + '</body></html>'], { type: 'text/html' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = "Hikayat_Card_" + txId + ".html";
+            a.click();
+          }
+        </script>
+      </body>
+    </html>
+  `);
 });
 
-// استعراض واجهة الفشل وإرسال إشعار لتليجرام
-app.get("/fail", async (req, res) => {
-  const errorMessage = req.query.data_message || req.query.error || "حدثت مشكلة أثناء عملية الدفع، حاول مرة أخرى.";
-  
-  const failData = {
-    transactionId: req.query.id || req.query.order || req.query.transaction_id || `FAIL_${Date.now()}`,
-    phone: req.query.phone || req.query.user_phone || "غير محدد",
-    amount: req.query.amount || req.query.price || "غير محدد",
-    branchName: req.query.branch || "حكايات نت رئيسي",
-    publicIP: getClientPublicIP(req)
-  };
-
-  sendTelegramFailNotification(errorMessage, failData).catch(err => {
-    console.error("Failed to send telegram fail notification:", err);
-  });
-
-  const pageHtml = generateFailPageHtml(errorMessage);
-  return res.send(pageHtml);
+app.get("/fail", (req, res) => {
+  const errorMessage = req.query.data_message || "حدثت مشكلة أثناء عملية الدفع، حاول مرة أخرى.";
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>فشل الدفع - شبكة حكايات</title>
+        <style>
+          body { font-family: Tahoma, Cairo, sans-serif; background: #f0f2f5; text-align: center; padding: 40px 20px; direction: rtl; }
+          .card { background: white; max-width: 420px; margin: auto; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+          .icon { font-size: 50px; color: #e74c3c; margin-bottom: 10px; }
+          h1 { color: #2c3e50; font-size: 22px; margin-bottom: 10px; }
+          .error-box { background: #fff3f3; color: #e74c3c; border: 1px dashed #e74c3c; padding: 10px; border-radius: 6px; margin: 15px 0; font-size: 14px; }
+          .btn { display: inline-block; background: #e74c3c; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 15px; font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="icon">❌</div>
+          <h1>فشل عملية الدفع</h1>
+          <div class="error-box">${errorMessage}</div>
+          <a href="/" class="btn">إعادة المحاولة</a>
+        </div>
+      </body>
+    </html>
+  `);
 });
 
 app.use("/", webhookRouter);
