@@ -99,7 +99,7 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
 }
 
 /**
- * 4. الدالة الرئيسية لمعالجة الدفع وإنشاء الرابط أو التوجيه مع فحص الفرع بصرامة
+ * 4. الدالة الرئيسية لمعالجة الدفع وإنشاء الرابط أو التوجيه مع فحص الفرع بصرامة ودعم Valu
  */
 async function createPaymobPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
   try {
@@ -112,7 +112,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       rawBranch = String(req.body?.branch || req.query?.branch || '').toLowerCase().trim();
     }
 
-    // التحقق الصارم من الفرع: إذا كان مفقوداً أو غير صالح، يتم التوقف وعرض صفحة التحذير
+    // التحقق الصارم من الفرع
     if (!rawBranch || !BRANCH_NAMES[rawBranch]) {
       console.warn(`⚠️ [Pay.js] رفض معاملة لدفع بفرع غير صالح أو مفقود: [${rawBranch}]`);
       
@@ -135,6 +135,9 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     switch (cleanMethod) {
       case 'card':
         integrationId = process.env.CARD_INTEGRATION_ID;
+        break;
+      case 'valu':
+        integrationId = process.env.VALU_INTEGRATION_ID; // Integration ID الخاص بفاليو
         break;
       case 'wallet':
       default:
@@ -162,6 +165,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       { branch: selectedBranch, branchName: branchDisplayName }
     );
 
+    // معالجة المحافظ الإلكترونية
     if (cleanMethod === 'wallet') {
       const walletRes = await axios.post('https://accept.paymob.com/api/acceptance/payments/pay', {
         source: {
@@ -176,7 +180,22 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
         throw new Error("لم يتم استرجاع رابط إعادة توجيه المحفظة من Paymob");
       }
       return { type: 'redirect', url: redirectUrl };
-    } else {
+    } 
+    // معالجة Valu (تتطلب إعادة توجيه لصفحة إدخال بيانات أو إتمام الطلب عبر الـ iframe الخاص بفاليو أو صفحة الدفع)
+    else if (cleanMethod === 'valu') {
+      // فاليو يعتمد غالباً على iframe المخصص أو إعادة التوجيه تماماً مثل البطاقات والـ iframes
+      const iframeId = process.env.VALU_IFRAME_ID || process.env.PAYMOB_IFRAME_ID;
+      
+      if (typeof getCheckoutPage === 'function') {
+        const htmlPage = getCheckoutPage(paymentKey, iframeId);
+        return { type: 'html', content: htmlPage };
+      }
+      
+      const iframeUrl = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymentKey}`;
+      return { type: 'redirect', url: iframeUrl };
+    } 
+    // معالجة البطاقات البنكية
+    else {
       const iframeId = cleanMethod === 'card' 
         ? (process.env.CARD_IFRAME_ID || process.env.PAYMOB_IFRAME_ID) 
         : process.env.PAYMOB_IFRAME_ID;
