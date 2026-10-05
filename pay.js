@@ -1,7 +1,7 @@
+// pay.js
 const axios = require('axios');
 const path = require('path');
 const { getCheckoutPage } = require('./checkout');
-
 const { BRANCH_NAMES } = require("./branches");
 
 /**
@@ -112,7 +112,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       rawBranch = String(req.body?.branch || req.query?.branch || '').toLowerCase().trim();
     }
 
-    // التحقق الصارم من الفرع: إذا كان مفقوداً أو غير صالح، يتم التوقف وعرض صفحة التحذير
+    // التحقق الصارم من الفرع: إذا كان مفقوداً أو غير صالح، يتم التوقف وعرض صفحة التحذير أو رسالة الخطأ
     if (!rawBranch || !BRANCH_NAMES[rawBranch]) {
       console.warn(`⚠️ [Pay.js] رفض معاملة لدفع بفرع غير صالح أو مفقود: [${rawBranch}]`);
       
