@@ -71,7 +71,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
             <button onclick="window.print()" class="btn btn-print"><i class="fa fa-print"></i> طباعة / حفظ PDF</button>
             <button onclick="downloadHTML()" class="btn btn-download"><i class="fa fa-download"></i> تنزيل الكارت</button>
           </div>
-          <a href="${networkUrl}" class="btn-home"><i class="fa fa-globe"></i> التوجه للتصفح الآن</a>
+          <a href="${networkUrl}" class="btn-home"><i class="fa fa-globe"></i> التوجه للدفع مرة أخري</a>
         </div>
         <script>
           const urlParams = new URLSearchParams(window.location.search);
@@ -109,7 +109,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
                 setTimeout(pollVoucher, 2000); // الفحص كل ثانيتين
               } else {
                 // إعادة التوجيه إلى صفحة الفشل بعد انقضاء الـ 3 دقائق كاملة
-                const errorMsg = encodeURIComponent("⚠️ انتهت مهلة الانتظار ولم يتم الدفع بنجاح. تواصل مع الدعم أذا تم الدفع برقم المعاملة: " + txId);
+                const errorMsg = encodeURIComponent("⚠️ أنتهت مهلة الانتظار ولم يتم الدفع بنجاح. تواصل مع الدعم أذا تم الدفع برقم المعاملة: " + txId);
                 window.location.href = '/fail?error=' + errorMsg;
               }
             } catch (e) {
