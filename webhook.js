@@ -73,7 +73,6 @@ function verifyPaymobHmac(req) {
       val = obj[key];
     }
     
-    // تحويل القيمة البولينية والأرقام إلى نصوص دقيقة مطابقة لتوثيق Paymob
     if (val === undefined || val === null) {
       val = "";
     } else if (typeof val === "boolean") {
@@ -158,14 +157,7 @@ router.post("/paymob-webhook", async (req, res) => {
     if (isSuccess) {
       console.log(`💳 [Webhook Debug] معاملة ناجحة: ${transactionId} | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ: ${numericAmount}ج`);
 
-      let packageName = "باقة إنترنت شبكة حكايات";
-      if (typeof profiles.getPackageName === "function") {
-        packageName = profiles.getPackageName(numericAmount);
-      } else if (typeof profiles === "function") {
-        packageName = profiles(numericAmount);
-      } else if (typeof profiles === "object" && profiles !== null) {
-        packageName = profiles[numericAmount] || profiles[String(numericAmount)] || "باقة إنترنت شبكة حكايات";
-      }
+      let packageName = `باقة إنترنت بقيمة ${numericAmount} جنيه`;
 
       // 🚀 توليد الكارت الحقيقي تلقائياً في راوتر الميكروتيك للفرع الصحيح المُستخرج
       console.log(`🎟️ جاري إصدار الكارت للمعاملة | الفرع: ${branchKey} | المبلغ: ${numericAmount}`);
