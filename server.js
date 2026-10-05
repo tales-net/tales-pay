@@ -278,9 +278,7 @@ async function handlePaymentRequest(req, res) {
       await sendTelegramMessage(paymentPayload, true);
     }
 
-    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch, req, res);
-
-    if (!result) return; // تم إرسال الرد (مثل صفحة التحذير) مسبقاً من دالة الـ processPayment
+    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
 
     if (result.type === "redirect") {
       if (req.method === "POST" && req.headers["content-type"]?.includes("application/json")) {
@@ -290,6 +288,7 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
+      // توجيه العميل مباشرة إلى صفحة النجاح/الانتظار النشطة بدلاً من الملف المحذوف
       return res.redirect(`/success?id=${transactionId}&branch=${selectedBranch}`);
     }
   } catch (err) {
