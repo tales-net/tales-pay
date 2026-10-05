@@ -36,7 +36,7 @@ async function fetchNetworkDetailsByIP(ip) {
       const lat = res.data.latitude;
       const lon = res.data.longitude;
       if (lat && lon) {
-        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat}, ${lon})</a>`;
+        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat},${lon})</a>`;
       }
       return result;
     }
@@ -56,7 +56,7 @@ async function fetchNetworkDetailsByIP(ip) {
       const lat = fallbackRes.data.lat;
       const lon = fallbackRes.data.lon;
       if (lat && lon) {
-        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat}, ${lon})</a>`;
+        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat},${lon})</a>`;
       }
       return result;
     }
@@ -78,7 +78,7 @@ function getFormattedDateTime() {
   const now = new Date();
   const formattedDate = now.toLocaleDateString("ar-EG", { timeZone: "Africa/Cairo" });
   const formattedTime = now.toLocaleTimeString("ar-EG", { timeZone: "Africa/Cairo" });
-  return `${formattedDate} - ${formattedTime}`;
+  return `${formattedDate} -${formattedTime}`;
 }
 
 /**
@@ -105,6 +105,9 @@ async function sendTelegramMessage(data, isInitial = true) {
     const dateTimeStr = getFormattedDateTime();
 
     const branchName = data.branchName || data.branch_name || "حكايات نت رئيسي";
+    // استخراج معرف الفرع بدقة لتضمينه في أزرار التليجرام
+    const branchKey = data.branch || data.merchant_extra?.branch || data.extra?.branch || 'main';
+
     const userPhone = data.phone || 
                         data.billing_data?.phone_number || 
                         data.customer?.phone_number || 
@@ -119,7 +122,6 @@ async function sendTelegramMessage(data, isInitial = true) {
       let ispText = data.ispProvider || data.isp || null;
       let netLocationText = data.netLocation || null;
 
-      // جلب الموقع الجغرافي والإحداثيات ومزود الخدمة عبر IP إذا لم تكن متوفرة مسبقاً
       if (!ispText || ispText === "غير معروف" || !netLocationText || netLocationText === "غير متاح") {
         const netInfo = await fetchNetworkDetailsByIP(publicIP);
         if (netInfo) {
@@ -181,16 +183,17 @@ async function sendTelegramMessage(data, isInitial = true) {
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المدفوع: <b>${amountEGP} جنيه</b>\n` +
                 `📦 الباقة المفعلة: <b>${packageInfo}</b>\n` +
-                `🎟️ كارت الإنترنت: <code>${voucher}</code>\n` +
+                `🎟️️ كارت الإنترنت: <code>${voucher}</code>\n` +
                 `----------------------------------------\n` +
                 `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
     }
 
+    // تضمين الفرع (branchKey) في الزر التفاعلي لكي يتم قراءته عند الضغط بدقة
     const replyMarkup = {
       inline_keyboard: [
         [
-          { text: "🎟️ إصدار الكارت", callback_data: `create_voucher_${txnId}_${amountEGP}` },
-          { text: "🤝 مساهمة", callback_data: `contribution_${txnId}_${amountEGP}` }
+          { text: "🎟️ إصدار الكارت", callback_data: `create_voucher_${txnId}_${amountEGP}_${branchKey}` },
+          { text: "🤝 مساهمة", callback_data: `contribution_${txnId}_${amountEGP}_${branchKey}` }
         ]
       ]
     };
@@ -232,6 +235,7 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
 
     const txnId = paymentDetails.transactionId || paymentDetails.id || `TX_${Date.now()}`;
     const amountVal = paymentDetails.amount || "0";
+    const branchKey = paymentDetails.branch || paymentDetails.branchKey || 'main';
 
     const caption = `🎟️ <b>صورة كارت الإنترنت المصدر آلياً</b>\n\n` +
                     `🏢 الفرع: <b>${paymentDetails.branchName || 'حكايات نت رئيسي'}</b>\n` +
@@ -244,11 +248,12 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     form.append("caption", caption);
     form.append("parse_mode", "HTML");
 
+    // تضمين الفرع في الأزرار الخاصة بصورة الكارت أيضاً
     form.append("reply_markup", JSON.stringify({
       inline_keyboard: [
         [
-          { text: "🎟️ إعادة إصدار الكارت", callback_data: `create_voucher_${txnId}_${amountVal}` },
-          { text: "🤝 مساهمة", callback_data: `contribution_${txnId}_${amountVal}` }
+          { text: "🎟️ إعادة إصدار الكارت", callback_data: `create_voucher_${txnId}_${amountVal}_${branchKey}` },
+          { text: "🤝 مساهمة", callback_data: `contribution_${txnId}_${amountVal}_${branchKey}` }
         ]
       ]
     }));
@@ -271,7 +276,7 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
 }
 
 /**
- * 3. 🔄 معالجة الضغط على الأزرار التفاعلية (Callback Queries)
+ * 3. 🔄 معالجة الضغط على الأزرار التفاعلية (Callback Queries) مع دعم تمرير الفرع الصحيح
  */
 async function handleTelegramCallback(callbackQuery) {
   try {
@@ -284,24 +289,27 @@ async function handleTelegramCallback(callbackQuery) {
 
     await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
       callback_query_id: queryId,
-      text: "جاري تنفيذ الإجراء...",
+      text: "جاري تنفيذ الإجراء وتوجيه الطلب للفرع...",
       show_alert: false
     });
 
     const parts = data.split("_");
 
     if (data.startsWith("create_voucher")) {
-      const txnId = parts[2] || parts[1]; 
-      const amount = parts[3] || parts[2] || "0";
+      const txnId = parts[2]; 
+      const amount = parts[3] || "0";
+      // استخراج الفرع بدقة من الـ callback_data (العنصر الخامس إذا وجد، وإلا الافتراضي main)
+      const branchKey = parts[4] || 'main';
 
-      console.log(`🎟️ [Voucher Creation Started] جارٍ إصدار الكارت للمعاملة: ${txnId} بالقيمة: ${amount}`);
+      console.log(`🎟️ [Voucher Creation Started] جارٍ إصدار الكارت للفرع: [${branchKey}] للمعاملة: ${txnId} بالقيمة: ${amount}`);
 
       let voucherData = null;
       let errorMessage = null;
 
       try {
         if (typeof mikrotikService !== "undefined" && typeof mikrotikService.processPaymentAndCreateCard === "function") {
-          voucherData = await mikrotikService.processPaymentAndCreateCard(amount, "main", txnId);
+          // تمرير الفرع المستخرج بدلاً من الثابت "main"
+          voucherData = await mikrotikService.processPaymentAndCreateCard(amount, branchKey, txnId);
         } else {
           throw new Error("دالة processPaymentAndCreateCard غير موجودة في mikrotikService");
         }
@@ -322,6 +330,7 @@ async function handleTelegramCallback(callbackQuery) {
             },
             amount: amount,
             transactionId: txnId,
+            branch: branchKey,
             packageName: voucherData.packageName || "باقة إنترنت",
             createdAt: new Date()
           });
@@ -331,7 +340,7 @@ async function handleTelegramCallback(callbackQuery) {
         const passwordStr = voucherData.password || "";
 
         const updatedText = callbackQuery.message.text + 
-          `\n\n✅ <b>[تم إصدار الكارت بنجاح من الميكروتيك]</b>\n🎟️ الكارت: <code>${usernameStr}</code>` +
+          `\n\n✅ <b>[تم إصدار الكارت بنجاح من الميكروتيك]</b>\n🏢 الفرع: <b>${branchKey}</b>\n🎟️ الكارت: <code>${usernameStr}</code>` +
           (passwordStr ? `\n🔑 كلمة المرور: <code>${passwordStr}</code>` : ``);
 
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
@@ -345,19 +354,21 @@ async function handleTelegramCallback(callbackQuery) {
       } else {
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
           chat_id: chatId,
-          text: `❌ فشل إصدار الكارت من الميكروتيك للمعاملة ${txnId}.\nالسبب: ${errorMessage || "خطأ غير معروف"}`
+          text: `❌ فشل إصدار الكارت من الميكروتيك للفرع [${branchKey}] للمعاملة ${txnId}.\nالسبب: ${errorMessage || "خطأ غير معروف"}`
         });
       }
 
     } else if (data.startsWith("contribution")) {
       const txnId = parts[1];
       const amount = parts[2] || "0";
+      const branchKey = parts[3] || 'main';
 
       if (global.generatedCardsMap) {
         global.generatedCardsMap.set(txnId, {
           isContribution: true,
           amount: amount,
           transactionId: txnId,
+          branch: branchKey,
           packageName: `مساهمة بقيمة ${amount} جنيه`,
           createdAt: new Date()
         });
@@ -393,7 +404,6 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
       return;
     }
 
-    // جلب تفاصيل الموقع الجغرافي والإحداثيات للـ IP في صفحة الفشل أيضاً
     const netInfo = await fetchNetworkDetailsByIP(publicIP);
     const ispText = netInfo.isp;
     const netLocationText = netInfo.netLocation;
