@@ -151,10 +151,10 @@ router.post("/paymob-webhook", async (req, res) => {
     const branchDisplayName = BRANCH_NAMES[branchKey] || BRANCH_NAMES.main;
 
     const phone = obj.phone || 
-                  obj.billing_data?.phone_number || 
-                  obj.customer?.phone_number || 
-                  obj.order?.shipping_data?.phone_number || 
-                  "غير محدد";
+                obj.billing_data?.phone_number || 
+                obj.customer?.phone_number || 
+                obj.order?.shipping_data?.phone_number || 
+                "غير محدد";
 
     if (isSuccess) {
       console.log(`💳 [Webhook Debug] معاملة ناجحة: ${transactionId} | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ: ${numericAmount}ج`);
@@ -168,7 +168,8 @@ router.post("/paymob-webhook", async (req, res) => {
         packageName = profiles[numericAmount] || profiles[String(numericAmount)] || "باقة إنترنت شبكة حكايات";
       }
 
-      // 🚀 توليد الكارت الحقيقي تلقائياً في راوتر الميكروتيك
+      // 🚀 توليد الكارت الحقيقي تلقائياً في راوتر الميكروتيك للفرع الصحيح المُستخرج
+      console.log(`🎟️ جاري إصدار الكارت للمعاملة | الفرع: ${branchKey} | المبلغ: ${numericAmount}`);
       const cardResult = await processPaymentAndCreateCard(numericAmount, branchKey, transactionId);
 
       let cardImageBuffer = null;
