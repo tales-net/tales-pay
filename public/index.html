@@ -17,6 +17,19 @@
 
     <!-- ملف التنسيقات الخارجي -->
     <link rel="stylesheet" href="style.css">
+    <style>
+        /* تنسيق خاص لشعار فاليو داخل حقل الهاتف */
+        .valu-badge {
+            background-color: #00b0ff;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            display: none;
+            margin-left: 4px;
+        }
+    </style>
 </head>
 <body>
 
@@ -68,6 +81,7 @@
                         <label for="payment_method"><i class="fa fa-credit-card-alt" aria-hidden="true"></i> اختر وسيلة الدفع:</label>
                         <select name="payment_method" id="payment_method" class="form-control" style="height: 48px; border-radius: 8px;" required>
                             <option value="wallet" selected>📱 محفظة إلكترونية</option>
+                            <option value="valu">📦 Valu (تقسيط)</option>
                             <option value="card">💳 بطاقة بنكية</option>
                         </select>
                     </div>
@@ -85,9 +99,9 @@
                         <div class="error-message" id="error_amount">يرجى إدخال مبلغ صحيح.</div>
                     </div>
 
-                    <!-- 4. رقم الهاتف / المحفظة -->
+                    <!-- 4. رقم الهاتف / المحفظة / حساب فاليو -->
                     <div class="input-group-custom" id="phone_group">
-                        <label for="user_phone">رقم الهاتف / المحفظة:</label>
+                        <label for="user_phone" id="phone_label">رقم الهاتف / المحفظة:</label>
                         <div class="input-wrapper">
                             <input placeholder="01XXXXXXXXX" 
                                    type="text" 
@@ -95,10 +109,11 @@
                                    name="phone" 
                                    id="user_phone" 
                                    maxlength="11" 
-                                   style="padding-right: 85px;">
+                                   style="padding-right: 110px;">
                             <div class="input-icon-right" id="wallet_icons">
-                                <span class="meeza-badge">ميزة Meeza</span>
-                                <i class="fa fa-money cash-icon" title="محفظة"></i>
+                                <span class="valu-badge" id="valu_badge">Valu</span>
+                                <span class="meeza-badge" id="meeza_badge">ميزة Meeza</span>
+                                <i class="fa fa-money cash-icon" id="phone_icon" title="رقم الهاتف"></i>
                             </div>
                         </div>
                         <div class="error-message" id="error_phone">يجب كتابة رقم هاتف صحيح.</div>
@@ -195,24 +210,54 @@
         </div>
     </div>
 
+    <!-- سكربت التحكم في إظهار/إخفاء الحقول بناءً على وسيلة الدفع (شامل فاليو) -->
+    <script>
+        document.getElementById('payment_method').addEventListener('change', function() {
+            const method = this.value;
+            const phoneGroup = document.getElementById('phone_group');
+            const cardSection = document.getElementById('card_section');
+            const phoneLabel = document.getElementById('phone_label');
+            const valuBadge = document.getElementById('valu_badge');
+            const meezaBadge = document.getElementById('meeza_badge');
+
+            if (method === 'card') {
+                if (phoneGroup) phoneGroup.style.display = 'none';
+                if (cardSection) cardSection.style.display = 'block';
+            } else {
+                if (phoneGroup) phoneGroup.style.display = 'block';
+                if (cardSection) cardSection.style.display = 'none';
+
+                if (method === 'valu') {
+                    phoneLabel.textContent = 'رقم هاتف حساب فاليو (Valu):';
+                    if (valuBadge) valuBadge.style.display = 'inline-block';
+                    if (meezaBadge) meezaBadge.style.display = 'none';
+                } else {
+                    phoneLabel.textContent = 'رقم الهاتف / المحفظة:';
+                    if (valuBadge) valuBadge.style.display = 'none';
+                    if (meezaBadge) meezaBadge.style.display = 'inline-block';
+                }
+            }
+        });
+    </script>
+
     <!-- كود تشغيل ستارة المسرح -->
     <script>
-      window.addEventListener('load', () => {
-          setTimeout(() => {
-              const topCurtain = document.querySelector('.curtain-top');
-              const bottomCurtain = document.querySelector('.curtain-bottom');
-              const content = document.querySelector('.curtain-content');
-              const overlay = document.getElementById('stage-curtain-overlay');
+       window.addEventListener('load', () => {
+           setTimeout(() => {
+               const topCurtain = document.querySelector('.curtain-top');
+               const bottomCurtain = document.querySelector('.curtain-bottom');
+               const content = document.querySelector('.curtain-content');
+               const overlay = document.getElementById('stage-curtain-overlay');
 
-              if (content) content.classList.add('fade-out');
-              if (topCurtain) topCurtain.classList.add('open');
-              if (bottomCurtain) bottomCurtain.classList.add('open');
+               if (content) content.classList.add('fade-out');
+               if (topCurtain) topCurtain.classList.add('open');
+               if (bottomCurtain) bottomCurtain.classList.add('open');
 
-              setTimeout(() => {
-                  if (overlay) overlay.remove();
-              }, 1200);
-          }, 400);
-      });
+               setTimeout(() => {
+                   if (overlay) overlay.remove();
+               }, 1200);
+           }, 400);
+       });
     </script>
 
     <!-- استدعاء ملف الـ Widget لضمان ظهور فقاعة الترحيب وتفعيل الشات -->
