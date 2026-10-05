@@ -14,9 +14,8 @@ const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
-const { generateWaitPageHtml } = require('./waitPage'); 
 const { generateSuccessPageHtml } = require('./successPage'); // استدعاء صفحة النجاح المنفصلة
-const { generateFailPageHtml } = require('./failPage');        // استدعاء صفحة الفشل المنفصلة
+const { generateFailPageHtml } = require('./failPage');         // استدعاء صفحة الفشل المنفصلة
 
 // استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
@@ -26,7 +25,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "http://tales.net";
+const NETWORK_URL = process.env.NETWORK_HOTSPOT_URL || "https://tales-pay.onrender.com";
 
 const { BRANCH_NAMES } = require('./branches');
 
@@ -289,7 +288,8 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      return res.send(generateWaitPageHtml(transactionId, NETWORK_URL));
+      // توجيه العميل مباشرة إلى صفحة النجاح/الانتظار النشطة بدلاً من الملف المحذوف
+      return res.redirect(`/success?id=${transactionId}&branch=${selectedBranch}`);
     }
   } catch (err) {
     console.error("❌ خطأ في معالجة طلب الدفع:", err.response?.data || err.message);
