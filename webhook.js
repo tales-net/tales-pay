@@ -74,7 +74,6 @@ function verifyPaymobHmac(req) {
       val = obj[key];
     }
     
-    // تحويل القيمة البولينية والأرقام إلى نصوص دقيقة مطابقة لتوثيق Paymob
     if (val === undefined || val === null) {
       val = "";
     } else if (typeof val === "boolean") {
@@ -93,12 +92,14 @@ function verifyPaymobHmac(req) {
 }
 
 /**
- * استخراج الفرع من حمولة Paymob
+ * استخراج الفرع من حمولة Paymob بدقة عالية
  */
 function extractBranchKey(obj) {
   const directBranch = 
     obj.merchant_extra?.branch ||
     obj.order?.merchant_extra?.branch ||
+    obj.extra?.branch ||
+    obj.order?.extra?.branch ||
     obj.extra_data?.branch || 
     obj.order?.extra_data?.branch || 
     obj.branch || 
@@ -151,13 +152,13 @@ router.post("/paymob-webhook", async (req, res) => {
     const branchDisplayName = BRANCH_NAMES[branchKey] || BRANCH_NAMES.main;
 
     const phone = obj.phone || 
-                  obj.billing_data?.phone_number || 
-                  obj.customer?.phone_number || 
-                  obj.order?.shipping_data?.phone_number || 
-                  "غير محدد";
+                obj.billing_data?.phone_number || 
+                obj.customer?.phone_number || 
+                obj.order?.shipping_data?.phone_number || 
+                "غير محدد";
 
     if (isSuccess) {
-      console.log(`💳 [Webhook Debug] معاملة ناجحة: ${transactionId} | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ: ${numericAmount}ج`);
+      console.log(`💳 [Webhook Debug] معاملة ناجحة: ${transactionId} | الفرع المستهدف: ${branchDisplayName} (${branchKey}) | المبلغ: ${numericAmount}ج`);
 
       let packageName = "باقة إنترنت شبكة حكايات";
       if (typeof profiles.getPackageName === "function") {
@@ -168,7 +169,7 @@ router.post("/paymob-webhook", async (req, res) => {
         packageName = profiles[numericAmount] || profiles[String(numericAmount)] || "باقة إنترنت شبكة حكايات";
       }
 
-      // 🚀 توليد الكارت الحقيقي تلقائياً في راوتر الميكروتيك
+      // 🚀 توليد الكارت الحقيقي تلقائياً في راوتر الميكروتيك الخاص بالفرع المحدد
       const cardResult = await processPaymentAndCreateCard(numericAmount, branchKey, transactionId);
 
       let cardImageBuffer = null;
@@ -176,7 +177,7 @@ router.post("/paymob-webhook", async (req, res) => {
 
       if (cardResult.success) {
         if (cardResult.isCustomAmount) {
-          console.log(`🌸 [Custom Amount] تم استقبال مساهمة بقيمة ${numericAmount}ج`);
+          console.log(`🌸 [Custom Amount] تم استقبال مساهمة بقيمة ${numericAmount}ج لفرع ${branchDisplayName}`);
         } else {
           cardCode = cardResult.cardCode;
           packageName = cardResult.packageName || packageName;
@@ -201,7 +202,7 @@ router.post("/paymob-webhook", async (req, res) => {
           if (merchantOrderId) global.generatedCardsMap.set(merchantOrderId, cardPayload);
         }
       } else {
-        console.error(`🚨 [Webhook Error] فشل إنشاء الكارت للمبلغ ${numericAmount}ج:`, cardResult.error);
+        console.error(`🚨 [Webhook Error] فشل إنشاء الكارت لفرع ${branchDisplayName} للمبلغ ${numericAmount}ج:`, cardResult.error);
       }
 
       obj.voucher_code = cardCode || "⚠️ تعذر الإصدار الآلي";
@@ -228,7 +229,7 @@ router.post("/paymob-webhook", async (req, res) => {
         );
       }
 
-      console.log(`✅ [Webhook SUCCESS Completed] تم معالجة المعاملة: ${transactionId}`);
+      console.log(`✅ [Webhook SUCCESS Completed] تم معالجة المعاملة بنجاح للفرع: ${branchDisplayName} (${transactionId})`);
 
     } else {
       const failureReason = 
@@ -238,7 +239,7 @@ router.post("/paymob-webhook", async (req, res) => {
         obj.data?.txn_response_code || 
         "سبب غير محدد من البوابة";
 
-      console.error(`❌ [Webhook FAILED] معاملة فاشلة: ${transactionId} | السبب: [${failureReason}]`);
+      console.error(`❌ [Webhook FAILED] معاملة فاشلة: ${transactionId} | الفرع: ${branchDisplayName} | السبب: [${failureReason}]`);
 
       obj.phone = phone;
       obj.branch = branchKey;
