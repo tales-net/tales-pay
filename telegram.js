@@ -36,7 +36,7 @@ async function fetchNetworkDetailsByIP(ip) {
       const lat = res.data.latitude;
       const lon = res.data.longitude;
       if (lat && lon) {
-        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat},${lon})</a>`;
+        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat}, ${lon})</a>`;
       }
       return result;
     }
@@ -56,7 +56,7 @@ async function fetchNetworkDetailsByIP(ip) {
       const lat = fallbackRes.data.lat;
       const lon = fallbackRes.data.lon;
       if (lat && lon) {
-        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat},${lon})</a>`;
+        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat}, ${lon})</a>`;
       }
       return result;
     }
@@ -78,7 +78,7 @@ function getFormattedDateTime() {
   const now = new Date();
   const formattedDate = now.toLocaleDateString("ar-EG", { timeZone: "Africa/Cairo" });
   const formattedTime = now.toLocaleTimeString("ar-EG", { timeZone: "Africa/Cairo" });
-  return `${formattedDate} -${formattedTime}`;
+  return `${formattedDate} - ${formattedTime}`;
 }
 
 /**
@@ -380,7 +380,7 @@ async function handleTelegramCallback(callbackQuery) {
 }
 
 /**
- * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع الموقع الجغرافي للشبكة ورقم المعاملة الحقيقي
+ * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع الموقع الجغرافي للشبكة
  */
 async function sendTelegramFailNotification(errorMessage, data = {}) {
   try {
@@ -388,42 +388,25 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
       return;
     }
 
-    const publicIP = data.publicIP || data.ip || "غير متوفر";
+    const publicIP = data.publicIP || "غير متوفر";
     if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) {
       return;
     }
 
-    // جلب تفاصيل الموقع الجغرافي والإحداثيات للـ IP
+    // جلب تفاصيل الموقع الجغرافي والإحداثيات للـ IP في صفحة الفشل أيضاً
     const netInfo = await fetchNetworkDetailsByIP(publicIP);
     const ispText = netInfo.isp;
     const netLocationText = netInfo.netLocation;
 
-    const branchName = data.branchName || data.branch_name || "حكايات نت رئيسي";
-    
-    // استخراج رقم الهاتف الحقيقي من مختلف الأماكن المحتملة
-    const userPhone = data.phone || 
-                      data.billing_data?.phone_number || 
-                      data.customer?.phone_number || 
-                      "غير محدد";
-
-    // استخراج المبلغ الحقيقي (مع معالجة القروش إن وجدت)
-    let amountEGP = "غير محدد";
-    if (data.amount_cents) {
-      amountEGP = (data.amount_cents / 100).toFixed(2);
-    } else if (data.amount) {
-      amountEGP = data.amount;
-    }
-
-    // استخراج رقم المعاملة الحقيقي
-    const txnId = data.id || data.transactionId || data.order?.id || data.merchant_order_id || `TX_${Date.now()}`;
-    
+    const branchName = data.branchName || "حكايات نت رئيسي";
+    const userPhone = data.phone || "غير محدد";
+    const amountEGP = data.amount || "غير محدد";
     const dateTimeStr = getFormattedDateTime();
+    const txnId = data.transactionId || `TX_${Date.now()}`;
 
     let message = `❌ <b>فشل عملية الدفع! (تنبيه فتح صفحة الخطأ)</b>\n\n` +
                   `🏢 الفرع: <b>${branchName}</b>\n` +
                   `🆔 رقم المعاملة: <code>${txnId}</code>\n` +
-                  `💰 المبلغ: <b>${amountEGP} جنيه</b>\n` +
-                  `📱 رقم الهاتف: <code>${userPhone}</code>\n` +
                   `⚠️ سبب الخطأ: <i>${errorMessage}</i>\n` +
                   `----------------------------------------\n` +
                   `🌐 IP الخارجي: <code>${publicIP}</code>\n` +
