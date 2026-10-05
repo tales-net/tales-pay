@@ -1,7 +1,6 @@
 const express = require("express");
 const crypto = require("crypto");
 const router = express.Router();
-const profiles = require("./profiles");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateCardImage } = require("./cardGenerator");
 const { sendTelegramMessage, sendVoucherWithCardImage } = require("./telegram");
