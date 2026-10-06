@@ -2,7 +2,6 @@ const { RouterOSClient } = require("routeros-client");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// ذاكرة مؤقتة لمنع تكرار المعاملات المكتملة حديثاً
 const processedTransactions = new Set();
 
 setInterval(() => {
