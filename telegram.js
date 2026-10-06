@@ -1,3 +1,4 @@
+ * @param {string} packageName - اسم الباقة (مثال: برونزية، 50)
 const axios = require("axios");
 const FormData = require("form-data");
 const mikrotikService = require("./mikrotikService");
@@ -8,9 +9,6 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const { BRANCH_NAMES } = require('./branches');
 
-/**
- * جلب بيانات الشبكة والموقع الجغرافي والإحداثيات بناءً على IP الخارجي
- */
 async function fetchNetworkDetailsByIP(ip) {
   const result = {
     location: "غير معروف",
