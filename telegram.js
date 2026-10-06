@@ -188,6 +188,7 @@ async function sendTelegramMessage(data, isInitial = true) {
 
     } else {
       const voucher = data.voucher_code || data.cardCode || "غير متوفر";
+      // استخدام دالة تحديد الباقة الموحدة بناءً على المبلغ المدفوع
       const packageInfo = data.package_info || data.packageName || getPackageNameByAmount(amountEGP);
 
       message = `✅ <b>تمت عملية الدفع وتوليد الكارت بنجاح!</b>\n\n` +
@@ -202,6 +203,7 @@ async function sendTelegramMessage(data, isInitial = true) {
                 `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
     }
 
+    // تمرير الفرع ورمز الأمان السري في الـ callback_data ليطابق الرابط المطلوب
     const replyMarkup = {
       inline_keyboard: [
         [
@@ -229,7 +231,7 @@ async function sendTelegramMessage(data, isInitial = true) {
 async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) {
-      console.warn("⚠️️ [Telegram Error] BOT_TOKEN أو CHAT_ID مفقود!");
+      console.warn("⚠️ [Telegram Error] BOT_TOKEN أو CHAT_ID مفقود!");
       return;
     }
 
@@ -310,9 +312,10 @@ async function handleTelegramCallback(callbackQuery) {
     const parts = data.split("_");
 
     if (data.startsWith("create_voucher")) {
+      // استخراج المعطيات بدقة من الـ callback_data: create_voucher_TXID_AMOUNT_BRANCH
       const txnId = parts[2] || "UNKNOWN"; 
       const amount = parts[3] || "0";
-      const branchKey = parts[4] || "main";
+      const branchKey = parts[4] || "main"; // استخراج الفرع بدقة
 
       console.log(`🎟️ [Voucher Creation Started] جارٍ إصدار الكارت للمعاملة: ${txnId} | المبلغ: ${amount} \vert{} الفرع: ${branchKey}`);
 
@@ -321,6 +324,7 @@ async function handleTelegramCallback(callbackQuery) {
 
       try {
         if (typeof mikrotikService !== "undefined" && typeof mikrotikService.processPaymentAndCreateCard === "function") {
+          // تمرير الفرع الصحيح المستخرج للميكروتيك
           voucherData = await mikrotikService.processPaymentAndCreateCard(amount, branchKey, txnId);
         } else {
           throw new Error("دالة processPaymentAndCreateCard غير موجودة في mikrotikService");
@@ -405,7 +409,7 @@ async function handleTelegramCallback(callbackQuery) {
 }
 
 /**
- * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع الفرع الحقيقي ورقم المعاملة والمبلغ والهاتف والموقع الجغرافي
+ * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع والموقع الجغرافي للشبكة
  */
 async function sendTelegramFailNotification(errorMessage, data = {}) {
   try {
@@ -423,23 +427,18 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
     const netLocationText = netInfo.netLocation;
 
     const branchKey = data.branch || data.branchKey || "main";
-    const branchName = data.branchName || BRANCH_NAMES[branchKey] || "حكايات نت رئيسي";
-    const userPhone = data.phone || data.billing_data?.phone_number || data.customer?.phone_number || "غير محدد";
-    const amountEGP = data.amount_cents ? (data.amount_cents / 100).toFixed(2) : (data.amount || "غير محدد");
     const dateTimeStr = getFormattedDateTime();
-    const txnId = data.transactionId || data.id || data.order?.id || data.merchant_order_id || `TX_${Date.now()}`;
-
-    let message = `❌ <b>فشل عملية الدفع! (تنبيه خطأ)</b>\n\n` +
+    let message = `❌ <b>فشل عملية الدفع! (تنبيه فتح صفحة الخطأ)</b>\n\n` +
                   `🏢 الفرع: <b>${branchName}</b>\n` +
-                  `🆔 رقم العملية: <code>${txnId}</code>\n` +
-                  `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n` +
-                  `💰 المبلغ المطلوب: <b>${amountEGP} جنيه</b>\n` +
+                  `🆔 رقم المعاملة: <code>${txnId}</code>\n` +
+                  `💰 المبلغ: <b>${amountEGP} جنيه</b>\n` +
+                  `📱 رقم الهاتف: <code>${userPhone}</code>\n` +
                   `⚠️ سبب الخطأ: <i>${errorMessage}</i>\n` +
                   `----------------------------------------\n` +
                   `🌐 IP الخارجي: <code>${publicIP}</code>\n` +
                   `📡 مزود الخدمة (ISP): <b>${ispText}</b>\n` +
                   `📍 موقع الشبكة (IP Geo): ${netLocationText}\n` +
-                  `📅 وقت التنبيه: <code>${dateTimeStr}</code>`;
+                  `📅 وقت الزيارة: <code>${dateTimeStr}</code>`;
 
     await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       chat_id: CHAT_ID,
