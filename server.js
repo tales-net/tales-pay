@@ -14,10 +14,9 @@ const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
-const { generateSuccessPageHtml } = require('./successPage'); // استدعاء صفحة النجاح المنفصلة
-const { generateFailPageHtml } = require('./failPage');         // استدعاء صفحة الفشل المنفصلة
+const { generateSuccessPageHtml } = require('./successPage'); 
+const { generateFailPageHtml } = require('./failPage');      
 
-// استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
 
 const app = express();
@@ -31,16 +30,12 @@ const { BRANCH_NAMES } = require('./branches');
 
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
-// تهيئة Socket.io للدعم المباشر
 chatSupport.initSocket(io);
 
-// إعداد Multer لاستقبال الصور والملفات المرفوعة في الشات
 const upload = multer();
 
-// مسار الملف المؤقت لحفظ وقت الصيانة على السيرفر
 const maintenanceFile = path.join(__dirname, 'maintenance_status.json');
 
-// دالة لجلب وقت الصيانة المحفوظ
 function getMaintenanceEndTime() {
   try {
     if (fs.existsSync(maintenanceFile)) {
@@ -53,7 +48,6 @@ function getMaintenanceEndTime() {
   return 0;
 }
 
-// تنظيف دوري للذاكرة المؤقتة كل نصف ساعة
 setInterval(() => {
   const oneHourAgo = Date.now() - (60 * 60 * 1000);
   for (let [key, value] of global.generatedCardsMap.entries()) {
@@ -68,15 +62,11 @@ app.use(express.json());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// ==========================================
-// 🛡️ Middleware للتحكم التلقائي بالموقع والصيانة للجميع
-// ==========================================
 app.use((req, res, next) => {
   const currentTime = Date.now();
   const maintenanceEndTime = getMaintenanceEndTime();
   const isMaintenanceActive = maintenanceEndTime > currentTime;
 
-  // 1. استثناءات لكي لا يحدث تعارض (ملفات التصميم، مسار صفحة الصيانة، ومسارات التحقق والـ API)
   if (
     req.path === "/dev-panel-lock" ||
     req.path === "/api/maintenance/status" ||
@@ -88,7 +78,6 @@ app.use((req, res, next) => {
     return next();
   }
 
-  // 2. إذا انتهى الوقت، نقوم بمسح الملف تلقائياً ليعمل الموقع بشكل طبيعي
   if (maintenanceEndTime > 0 && currentTime >= maintenanceEndTime) {
     try {
       if (fs.existsSync(maintenanceFile)) {
@@ -98,7 +87,6 @@ app.use((req, res, next) => {
     return next();
   }
 
-  // 3. إذا كانت الصيانة مفعلة، قم بعرض صفحة الصيانة مباشرة لأي زائر
   if (isMaintenanceActive) {
     return res.sendFile(path.join(__dirname, "public", "maintenance.html"));
   }
@@ -108,19 +96,14 @@ app.use((req, res, next) => {
 
 app.use(express.static(path.join(__dirname, "public")));
 
-// ==========================================
-// 🛠️ نظام عرض صفحة الصيانة ومسارات التحكم الآمنة
-// ==========================================
 app.get("/dev-panel-lock", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "maintenance.html"));
 });
 
-// جلب حالة الوقت الحالية للعميل/السيرفر
 app.get('/api/maintenance/status', (req, res) => {
   res.json({ endTime: getMaintenanceEndTime() });
 });
 
-// التحقق من الباسورد
 app.post('/api/maintenance/verify', (req, res) => {
   const { password } = req.body;
   const adminPassword = process.env.MAINTENANCE_PASSWORD || "123456";
@@ -132,7 +115,6 @@ app.post('/api/maintenance/verify', (req, res) => {
   }
 });
 
-// تعيين وقت صيانة جديد وحفظه على السيرفر
 app.post('/api/maintenance/set', (req, res) => {
   const { password, minutes } = req.body;
   const adminPassword = process.env.MAINTENANCE_PASSWORD || "123456";
@@ -170,9 +152,6 @@ function getClientPublicIP(req) {
   );
 }
 
-// ==========================================
-// 💬 مسارات الدعم الفني المباشر (Chat Support API)
-// ==========================================
 app.post('/api/support/message', upload.single('image'), (req, res) => {
   chatSupport.handleClientMessage(req, res, chatSupport.sendSupportChatMessage);
 });
@@ -183,9 +162,6 @@ app.get('/api/support/messages/:clientId', (req, res) => {
   res.json({ success: true, messages });
 });
 
-// ==========================================
-// 🤖 مسار تليجرام الموحد (Webhook للرسائل وأزرار التفاعل)
-// ==========================================
 app.post('/telegram-webhook', async (req, res) => {
   try {
     const update = req.body;
@@ -218,9 +194,6 @@ app.post('/telegram-webhook', async (req, res) => {
   }
 });
 
-// ==========================================
-// 💳 مسارات المدفوعات وباقي الخدمة
-// ==========================================
 async function handlePaymentRequest(req, res) {
   try {
     const data = { ...req.query, ...req.body };
@@ -288,7 +261,6 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      // توجيه العميل مباشرة إلى صفحة النجاح/الانتظار النشطة بدلاً من الملف المحذوف
       return res.redirect(`/success?id=${transactionId}&branch=${selectedBranch}`);
     }
   } catch (err) {
@@ -336,14 +308,14 @@ app.get("/api/test-create-card", async (req, res) => {
 
       return res.json({
         success: true,
-        message: `✅ تم إضافة الكارت إلى الميكروتيك بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
+        message: `✅ تم إضافة الكارت إلى السيرفر بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
         data: result,
         successPageLink: `/success?merchant_order_id=${testTxId}&branch=${result.branchKey}`
       });
     } else {
       return res.json({
         success: false,
-        message: "⚠️ فشل توليد الكارت من الميكروتيك",
+        message: "⚠️ فشل توليد الكارت من السيرفر",
         details: result
       });
     }
@@ -399,7 +371,6 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-// استدعاء واجهة النجاح المنفصلة وتمرير البيانات والفروع بذكاء
 app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
   const queryBranch = req.query.branch || "";
@@ -408,7 +379,6 @@ app.get("/success", (req, res) => {
   return res.send(pageHtml);
 });
 
-// استعراض واجهة الفشل وإرسال إشعار لتليجرام
 app.get("/fail", async (req, res) => {
   const errorMessage = req.query.data_message || req.query.error || "حدثت مشكلة أثناء عملية الدفع، حاول مرة أخرى.";
   
