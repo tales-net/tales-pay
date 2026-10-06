@@ -1,4 +1,3 @@
- * @param {string} packageName - اسم الباقة (مثال: برونزية، 50)
 const axios = require("axios");
 const FormData = require("form-data");
 const mikrotikService = require("./mikrotikService");
