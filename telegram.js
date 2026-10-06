@@ -167,11 +167,10 @@ async function sendTelegramMessage(data, isInitial = true) {
                 `🏢 الفرع: <b>${branchName}</b>\n` +
                 `🆔 رقم العملية: <code>${txnId}</code>\n` +
                 `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n` +
-                `👤 اسم العميل / البطاقة: <b>${customerName}</b>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المدفوع: <b>${amountEGP} جنيه</b>\n` +
-                `📦 الباقة المفعلة: <b>${packageInfo}</b>\n` +
-                `🎟️ كارت الإنترنت: <code>${voucher}</code>\n` +
+                `📦 الباقة المفعلة: <b>${packageName}</b>\n` +
+                `🎟️ كارت الإنترنت: <code>${usernameStr}</code>\n` +
                 `----------------------------------------\n` +
                 `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
     }
