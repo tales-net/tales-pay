@@ -107,14 +107,12 @@
     });
 
     socket.on("chat_closed", (data) => {
-      // عند إغلاق المحادثة، نمسح بيانات العداد والجلسة من المتصفح ليبدأ العميل بمعرف وجلسة جديدة تماماً لاحقاً
       localStorage.removeItem("hikayat_queue_end_time");
       localStorage.removeItem("hikayat_total_seconds");
       localStorage.removeItem("hikayat_initial_queue");
       sessionStorage.removeItem("waiting_notice_sent");
       
-      // توليد معرف جديد للعميل للمستقبل
-      const newClientId = "client_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
+       const newClientId = "client_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
       localStorage.setItem("hikayat_client_id", newClientId);
 
       lockChatInterface(data.message || "تم إغلاق المحادثة بواسطة الدعم الفني.");
@@ -132,12 +130,10 @@
       startDynamicCountdown(endTime, totalSeconds, initialQueue);
     });
 
-    // جلب رسائل وحالة الشات عند التحميل
     fetch(`/api/support/messages/${clientId}`)
       .then(res => res.json())
       .then(data => {
         if (data.isClosed) {
-          // إذا كان السيرفر يعتبر الشات مغلقاً، نقوم بتصفير التخزين المحلي فوراً
           localStorage.removeItem("hikayat_queue_end_time");
           localStorage.removeItem("hikayat_total_seconds");
           localStorage.removeItem("hikayat_initial_queue");
@@ -317,8 +313,8 @@
     
     Object.assign(welcomeBubble.style, {
       position: 'fixed', 
-      bottom: '26px', // نفس ارتفاع فقاعة الشات تقريباً لتخرج من جوارها
-      right: '85px',  // تبدأ من مكان فقاعة الشات (التي تبعد 20px وتعرُضها 55px)
+      bottom: '26px', 
+      right: '85px',  
       backgroundColor: '#01338D', 
       color: '#ffffff',
       padding: '10px 16px', 
@@ -331,14 +327,13 @@
       cursor: 'pointer', 
       direction: 'rtl', 
       opacity: '0', 
-      transform: 'scale(0.5) translateX(20px)', // تبدأ مختبئة وصغيرة داخل مكان الفقاعة
+      transform: 'scale(0.5) translateX(20px)', 
       transition: 'all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
     });
 
     document.body.appendChild(welcomeBubble);
 
-    // حركة الظهور: الانزلاق والخروج نحو اليسار بجانب فقاعة الشات
-    setTimeout(() => {
+       setTimeout(() => {
       welcomeBubble.style.opacity = '1';
       welcomeBubble.style.transform = 'scale(1) translateX(0)';
     }, 1000);
@@ -348,7 +343,6 @@
       if (welcomeBubble && welcomeBubble.parentNode) welcomeBubble.remove();
     };
 
-    // الاختفاء تلقائياً بعد مرور دقيقة
     setTimeout(() => {
       if (welcomeBubble && welcomeBubble.parentNode) {
         welcomeBubble.style.opacity = '0';
