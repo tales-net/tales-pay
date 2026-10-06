@@ -8,6 +8,9 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const { BRANCH_NAMES } = require('./branches');
 
+/**
+ * جلب بيانات الشبكة والموقع الجغرافي والإحداثيات بناءً على IP الخارجي
+ */
 async function fetchNetworkDetailsByIP(ip) {
   const result = {
     location: "غير معروف",
@@ -21,7 +24,6 @@ async function fetchNetworkDetailsByIP(ip) {
 
   const cleanIp = String(ip).split(",")[0].trim();
 
-  // المصدر الأول: ipwho.is (يدعم الإحداثيات بدقة عالية)
   try {
     const res = await axios.get(`https://ipwho.is/${cleanIp}?lang=ar`, { timeout: 3000 });
     if (res.data && res.data.success !== false) {
@@ -33,7 +35,7 @@ async function fetchNetworkDetailsByIP(ip) {
       const lat = res.data.latitude;
       const lon = res.data.longitude;
       if (lat && lon) {
-        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat}, ${lon})</a>`;
+        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat},${lon})</a>`;
       }
       return result;
     }
@@ -41,7 +43,6 @@ async function fetchNetworkDetailsByIP(ip) {
     // تجاهل والانتقال للمصدر البديل
   }
 
-  // المصدر الثاني: ip-api.com (مصدر بديل قوي للإحداثيات والـ ISP)
   try {
     const fallbackRes = await axios.get(`http://ip-api.com/json/${cleanIp}?fields=status,country,city,isp,org,lat,lon,query`, { timeout: 3000 });
     if (fallbackRes.data && fallbackRes.data.status === "success") {
@@ -53,7 +54,7 @@ async function fetchNetworkDetailsByIP(ip) {
       const lat = fallbackRes.data.lat;
       const lon = fallbackRes.data.lon;
       if (lat && lon) {
-        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat}, ${lon})</a>`;
+        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat},${lon})</a>`;
       }
       return result;
     }
@@ -75,7 +76,24 @@ function getFormattedDateTime() {
   const now = new Date();
   const formattedDate = now.toLocaleDateString("ar-EG", { timeZone: "Africa/Cairo" });
   const formattedTime = now.toLocaleTimeString("ar-EG", { timeZone: "Africa/Cairo" });
-  return `${formattedDate} - ${formattedTime}`;
+  return `${formattedDate} -${formattedTime}`;
+}
+
+/**
+ * دالة لتحديد اسم الباقة تلقائياً بناءً على المبلغ المدفوع
+ */
+function getPackageNameByAmount(amount) {
+  const numAmount = parseFloat(amount);
+  if (isNaN(numAmount)) return data.packageName || "باقة إنترنت شبكة حكايات";
+
+  // يمكنك تعديل الأسعار والمطابقات هنا حسب باقاتك الفعليّة
+  if (numAmount === 10 || numAmount === 15) return "باقة يومية / اقتصادية";
+  if (numAmount === 25 || numAmount === 30) return "باقة أسبوعية";
+  if (numAmount >= 50 && numAmount < 100) return "باقة الشهر الأساسية (50 جـ)";
+  if (numAmount >= 100 && numAmount < 150) return "باقة الشهر المتميزة (100 جـ)";
+  if (numAmount >= 150) return "باقة الشهر الكبرى (150+ جـ)";
+  
+  return `باقة إنترنت بقيمة ${numAmount} جنيه`;
 }
 
 /**
@@ -116,7 +134,6 @@ async function sendTelegramMessage(data, isInitial = true) {
       let ispText = data.ispProvider || data.isp || null;
       let netLocationText = data.netLocation || null;
 
-      // جلب الموقع الجغرافي والإحداثيات ومزود الخدمة عبر IP إذا لم تكن متوفرة مسبقاً
       if (!ispText || ispText === "غير معروف" || !netLocationText || netLocationText === "غير متاح") {
         const netInfo = await fetchNetworkDetailsByIP(publicIP);
         if (netInfo) {
@@ -166,9 +183,9 @@ async function sendTelegramMessage(data, isInitial = true) {
                  `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
 
     } else {
-      const voucher = data.voucher_code || data.cardCode || "غير متوفر";
-      const packageInfo = data.package_info || data.packageName || paymentDetails.packageName || "تم أصدار الكارت";
-      const customerName = data.card_data?.name || data.billing_data?.first_name || "عميل شبكة حكايات";
+      const voucher = data.voucher_code || data.cardCode || "متاح عند الإصدار";
+      // تحديد اسم الباقة تلقائياً بناءً على المبلغ المدفوع وعدم الاعتماد على الحقول المحذوفة
+      const packageInfo = getPackageNameByAmount(amountEGP);
 
       message = `✅ <b>تمت عملية الدفع وتوليد الكارت بنجاح!</b>\n\n` +
                 `🏢 الفرع: <b>${branchName}</b>\n` +
@@ -228,10 +245,11 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
 
     const txnId = paymentDetails.transactionId || paymentDetails.id || `TX_${Date.now()}`;
     const amountVal = paymentDetails.amount || "0";
+    const calculatedPackage = getPackageNameByAmount(amountVal);
 
     const caption = `🎟️ <b>صورة كارت الإنترنت المصدر آلياً</b>\n\n` +
                     `🏢 الفرع: <b>${paymentDetails.branchName || 'حكايات نت رئيسي'}</b>\n` +
-                    `📦 الباقة: <b>${paymentDetails.packageName || 'باقة إنترنت'}</b>\n` +
+                    `📦 الباقة: <b>${paymentDetails.packageName || calculatedPackage}</b>\n` +
                     `💰 المبلغ: <b>${amountVal} جنيه</b>\n` +
                     `🔑 الكارت: <code>${paymentDetails.card?.code || paymentDetails.code || 'غير متوفر'}</code>\n` +
                     `📱 الهاتف: <code>${paymentDetails.phone || 'غير محدد'}</code>\n` +
@@ -318,7 +336,7 @@ async function handleTelegramCallback(callbackQuery) {
             },
             amount: amount,
             transactionId: txnId,
-            packageName: voucherData.packageName || "باقة إنترنت",
+            packageName: voucherData.packageName || getPackageNameByAmount(amount),
             createdAt: new Date()
           });
         }
@@ -389,7 +407,6 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
       return;
     }
 
-    // جلب تفاصيل الموقع الجغرافي والإحداثيات للـ IP في صفحة الفشل أيضاً
     const netInfo = await fetchNetworkDetailsByIP(publicIP);
     const ispText = netInfo.isp;
     const netLocationText = netInfo.netLocation;
