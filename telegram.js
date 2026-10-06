@@ -179,7 +179,7 @@ async function sendTelegramMessage(data, isInitial = true) {
                 `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المدفوع: <b>${amountEGP} جنيه</b>\n` +
-                `📦 الباقة المفعلة: <b>${packageInfo}</b>\n` +
+                `📦 الباقة المفعلة: <b>${packageName}</b>\n` +
                 `🎟️ كارت الإنترنت: <code>${voucher}</code>\n` +
                 `----------------------------------------\n` +
                 `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
