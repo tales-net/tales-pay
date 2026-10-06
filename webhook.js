@@ -26,7 +26,7 @@ router.get("/paymob-webhook", (req, res) => {
 
 function verifyPaymobHmac(req) {
   const hmacSecret = process.env.PAYMOB_HMAC;
-  if (!hmacSecret) return true; // تجاوز الفحص إذا لم يتم ضبط المتغير في البيئة
+  if (!hmacSecret) return true; 
 
   const receivedHmac = req.query.hmac;
   if (!receivedHmac) return false;
