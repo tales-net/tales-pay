@@ -409,7 +409,7 @@ async function handleTelegramCallback(callbackQuery) {
 }
 
 /**
- * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع الفرع ورقم العملية والمبلغ والهاتف
+ * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع والموقع الجغرافي للشبكة
  */
 async function sendTelegramFailNotification(errorMessage, data = {}) {
   try {
@@ -417,10 +417,7 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
       return;
     }
 
-    // إذا كانت البيانات عبارة عن كائن طلب HTTP (Req) أو تحتوي على query parameters
-    const reqQuery = data.query || data.body || {};
-    
-    const publicIP = data.publicIP || reqQuery.publicIP || data.ip || reqQuery.ip || "غير متوفر";
+    const publicIP = data.publicIP || "غير متوفر";
     if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) {
       return;
     }
@@ -428,36 +425,14 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
     const netInfo = await fetchNetworkDetailsByIP(publicIP);
     const ispText = netInfo.isp;
     const netLocationText = netInfo.netLocation;
-
-    // البحث عن الفرع من عدة أماكن محتملة
-    const branchKey = data.branch || reqQuery.branch || data.branchKey || reqQuery.branchKey || "main";
-    const branchName = data.branchName || reqQuery.branchName || BRANCH_NAMES[branchKey] || "حكايات نت رئيسي";
-    
-    // البحث عن الهاتف من عدة أماكن محتملة
-    const userPhone = data.phone || reqQuery.phone || data.billing_data?.phone_number || data.customer?.phone_number || "غير محدد";
-    
-    // البحث عن المبلغ من عدة أماكن محتملة
-    const rawAmount = data.amount || reqQuery.amount || data.amount_cents || reqQuery.amount_cents || "غير محدد";
-    const amountEGP = String(rawAmount).includes("cents") || Number(rawAmount) > 1000 
-      ? (Number(rawAmount) / 100).toFixed(2) 
-      : rawAmount;
-
     const dateTimeStr = getFormattedDateTime();
-    
-    // البحث عن رقم المعاملة أو توليد رقم افتراضي فريد
-    const txnId = data.transactionId || reqQuery.transactionId || data.id || reqQuery.id || data.order?.id || `FAIL_${Date.now()}`;
 
-    let message = `❌ <b>فشل عملية الدفع! (تنبيه خطأ)</b>\n\n` +
-                  `🏢 الفرع: <b>${branchName}</b>\n` +
-                  `🆔 رقم العملية: <code>${txnId}</code>\n` +
-                  `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n` +
-                  `💰 المبلغ المطلوب: <b>${amountEGP} جنيه</b>\n` +
-                  `⚠️️ سبب الخطأ: <i>${errorMessage}</i>\n` +
+    let message = `⚠️ سبب الخطأ: <i>${errorMessage}</i>\n` +
                   `----------------------------------------\n` +
                   `🌐 IP الخارجي: <code>${publicIP}</code>\n` +
                   `📡 مزود الخدمة (ISP): <b>${ispText}</b>\n` +
                   `📍 موقع الشبكة (IP Geo): ${netLocationText}\n` +
-                  `📅 وقت التنبيه: <code>${dateTimeStr}</code>`;
+                  `📅 وقت الزيارة: <code>${dateTimeStr}</code>`;
 
     await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       chat_id: CHAT_ID,
