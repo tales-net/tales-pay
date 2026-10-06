@@ -188,7 +188,6 @@ async function sendTelegramMessage(data, isInitial = true) {
 
     } else {
       const voucher = data.voucher_code || data.cardCode || "غير متوفر";
-      // استخدام دالة تحديد الباقة الموحدة بناءً على المبلغ المدفوع
       const packageInfo = data.package_info || data.packageName || getPackageNameByAmount(amountEGP);
 
       message = `✅ <b>تمت عملية الدفع وتوليد الكارت بنجاح!</b>\n\n` +
@@ -203,7 +202,6 @@ async function sendTelegramMessage(data, isInitial = true) {
                 `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
     }
 
-    // تمرير الفرع ورمز الأمان السري في الـ callback_data ليطابق الرابط المطلوب
     const replyMarkup = {
       inline_keyboard: [
         [
@@ -312,10 +310,9 @@ async function handleTelegramCallback(callbackQuery) {
     const parts = data.split("_");
 
     if (data.startsWith("create_voucher")) {
-      // استخراج المعطيات بدقة من الـ callback_data: create_voucher_TXID_AMOUNT_BRANCH
       const txnId = parts[2] || "UNKNOWN"; 
       const amount = parts[3] || "0";
-      const branchKey = parts[4] || "main"; // استخراج الفرع بدقة
+      const branchKey = parts[4] || "main";
 
       console.log(`🎟️ [Voucher Creation Started] جارٍ إصدار الكارت للمعاملة: ${txnId} | المبلغ: ${amount} \vert{} الفرع: ${branchKey}`);
 
@@ -324,7 +321,6 @@ async function handleTelegramCallback(callbackQuery) {
 
       try {
         if (typeof mikrotikService !== "undefined" && typeof mikrotikService.processPaymentAndCreateCard === "function") {
-          // تمرير الفرع الصحيح المستخرج للميكروتيك
           voucherData = await mikrotikService.processPaymentAndCreateCard(amount, branchKey, txnId);
         } else {
           throw new Error("دالة processPaymentAndCreateCard غير موجودة في mikrotikService");
@@ -409,7 +405,7 @@ async function handleTelegramCallback(callbackQuery) {
 }
 
 /**
- * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع والموقع الجغرافي للشبكة
+ * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع تمرير الفرع ورقم العملية والمبلغ ورقم الهاتف
  */
 async function sendTelegramFailNotification(errorMessage, data = {}) {
   try {
@@ -417,7 +413,7 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
       return;
     }
 
-    const publicIP = data.publicIP || "غير متوفر";
+    const publicIP = data.publicIP || (data.geoData && data.geoData.publicIP) || data.ip || "غير متوفر";
     if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) {
       return;
     }
@@ -426,14 +422,24 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
     const ispText = netInfo.isp;
     const netLocationText = netInfo.netLocation;
 
+    // استخراج بيانات الفرع ورقم العملية والمبلغ ورقم الهاتف بدقة من كائن الـ data
     const branchKey = data.branch || data.branchKey || "main";
     const branchName = data.branchName || BRANCH_NAMES[branchKey] || "حكايات نت رئيسي";
-    const userPhone = data.phone || "غير محدد";
-    const amountEGP = data.amount || "غير محدد";
+    
+    const userPhone = data.phone || 
+                        data.billing_data?.phone_number || 
+                        data.customer?.phone_number || 
+                        data.userPhone || 
+                        "غير محدد";
+                        
+    const amountEGP = data.amount_cents
+      ? (data.amount_cents / 100).toFixed(2)
+      : (data.amount || data.amountEGP || "غير محدد");
+      
+    const txnId = data.id || data.transactionId || data.order?.id || data.merchant_order_id || `TX_${Date.now()}`;
     const dateTimeStr = getFormattedDateTime();
-    const txnId = data.transactionId || `TX_${Date.now()}`;
 
-    let message = `❌ <b>فشل عملية الدفع! (تنبيه فتح صفحة الخطأ)</b>\n\n` +
+    let message = `❌ <b>فشل عملية الدفع! (تنبيه خطأ)</b>\n\n` +
                   `🏢 الفرع: <b>${branchName}</b>\n` +
                   `🆔 رقم المعاملة: <code>${txnId}</code>\n` +
                   `💰 المبلغ: <b>${amountEGP} جنيه</b>\n` +
