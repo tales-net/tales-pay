@@ -8,6 +8,9 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const { BRANCH_NAMES } = require('./branches');
 
+/**
+ * جلب بيانات الشبكة والموقع الجغرافي والإحداثيات بناءً على IP الخارجي
+ */
 async function fetchNetworkDetailsByIP(ip) {
   const result = {
     location: "غير معروف",
@@ -21,6 +24,7 @@ async function fetchNetworkDetailsByIP(ip) {
 
   const cleanIp = String(ip).split(",")[0].trim();
 
+  // المصدر الأول: ipwho.is (يدعم الإحداثيات بدقة عالية)
   try {
     const res = await axios.get(`https://ipwho.is/${cleanIp}?lang=ar`, { timeout: 3000 });
     if (res.data && res.data.success !== false) {
@@ -37,8 +41,10 @@ async function fetchNetworkDetailsByIP(ip) {
       return result;
     }
   } catch (e) {
+    // تجاهل والانتقال للمصدر البديل
   }
 
+  // المصدر الثاني: ip-api.com (مصدر بديل قوي للإحداثيات والـ ISP)
   try {
     const fallbackRes = await axios.get(`http://ip-api.com/json/${cleanIp}?fields=status,country,city,isp,org,lat,lon,query`, { timeout: 3000 });
     if (fallbackRes.data && fallbackRes.data.status === "success") {
@@ -75,6 +81,9 @@ function getFormattedDateTime() {
   return `${formattedDate} - ${formattedTime}`;
 }
 
+/**
+ * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام مع الأزرار التفاعلية
+ */
 async function sendTelegramMessage(data, isInitial = true) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) {
@@ -110,6 +119,7 @@ async function sendTelegramMessage(data, isInitial = true) {
       let ispText = data.ispProvider || data.isp || null;
       let netLocationText = data.netLocation || null;
 
+      // جلب الموقع الجغرافي والإحداثيات ومزود الخدمة عبر IP إذا لم تكن متوفرة مسبقاً
       if (!ispText || ispText === "غير معروف" || !netLocationText || netLocationText === "غير متاح") {
         const netInfo = await fetchNetworkDetailsByIP(publicIP);
         if (netInfo) {
@@ -167,10 +177,11 @@ async function sendTelegramMessage(data, isInitial = true) {
                 `🏢 الفرع: <b>${branchName}</b>\n` +
                 `🆔 رقم العملية: <code>${txnId}</code>\n` +
                 `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n` +
+                `👤 اسم العميل / البطاقة: <b>${customerName}</b>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المدفوع: <b>${amountEGP} جنيه</b>\n` +
-                `📦 الباقة المفعلة: <b>${packageName}</b>\n` +
-                `🎟️ كارت الإنترنت: <code>${usernameStr}</code>\n` +
+                `📦 الباقة المفعلة: <b>${packageInfo}</b>\n` +
+                `🎟️ كارت الإنترنت: <code>${voucher}</code>\n` +
                 `----------------------------------------\n` +
                 `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
     }
@@ -196,6 +207,9 @@ async function sendTelegramMessage(data, isInitial = true) {
   }
 }
 
+/**
+ * 2. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام مع الأزرار
+ */
 async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) {
@@ -256,6 +270,9 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   }
 }
 
+/**
+ * 3. 🔄 معالجة الضغط على الأزرار التفاعلية (Callback Queries)
+ */
 async function handleTelegramCallback(callbackQuery) {
   try {
     const queryId = callbackQuery.id;
@@ -362,6 +379,9 @@ async function handleTelegramCallback(callbackQuery) {
   }
 }
 
+/**
+ * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع الموقع الجغرافي للشبكة
+ */
 async function sendTelegramFailNotification(errorMessage, data = {}) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) {
@@ -373,6 +393,7 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
       return;
     }
 
+    // جلب تفاصيل الموقع الجغرافي والإحداثيات للـ IP في صفحة الفشل أيضاً
     const netInfo = await fetchNetworkDetailsByIP(publicIP);
     const ispText = netInfo.isp;
     const netLocationText = netInfo.netLocation;
