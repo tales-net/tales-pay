@@ -77,7 +77,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
           const urlParams = new URLSearchParams(window.location.search);
           const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
           let attempts = 0;
-          const maxAttempts = 90; // تم التعديل إلى 90 محاولة × ثانيتين = 180 ثانية (3 دقائق كاملة)
+          const maxAttempts = 90; 
 
           async function pollVoucher() {
             if (!txId || txId === "غير محدد") {
@@ -106,9 +106,8 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
               }
 
               if (attempts < maxAttempts) {
-                setTimeout(pollVoucher, 2000); // الفحص كل ثانيتين
+                setTimeout(pollVoucher, 2000); 
               } else {
-                // إعادة التوجيه إلى صفحة الفشل بعد انقضاء الـ 3 دقائق كاملة
                 const errorMsg = encodeURIComponent("⚠️ أنتهت مهلة الانتظار ولم يتم الدفع بنجاح. تواصل مع الدعم أذا تم الدفع برقم المعاملة: " + txId);
                 window.location.href = '/fail?error=' + errorMsg;
               }
