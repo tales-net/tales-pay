@@ -167,7 +167,7 @@ async function sendTelegramMessage(data, isInitial = true) {
 
     } else {
       const voucher = data.voucher_code || data.cardCode || "غير متوفر";
-      const packageInfo = data.package_info || paymentDetails.packageName || "تم أصدار الكارت";
+      const packageInfo = data.package_info || data.packageName || paymentDetails.packageName || "تم أصدار الكارت";
       const customerName = data.card_data?.name || data.billing_data?.first_name || "عميل شبكة حكايات";
 
       message = `✅ <b>تمت عملية الدفع وتوليد الكارت بنجاح!</b>\n\n` +
