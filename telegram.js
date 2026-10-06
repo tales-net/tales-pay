@@ -406,6 +406,8 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
     let message = `❌ <b>فشل عملية الدفع! (تنبيه فتح صفحة الخطأ)</b>\n\n` +
                   `🏢 الفرع: <b>${branchName}</b>\n` +
                   `🆔 رقم المعاملة: <code>${txnId}</code>\n` +
+                  `💰 المبلغ: <b>${amountEGP} جنيه</b>\n` +
+                  `📱 رقم الهاتف: <code>${userPhone}</code>\n` +
                   `⚠️ سبب الخطأ: <i>${errorMessage}</i>\n` +
                   `----------------------------------------\n` +
                   `🌐 IP الخارجي: <code>${publicIP}</code>\n` +
