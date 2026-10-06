@@ -45,7 +45,7 @@ function getCardPrefixAndType(amount) {
     case 100:
       return { prefix: "25", profile: "Diamond", packageName: "الباقة الماسية", isCustom: false, isContribution: false };
     default:
-      // إذا كان المبلغ أكبر من 100 جنيه، يتم اعتباره مساهمة ودعم لجميع الفروع
+
       if (numAmount > 100) {
         const blessingData = getRandomBlessingMessage(numAmount);
         return { 
@@ -64,7 +64,6 @@ function getCardPrefixAndType(amount) {
 async function processPaymentAndCreateCard(amount, branchKey = "main", transactionId = "") {
   const cardInfo = getCardPrefixAndType(amount);
 
-  // معالجة حالة المساهمة المالية (أكبر من 100 جنيه) لجميع الفروع
   if (cardInfo.isContribution) {
     console.log(`🌸 [المساهمات] تم استلام مساهمة بقيمة ${amount} جنيه للفرع (${branchKey}) للمعاملة: ${transactionId}`);
     return {
@@ -97,7 +96,7 @@ async function processPaymentAndCreateCard(amount, branchKey = "main", transacti
   }
 
   try {
-    // 🛡️ استدعاء الدالة الموحدة لمنع التكرار وربط كارت واحد برقم العملية حصرياً للباقات العادية
+
     const result = await executeCardProcess(
       routerConfig, 
       cardInfo.prefix, 
