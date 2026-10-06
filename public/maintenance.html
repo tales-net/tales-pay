@@ -47,7 +47,6 @@
         .time-box label { font-size: 12px; color: #b0c4de; text-transform: uppercase; }
         .status-badge { display: inline-block; background: rgba(40, 167, 69, 0.2); color: #28a745; padding: 6px 15px; border-radius: 20px; font-size: 13px; font-weight: 600; border: 1px solid rgba(40, 167, 69, 0.4); }
         
-        /* تنسيق النافذة المنبثقة (Popup Modal) */
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px);
@@ -79,7 +78,6 @@
 </head>
 <body>
 
-    <!-- النافذة المنبثقة التفاعلية (تظهر عند الدخول) -->
     <div class="modal-overlay" id="emergencyModal">
         <div class="modal-box">
             <div style="font-size: 50px; margin-bottom: 10px;">⚠️</div>
@@ -107,17 +105,14 @@
 
         <div class="status-badge" id="status-text">🔄 جارِ جلب حالة النظام...</div>
 
-        <!-- زر المشرف المخفي افتراضياً ولا يظهر إلا في الرابط السري -->
         <div class="admin-trigger" id="adminTriggerBtn" style="display: none;" onclick="verifyAndSetTime()">⚙️ اضبط وقت الصيانة (للمشرف)</div>
     </div>
 
     <script>
-        // إظهار زر التحكم بالمشرف فقط إذا كان في الرابط السري /dev-panel-lock
         if (window.location.pathname === "/dev-panel-lock") {
             document.getElementById("adminTriggerBtn").style.display = "block";
         }
 
-        // إغلاق النافذة المنبثقة عند الضغط عليها
         function closeModal() {
             document.getElementById("emergencyModal").style.display = "none";
         }
@@ -135,7 +130,6 @@
                     document.getElementById("seconds").innerText = "00";
                     document.getElementById("status-text").innerText = "🟢 تم انتهاء الصيانة، جارِ فتح الموقع...";
                     
-                    // إعادة التوجيه التلقائي مع استثناء الرابط السري للمشرف تماماً
                     if (window.location.pathname !== "/dev-panel-lock") {
                         window.location.href = "/?t=" + Date.now();
                     }
@@ -191,11 +185,9 @@
             }
         }
 
-        // فحص مستمر كل ثانية
         setInterval(updateCountdown, 1000);
         updateCountdown();
 
-        // إعادة فحص فورية عند فتح شاشة الهاتف أو العودة للتبويب بعد الخمول
         document.addEventListener("visibilitychange", () => {
             if (!document.hidden) {
                 updateCountdown();
