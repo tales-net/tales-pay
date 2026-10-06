@@ -36,7 +36,7 @@ async function fetchNetworkDetailsByIP(ip) {
       const lat = res.data.latitude;
       const lon = res.data.longitude;
       if (lat && lon) {
-        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat}, ${lon})</a>`;
+        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat},${lon})</a>`;
       }
       return result;
     }
@@ -56,7 +56,7 @@ async function fetchNetworkDetailsByIP(ip) {
       const lat = fallbackRes.data.lat;
       const lon = fallbackRes.data.lon;
       if (lat && lon) {
-        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat}, ${lon})</a>`;
+        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat},${lon})</a>`;
       }
       return result;
     }
@@ -78,7 +78,24 @@ function getFormattedDateTime() {
   const now = new Date();
   const formattedDate = now.toLocaleDateString("ar-EG", { timeZone: "Africa/Cairo" });
   const formattedTime = now.toLocaleTimeString("ar-EG", { timeZone: "Africa/Cairo" });
-  return `${formattedDate} - ${formattedTime}`;
+  return `${formattedDate} -${formattedTime}`;
+}
+
+/**
+ * دالة مساعدة لتحديد اسم الباقة بناءً على المبلغ (متطابقة مع mikrotikService)
+ */
+function getPackageNameByAmount(amount) {
+  const numAmount = Number(amount);
+  switch (numAmount) {
+    case 5: return "الباقة البرونزية";
+    case 15: return "الباقة الفضية";
+    case 30: return "الباقة الذهبية";
+    case 50: return "الباقة البلاتينية";
+    case 100: return "الباقة الماسية";
+    default:
+      if (numAmount > 100) return "مساهمة ودعم للشبكة";
+      return "باقة إنترنت شبكة حكايات";
+  }
 }
 
 /**
@@ -104,7 +121,9 @@ async function sendTelegramMessage(data, isInitial = true) {
       : (data.amount || "غير محدد");
     const dateTimeStr = getFormattedDateTime();
 
-    const branchName = data.branchName || data.branch_name || "حكايات نت رئيسي";
+    const branchKey = data.branch || data.branchKey || "main";
+    const branchName = data.branchName || BRANCH_NAMES[branchKey] || "حكايات نت رئيسي";
+    
     const userPhone = data.phone || 
                         data.billing_data?.phone_number || 
                         data.customer?.phone_number || 
@@ -119,7 +138,6 @@ async function sendTelegramMessage(data, isInitial = true) {
       let ispText = data.ispProvider || data.isp || null;
       let netLocationText = data.netLocation || null;
 
-      // جلب الموقع الجغرافي والإحداثيات ومزود الخدمة عبر IP إذا لم تكن متوفرة مسبقاً
       if (!ispText || ispText === "غير معروف" || !netLocationText || netLocationText === "غير متاح") {
         const netInfo = await fetchNetworkDetailsByIP(publicIP);
         if (netInfo) {
@@ -170,14 +188,13 @@ async function sendTelegramMessage(data, isInitial = true) {
 
     } else {
       const voucher = data.voucher_code || data.cardCode || "غير متوفر";
-      const packageInfo = data.package_info || data.packageName || "باقة إنترنت شبكة حكايات";
-      const customerName = data.card_data?.name || data.billing_data?.first_name || "عميل شبكة حكايات";
+      // استخدام دالة تحديد الباقة الموحدة بناءً على المبلغ المدفوع
+      const packageInfo = data.package_info || data.packageName || getPackageNameByAmount(amountEGP);
 
       message = `✅ <b>تمت عملية الدفع وتوليد الكارت بنجاح!</b>\n\n` +
                 `🏢 الفرع: <b>${branchName}</b>\n` +
                 `🆔 رقم العملية: <code>${txnId}</code>\n` +
                 `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n` +
-                `👤 اسم العميل / البطاقة: <b>${customerName}</b>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المدفوع: <b>${amountEGP} جنيه</b>\n` +
                 `📦 الباقة المفعلة: <b>${packageInfo}</b>\n` +
@@ -186,11 +203,12 @@ async function sendTelegramMessage(data, isInitial = true) {
                 `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
     }
 
+    // تمرير الفرع ورمز الأمان السري في الـ callback_data ليطابق الرابط المطلوب
     const replyMarkup = {
       inline_keyboard: [
         [
-          { text: "🎟️ إصدار الكارت", callback_data: `create_voucher_${txnId}_${amountEGP}` },
-          { text: "🤝 مساهمة", callback_data: `contribution_${txnId}_${amountEGP}` }
+          { text: "🎟️ إصدار الكارت", callback_data: `create_voucher_${txnId}_${amountEGP}_${branchKey}` },
+          { text: "🤝 مساهمة", callback_data: `contribution_${txnId}_${amountEGP}_${branchKey}` }
         ]
       ]
     };
@@ -232,10 +250,13 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
 
     const txnId = paymentDetails.transactionId || paymentDetails.id || `TX_${Date.now()}`;
     const amountVal = paymentDetails.amount || "0";
+    const branchKey = paymentDetails.branch || paymentDetails.branchKey || "main";
+    const branchName = paymentDetails.branchName || BRANCH_NAMES[branchKey] || "حكايات نت رئيسي";
+    const packageName = paymentDetails.packageName || getPackageNameByAmount(amountVal);
 
     const caption = `🎟️ <b>صورة كارت الإنترنت المصدر آلياً</b>\n\n` +
-                    `🏢 الفرع: <b>${paymentDetails.branchName || 'حكايات نت رئيسي'}</b>\n` +
-                    `📦 الباقة: <b>${paymentDetails.packageName || 'باقة إنترنت'}</b>\n` +
+                    `🏢 الفرع: <b>${branchName}</b>\n` +
+                    `📦 الباقة: <b>${packageName}</b>\n` +
                     `💰 المبلغ: <b>${amountVal} جنيه</b>\n` +
                     `🔑 الكارت: <code>${paymentDetails.card?.code || paymentDetails.code || 'غير متوفر'}</code>\n` +
                     `📱 الهاتف: <code>${paymentDetails.phone || 'غير محدد'}</code>\n` +
@@ -247,8 +268,8 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
     form.append("reply_markup", JSON.stringify({
       inline_keyboard: [
         [
-          { text: "🎟️ إعادة إصدار الكارت", callback_data: `create_voucher_${txnId}_${amountVal}` },
-          { text: "🤝 مساهمة", callback_data: `contribution_${txnId}_${amountVal}` }
+          { text: "🎟️ إعادة إصدار الكارت", callback_data: `create_voucher_${txnId}_${amountVal}_${branchKey}` },
+          { text: "🤝 مساهمة", callback_data: `contribution_${txnId}_${amountVal}_${branchKey}` }
         ]
       ]
     }));
@@ -284,24 +305,27 @@ async function handleTelegramCallback(callbackQuery) {
 
     await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
       callback_query_id: queryId,
-      text: "جاري تنفيذ الإجراء...",
+      text: "جاري تنفيذ الإجراء وتوليد الكارت...",
       show_alert: false
     });
 
     const parts = data.split("_");
 
     if (data.startsWith("create_voucher")) {
-      const txnId = parts[2] || parts[1]; 
-      const amount = parts[3] || parts[2] || "0";
+      // استخراج المعطيات بدقة من الـ callback_data: create_voucher_TXID_AMOUNT_BRANCH
+      const txnId = parts[2] || "UNKNOWN"; 
+      const amount = parts[3] || "0";
+      const branchKey = parts[4] || "main"; // استخراج الفرع بدقة
 
-      console.log(`🎟️ [Voucher Creation Started] جارٍ إصدار الكارت للمعاملة: ${txnId} بالقيمة: ${amount}`);
+      console.log(`🎟️ [Voucher Creation Started] جارٍ إصدار الكارت للمعاملة: ${txnId} | المبلغ: ${amount} \vert{} الفرع: ${branchKey}`);
 
       let voucherData = null;
       let errorMessage = null;
 
       try {
         if (typeof mikrotikService !== "undefined" && typeof mikrotikService.processPaymentAndCreateCard === "function") {
-          voucherData = await mikrotikService.processPaymentAndCreateCard(amount, "main", txnId);
+          // تمرير الفرع الصحيح المستخرج للميكروتيك
+          voucherData = await mikrotikService.processPaymentAndCreateCard(amount, branchKey, txnId);
         } else {
           throw new Error("دالة processPaymentAndCreateCard غير موجودة في mikrotikService");
         }
@@ -322,16 +346,19 @@ async function handleTelegramCallback(callbackQuery) {
             },
             amount: amount,
             transactionId: txnId,
-            packageName: voucherData.packageName || "باقة إنترنت",
+            packageName: voucherData.packageName || getPackageNameByAmount(amount),
+            branchKey: branchKey,
+            branchName: BRANCH_NAMES[branchKey] || "حكايات نت رئيسي",
             createdAt: new Date()
           });
         }
 
         const usernameStr = voucherData.cardCode || voucherData.username || "متاح";
         const passwordStr = voucherData.password || "";
+        const targetBranchName = BRANCH_NAMES[branchKey] || "حكايات نت رئيسي";
 
         const updatedText = callbackQuery.message.text + 
-          `\n\n✅ <b>[تم إصدار الكارت بنجاح من الميكروتيك]</b>\n🎟️ الكارت: <code>${usernameStr}</code>` +
+          `\n\n✅ <b>[تم إصدار الكارت بنجاح لفرع: ${targetBranchName}]</b>\n🎟️ الكارت: <code>${usernameStr}</code>` +
           (passwordStr ? `\n🔑 كلمة المرور: <code>${passwordStr}</code>` : ``);
 
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
@@ -345,13 +372,14 @@ async function handleTelegramCallback(callbackQuery) {
       } else {
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
           chat_id: chatId,
-          text: `❌ فشل إصدار الكارت من الميكروتيك للمعاملة ${txnId}.\nالسبب: ${errorMessage || "خطأ غير معروف"}`
+          text: `❌ فشل إصدار الكارت من الميكروتيك للفرع (${branchKey}) للمعاملة ${txnId}.\nالسبب: ${errorMessage || "خطأ غير معروف"}`
         });
       }
 
     } else if (data.startsWith("contribution")) {
       const txnId = parts[1];
       const amount = parts[2] || "0";
+      const branchKey = parts[3] || "main";
 
       if (global.generatedCardsMap) {
         global.generatedCardsMap.set(txnId, {
@@ -359,6 +387,7 @@ async function handleTelegramCallback(callbackQuery) {
           amount: amount,
           transactionId: txnId,
           packageName: `مساهمة بقيمة ${amount} جنيه`,
+          branchKey: branchKey,
           createdAt: new Date()
         });
       }
@@ -380,7 +409,7 @@ async function handleTelegramCallback(callbackQuery) {
 }
 
 /**
- * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع الموقع الجغرافي للشبكة
+ * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع والموقع الجغرافي للشبكة
  */
 async function sendTelegramFailNotification(errorMessage, data = {}) {
   try {
@@ -393,12 +422,12 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
       return;
     }
 
-    // جلب تفاصيل الموقع الجغرافي والإحداثيات للـ IP في صفحة الفشل أيضاً
     const netInfo = await fetchNetworkDetailsByIP(publicIP);
     const ispText = netInfo.isp;
     const netLocationText = netInfo.netLocation;
 
-    const branchName = data.branchName || "حكايات نت رئيسي";
+    const branchKey = data.branch || data.branchKey || "main";
+    const branchName = data.branchName || BRANCH_NAMES[branchKey] || "حكايات نت رئيسي";
     const userPhone = data.phone || "غير محدد";
     const amountEGP = data.amount || "غير محدد";
     const dateTimeStr = getFormattedDateTime();
