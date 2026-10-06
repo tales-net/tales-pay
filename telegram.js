@@ -168,7 +168,7 @@ async function sendTelegramMessage(data, isInitial = true) {
 
     } else {
       const voucher = data.voucher_code || data.cardCode || "غير متوفر";
-      const packageInfo = data.package_info || data.packageName || "باقة إنترنت شبكة حكايات";
+      const packageInfo = data.package_info || paymentDetails.packageName || "تم أصدار الكارت";
       const customerName = data.card_data?.name || data.billing_data?.first_name || "عميل شبكة حكايات";
 
       message = `✅ <b>تمت عملية الدفع وتوليد الكارت بنجاح!</b>\n\n` +
@@ -177,7 +177,7 @@ async function sendTelegramMessage(data, isInitial = true) {
                 `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المدفوع: <b>${amountEGP} جنيه</b>\n` +
-                `📦 الباقة المفعلة: <b>${packageName}</b>\n` +
+                `📦 الباقة المفعلة: <b>${packageInfo}</b>\n` +
                 `🎟️ كارت الإنترنت: <code>${voucher}</code>\n` +
                 `----------------------------------------\n` +
                 `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
