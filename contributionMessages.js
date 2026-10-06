@@ -1,8 +1,3 @@
-/**
- * ملف خاص بعبارات التهنئة، الشكر، والأدعية للمساهمات المالية (أكبر من 100 جنيه)
- * وتصميم صفحة الويب الاحترافية الخاصة بعرض رسالة المساهمة.
- */
-
 const contributionBlessings = [
   "جزاكم الله خيراً وجعل هذه المساهمة الطيبة في ميزان حسناتكم، وبارك لكم في مالكم وأهليكم.",
   "تقبل الله منا ومنكم صالح الأعمال، نسأل الله أن يبارك في عطائكم ويجعله صدقة جارية ونوراً في دربكم.",
@@ -10,9 +5,6 @@ const contributionBlessings = [
   "نشكر لكم مساهمتكم المباركة، نسأل الله أن يخلف عليكم خيراً وأن يرزقكم من حيث لا تحتسبون."
 ];
 
-/**
- * دالة لاختيار رسالة تهنئة عشوائية أو ثابتة بشكل مميز
- */
 function getRandomBlessingMessage(amount) {
   const randomIndex = Math.floor(Math.random() * contributionBlessings.length);
   return {
@@ -23,9 +15,6 @@ function getRandomBlessingMessage(amount) {
   };
 }
 
-/**
- * دالة لتوليد كود HTML احترافي ومتكامل لصفحة عرض المساهمة (شبيهة بصفحة الـ Success)
- */
 function generateContributionHtmlPage(amount, transactionId = "") {
   const blessingData = getRandomBlessingMessage(amount);
   
