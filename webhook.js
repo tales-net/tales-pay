@@ -5,10 +5,8 @@ const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateCardImage } = require("./cardGenerator");
 const { sendTelegramMessage, sendVoucherWithCardImage } = require("./telegram");
 
-// خريطة عالمية لحفظ بيانات وكروت المعاملات مؤقتاً لصفحة النجاح
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
-// 🧹 تنظيف الذاكرة المؤقتة كل 15 دقيقة
 setInterval(() => {
   const ONE_HOUR = 60 * 60 * 1000;
   const now = Date.now();
@@ -21,15 +19,11 @@ setInterval(() => {
 
 const { BRANCH_NAMES } = require("./branches");
 
-// 🔄 معالجة طلبات GET لـ Paymob
 router.get("/paymob-webhook", (req, res) => {
   console.log("🔔 [Webhook GET Check] تم استلام طلب GET للتحقق من رابط الويب هوك");
   return res.status(200).send("Paymob Webhook Endpoint Active & ready for POST requests.");
 });
 
-/**
- * 🔒 دالة التحقق من التوقيع الرقمي HMAC القادم من Paymob
- */
 function verifyPaymobHmac(req) {
   const hmacSecret = process.env.PAYMOB_HMAC;
   if (!hmacSecret) return true; // تجاوز الفحص إذا لم يتم ضبط المتغير في البيئة
@@ -90,9 +84,6 @@ function verifyPaymobHmac(req) {
   return calculatedHmac.toLowerCase() === receivedHmac.toLowerCase();
 }
 
-/**
- * استخراج الفرع من حمولة Paymob
- */
 function extractBranchKey(obj) {
   const directBranch = 
     obj.merchant_extra?.branch ||
@@ -117,7 +108,6 @@ function extractBranchKey(obj) {
 
 router.post("/paymob-webhook", async (req, res) => {
   try {
-    // 1. التحقق من التوقيع الرقمي HMAC
     if (!verifyPaymobHmac(req)) {
       console.error("⛔ [Webhook Unauthorized] فشل التحقق من HMAC إشارة غير موثوقة");
       return res.status(401).send("Unauthorized payload HMAC failed");
@@ -136,7 +126,6 @@ router.post("/paymob-webhook", async (req, res) => {
     const orderId = obj.order?.id ? String(obj.order.id) : null;
     const merchantOrderId = obj.order?.merchant_order_id ? String(obj.order.merchant_order_id) : null;
 
-    // 2. حماية ضد التكرار (Idempotency Check)
     if (global.generatedCardsMap.has(transactionId)) {
       console.log(`ℹ️ [Webhook Duplicate] المعاملة ${transactionId} معالجة بالفعل سلفاً.`);
       return res.status(200).send("Transaction already processed");
@@ -159,7 +148,6 @@ router.post("/paymob-webhook", async (req, res) => {
 
       let packageName = `باقة إنترنت بقيمة ${numericAmount} جنيه`;
 
-      // 🚀 توليد الكارت الحقيقي تلقائياً في راوتر الميكروتيك للفرع الصحيح المُستخرج
       console.log(`🎟️ جاري إصدار الكارت للمعاملة | الفرع: ${branchKey} | المبلغ: ${numericAmount}`);
       const cardResult = await processPaymentAndCreateCard(numericAmount, branchKey, transactionId);
 
@@ -173,7 +161,6 @@ router.post("/paymob-webhook", async (req, res) => {
           cardCode = cardResult.cardCode;
           packageName = cardResult.packageName || packageName;
 
-          // توليد صورة الكارت
           cardImageBuffer = await generateCardImage(cardCode, packageName, numericAmount, transactionId, branchDisplayName);
 
           const cardPayload = {
@@ -187,7 +174,6 @@ router.post("/paymob-webhook", async (req, res) => {
             createdAt: new Date()
           };
 
-          // حفظ البيانات للاستعلام عنها من صفحة النجاح
           global.generatedCardsMap.set(transactionId, cardPayload);
           if (orderId) global.generatedCardsMap.set(orderId, cardPayload);
           if (merchantOrderId) global.generatedCardsMap.set(merchantOrderId, cardPayload);
