@@ -359,11 +359,19 @@ app.get("/api/check-voucher/:txId", (req, res) => {
 
 app.post("/api/disable-queue", async (req, res) => {
   try {
-    const { username } = req.body;
+    // استخراج اسم المستخدم والفرع والدومين من الطلب
+    const { username, branch, branch_key, domain } = req.body;
+
+    const targetBranch = branch || branch_key || "main";
+
+    console.log(`📡 [API] طلب تفعيل سرعة للمستخدم: ${username} | الفرع المستلم: ${targetBranch}`);
+
     if (typeof disableUserQueue === "function") {
-      const result = await disableUserQueue(username);
+      // تمرير الفرع والدومين لدالة الميكروتك
+      const result = await disableUserQueue(username, targetBranch, domain);
       return res.json(result);
     }
+
     return res.json({ success: true, message: "تم استقبال الطلب" });
   } catch (err) {
     console.error("❌ خطأ في تعطيل الـ Queue:", err.message);
