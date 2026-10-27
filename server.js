@@ -278,7 +278,7 @@ app.post("/api/pay", handlePaymentRequest);
 
 app.get("/contribution-success", (req, res) => {
   const amount = req.query.amount || req.query.price || 150;
-  const transactionId = req.query.tx || req.query.id || req.query.order || 'TRX-DEFAULT';
+  const transactionId = req.query.tx || req.query.id || req.query.order || req.query.session_id || 'TRX-DEFAULT';
   const htmlContent = generateContributionHtmlPage(amount, transactionId);
   res.send(htmlContent);
 });
@@ -300,6 +300,7 @@ app.get("/api/check-voucher/:txId", async (req, res) => {
     let queryBranch = req.query.branch || "main";
     let customerPhone = req.query.phone || "01000000000";
 
+    // إذا كانت المعاملة قادمة من جلسة Xpay، يتم جلب رقم المعاملة الحقيقي (pi_...) من سيرفر Xpay
     if (txId.startsWith("cs_") || txId.length > 20) {
       const xpayRes = await axios.get(`https://api.xpay.app/checkout/sessions/${txId}`, {
         headers: { "Authorization": `Bearer ${process.env.XPAY_SECRET_KEY}` }
@@ -321,6 +322,7 @@ app.get("/api/check-voucher/:txId", async (req, res) => {
 
     const branchName = BRANCH_NAMES[queryBranch] || BRANCH_NAMES.main;
 
+    // توجيه المساهمات (أكبر من 100 جنيه) لصفحة المساهمة
     if (Number(amount) > 100) {
       const contributionPayload = {
         isContribution: true,
@@ -335,6 +337,7 @@ app.get("/api/check-voucher/:txId", async (req, res) => {
       return res.json({ success: true, data: contributionPayload });
     }
 
+    // إصدار كارت الإنترنت للباقات العادية برقم المعاملة الحقيقي
     const mikrotikResult = await processPaymentAndCreateCard(amount, queryBranch, realTxId);
     if (mikrotikResult.success && mikrotikResult.cardCode) {
       const cardCode = mikrotikResult.cardCode;
@@ -379,7 +382,7 @@ app.get("/api/check-voucher/:txId", async (req, res) => {
         }, cardImageBuffer);
       }
 
-      console.log(`✅ [Xpay Card & Telegram Success] تم إصدار الكارت برقم المعاملة الحقيقي (${realTxId}) وإرسال الإشعارات للتليجرام بنجاح.`);
+      console.log(`✅ [Success] تم إصدار الكارت برقم المعاملة الحقيقي (${realTxId}) وإرسال الإشعارات للتليجرام بنجاح.`);
       return res.json({ success: true, data: cardPayload });
     }
   } catch (err) {
@@ -410,7 +413,7 @@ app.post("/api/disable-queue", async (req, res) => {
 });
 
 app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || req.query.session_id || req.query.payment_intent || "";
+  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || req.query.session_id || "";
   const queryBranch = req.query.branch || req.query.shipping_method || "";
   
   const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
