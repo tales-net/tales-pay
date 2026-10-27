@@ -92,28 +92,43 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
 async function createXPayPayment(phone, amount, branch = '', branchDisplayName = 'حكايات نت رئيسي') {
   try {
     const apiKey = process.env.XPAY_API_KEY;
-    const secretKey = process.env.XPAY_SECRET_KEY;
+    const communityId = process.env.XPAY_COMMUNITY_ID;
+    const variableAmountId = process.env.XPAY_VARIABLE_AMOUNT_ID;
 
-    if (!apiKey) {
-      throw new Error("Missing XPAY_API_KEY in environment variables");
+    if (!apiKey || !communityId) {
+      throw new Error("Missing XPay API Key or Community ID in environment variables");
     }
 
-    // تجهيز الحمولة (Payload) بالبيانات المطلوبة لإنشاء معاملة دفع متغيرة المبلغ
+    const cleanedPhone = String(phone || "01000000000").replace(/\D/g, "");
+
+    // تجهيز البيانات بالهيكل الدقيق الذي تتطلبه استجابة XPay API
     const payload = {
+      community_id: communityId,
       amount: parseFloat(amount),
       currency: "EGP",
-      email: "customer@tales-net.com",
-      first_name: "Tales",
-      last_name: "Customer",
-      phone_number: String(phone || "01000000000").replace(/\D/g, ""),
-      shipping_method: branch,
+      pay_using: "card", // أو الطريقة المعتمدة لديهم للبطاقات
+      variable_amount_id: variableAmountId || "1", 
+      billing_data: {
+        email: "customer@tales-net.com",
+        first_name: "Tales",
+        last_name: "Customer",
+        phone_number: cleanedPhone,
+        street: branchDisplayName,
+        building: "NA",
+        floor: "NA",
+        apartment: "NA",
+        city: "Cairo",
+        state: "NA",
+        country: "EG"
+      },
       merchant_extra: {
         branch: branch,
         branch_name: branchDisplayName
-      }
+      },
+      redirect_url: `https://tales-pay.onrender.com/success?branch=${branch}&amount=${amount}`,
+      webhook_url: "https://tales-pay.onrender.com/xpay-webhook"
     };
 
-    // استدعاء الـ API الخاص بـ XPay باستخدام مفتاح المصادقة
     const response = await axios.post("https://community.xpay.app/api/v1/payments/pay/variable-amount", payload, {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -121,14 +136,13 @@ async function createXPayPayment(phone, amount, branch = '', branchDisplayName =
       }
     });
 
-    // استخراج رابط الدفع من الاستجابة بجميع الاحتمالات
     const redirectUrl = response.data.data?.iframe_url || 
                         response.data.data?.payment_url || 
                         response.data.payment_url || 
                         response.data.data?.url;
 
     if (!redirectUrl) {
-      throw new Error("لم يتم استرجاع رابط الدفع من استجابة XPay");
+      throw new Error("لم يتم استرجاع رابط الدفع من XPay");
     }
 
     return { type: 'redirect', url: redirectUrl };
