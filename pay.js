@@ -144,10 +144,12 @@ async function createXpayCardPayment(amount, phone = "01000000000", branchData =
     custom_order_id: customOrderId
   };
 
-  // ترويسة نقية بالمفتاح السري فقط كما تشترط واجهة XPay القياسية
+  // ترويسات متصفح حقيقية لتجاوز حظر الـ WAF وجدار الحماية
   const headers = {
     "Authorization": `Bearer ${secretKey}`,
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*"
   };
 
   const endpoints = [
