@@ -99,43 +99,57 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
 }
 
 /**
- * 4. معالجة الدفع عبر Xpay للبطاقات البنكية (Visa / Mastercard)
+ * 4. معالجة الدفع عبر Xpay Checkout Sessions للبطاقات البنكية (Visa / Mastercard)
  */
 async function createXpayPayment(phone, amount, branchKey, branchDisplayName) {
   try {
-    console.log(`💳 [Xpay] إنشاء معاملة بطاقة بنكية | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ: ${amount}ج`);
+    console.log(`💳 [Xpay] إنشاء جلسة دفع بطاقة بنكية | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ: ${amount}ج`);
+
+    const amountPiasters = Math.round(parseFloat(amount) * 100);
 
     const payload = {
-      amount: parseFloat(amount),
-      currency: "EGP",
-      email: "customer@tales-net.com",
-      first_name: "Tales",
-      last_name: "Customer",
-      phone_number: phone || "01000000000",
-      redirect_url: "https://tales-pay.onrender.com/success", // 👈 توجيه العميل لصفحة النجاح بعد السداد
-      extra_info: {
+      lineItems: [
+        {
+          priceData: {
+            unitAmount: amountPiasters,
+            currency: "EGP",
+            productData: {
+              name: `باقة إنترنت - ${branchDisplayName}`
+            }
+          },
+          quantity: 1
+        }
+      ],
+      afterCompletion: {
+        type: "redirect",
+        redirect: {
+          url: `https://tales-pay.onrender.com/success?branch=${branchKey}&amount=${amount}`
+        }
+      },
+      metadata: {
         branch: branchKey,
-        branch_name: branchDisplayName
+        branch_name: branchDisplayName,
+        phone: phone || "01000000000"
       }
     };
 
-    const response = await axios.post("https://app.xpay.app/api/v1/payments/pay", payload, {
+    const response = await axios.post("https://api.xpay.app/checkout/sessions", payload, {
       headers: {
-        "x-api-key": process.env.XPAY_API_KEY,
         "Authorization": `Bearer ${process.env.XPAY_SECRET_KEY}`,
         "Content-Type": "application/json"
       }
     });
 
-    const redirectUrl = response.data.data?.redirect_url || response.data.redirect_url || response.data.url;
+    const redirectUrl = response.data.url || response.data.checkout_url || response.data.data?.url;
     if (!redirectUrl) {
-      throw new Error("لم يتم استرجاع رابط إعادة التوجيه من Xpay");
+      console.error("❌ Xpay Response Data:", JSON.stringify(response.data, null, 2));
+      throw new Error("لم يتم استرجاع رابط الدفع من Xpay");
     }
 
     return { type: 'redirect', url: redirectUrl };
   } catch (err) {
-    console.error('❌ Xpay Payment Error:', err.response?.data || err.message);
-    throw new Error(`Xpay payment processing failed: ${err.message}`);
+    console.error('❌ Xpay Payment Error Details:', err.response?.data || err.message);
+    throw new Error(`Xpay payment processing failed: ${err.response?.data?.message || err.message}`);
   }
 }
 
@@ -168,7 +182,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     const selectedBranch = rawBranch;
     const branchDisplayName = BRANCH_NAMES[selectedBranch];
 
-    // توجيه البطاقات البنكية (Card) إلى بوابة Xpay حصرياً
+    // توجيه البطاقات البنكية (Card) إلى بوابة Xpay الحديثة
     if (cleanMethod === 'card') {
       return await createXpayPayment(phone, amount, selectedBranch, branchDisplayName);
     }
