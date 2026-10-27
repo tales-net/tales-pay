@@ -16,7 +16,6 @@ function getRandomBlessingMessage(amount) {
 }
 
 function generateContributionHtmlPage(amount, transactionId = "") {
-  // استخدام القيمة الافتراضية إذا لم يتم تمريرها مباشرة
   const safeAmount = amount || "150";
   const safeTxId = transactionId || "";
   const blessingData = getRandomBlessingMessage(safeAmount);
@@ -149,7 +148,7 @@ function generateContributionHtmlPage(amount, transactionId = "") {
       </div>
 
       <script>
-        // قراءة ومعالجة معاملات الـ URL ديناميكياً لدعم XPay و Paymob معاً
+        // قراءة المتغيرات مباشرة من عنوان الويب (URL) لدعم XPay و Paymob بسلاسة تامة
         const urlParams = new URLSearchParams(window.location.search);
         
         const detectedAmount = urlParams.get('amount') || urlParams.get('price');
@@ -167,8 +166,14 @@ function generateContributionHtmlPage(amount, transactionId = "") {
         if (detectedTxId) {
           document.getElementById('txVal').innerText = detectedTxId;
           document.getElementById('txInfoBox').style.display = 'block';
-        } else if (!"${safeTxId}") {
-          document.getElementById('txInfoBox').style.display = 'none';
+        } else {
+          const fallbackTx = "${safeTxId}";
+          if (fallbackTx) {
+            document.getElementById('txVal').innerText = fallbackTx;
+            document.getElementById('txInfoBox').style.display = 'block';
+          } else {
+            document.getElementById('txInfoBox').style.display = 'none';
+          }
         }
       </script>
     </body>
