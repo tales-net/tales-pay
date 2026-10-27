@@ -510,5 +510,5 @@ app.get("/fail", async (req, res) => {
 app.use("/", webhookRouter);
 
 server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT});
+  console.log(`🚀 Server running on port ${PORT}`);
 });
