@@ -92,7 +92,7 @@ function getPackageNameByAmount(amount) {
 }
 
 /**
- * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام مع الأزرار التفاعلية وبكامل بيانات الجهاز والشبكة
+ * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام مع الأزرار وبكامل بيانات الجهاز
  */
 async function sendTelegramMessage(data, isInitial = true) {
   try {
