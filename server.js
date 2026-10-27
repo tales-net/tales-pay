@@ -73,7 +73,7 @@ app.use((req, res, next) => {
     req.path === "/api/maintenance/set" ||
     req.path === "/api/maintenance/verify" ||
     req.path.startsWith("/api/") ||
-    req.path.includes(".") // ملفات CSS, JS, صور
+    req.path.includes(".") 
   ) {
     return next();
   }
@@ -209,14 +209,13 @@ async function handlePaymentRequest(req, res) {
       return res.redirect("/");
     }
 
-    const selectedMethod = payment_method || method || "waitPage";
-    const rawBranch = branch || branch_key || "branch2";
-    const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "branch2";
-    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.waitPage;
+    const selectedMethod = payment_method || method || "wallet";
+    const rawBranch = branch || branch_key || "main";
+    const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "main";
+    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.main;
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
-    const transactionId = "TX_" + Date.now();
 
     const paymentPayload = {
       phone: userPhone,
@@ -251,7 +250,9 @@ async function handlePaymentRequest(req, res) {
       await sendTelegramMessage(paymentPayload, true);
     }
 
-    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
+    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch, req, res);
+
+    if (!result) return;
 
     if (result.type === "redirect") {
       if (req.method === "POST" && req.headers["content-type"]?.includes("application/json")) {
@@ -260,8 +261,6 @@ async function handlePaymentRequest(req, res) {
       return res.redirect(result.url);
     } else if (result.type === "html") {
       return res.send(result.content);
-    } else {
-      return res.redirect(`/success?id=${transactionId}&branch=${selectedBranch}`);
     }
   } catch (err) {
     console.error("❌ خطأ في معالجة طلب الدفع:", err.response?.data || err.message);
@@ -359,15 +358,12 @@ app.get("/api/check-voucher/:txId", (req, res) => {
 
 app.post("/api/disable-queue", async (req, res) => {
   try {
-    // استخراج اسم المستخدم والفرع والدومين من الطلب
     const { username, branch, branch_key, domain } = req.body;
-
     const targetBranch = branch || branch_key || "main";
 
     console.log(`📡 [API] طلب تفعيل سرعة للمستخدم: ${username} | الفرع المستلم: ${targetBranch}`);
 
     if (typeof disableUserQueue === "function") {
-      // تمرير الفرع والدومين لدالة الميكروتك
       const result = await disableUserQueue(username, targetBranch, domain);
       return res.json(result);
     }
@@ -380,18 +376,23 @@ app.post("/api/disable-queue", async (req, res) => {
 });
 
 app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
+  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id;
   const queryBranch = req.query.branch || "";
   
+  if (!transactionId) {
+    return res.status(400).send("رقم المعاملة مفقود.");
+  }
+
   const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
   return res.send(pageHtml);
 });
 
 app.get("/fail", async (req, res) => {
   const errorMessage = req.query.data_message || req.query.error || "حدثت مشكلة أثناء عملية الدفع، حاول مرة أخرى.";
-  
+  const transactionId = req.query.id || req.query.order || req.query.transaction_id || "غير محدد";
+
   const failData = {
-    transactionId: req.query.id || req.query.order || req.query.transaction_id || `FAIL_${Date.now()}`,
+    transactionId: transactionId,
     phone: req.query.phone || req.query.user_phone || "غير محدد",
     amount: req.query.amount || req.query.price || "غير محدد",
     branchName: req.query.branch || "حكايات نت رئيسي",
