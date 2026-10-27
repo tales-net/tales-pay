@@ -21,7 +21,7 @@ const { BRANCH_NAMES } = require("./branches");
 
 router.get("/paymob-webhook", (req, res) => {
   console.log("🔔 [Webhook GET Check] تم استلام طلب GET للتحقق من رابط الويب هوك");
-  return res.status(200).send("Paymob Webhook Endpoint Active & ready for POST requests.");
+  return res.status(200).send("Webhook Endpoint Active & ready for POST requests.");
 });
 
 function verifyPaymobHmac(req) {
@@ -84,20 +84,27 @@ function verifyPaymobHmac(req) {
   return calculatedHmac.toLowerCase() === receivedHmac.toLowerCase();
 }
 
-function extractBranchKey(obj) {
+function extractBranchKey(obj, reqQuery = {}, reqBody = {}) {
   const directBranch = 
     obj.merchant_extra?.branch ||
     obj.order?.merchant_extra?.branch ||
     obj.extra_data?.branch || 
     obj.order?.extra_data?.branch || 
     obj.branch || 
-    obj.order?.branch;
+    obj.order?.branch ||
+    reqQuery.branch ||
+    reqBody.branch;
 
   if (directBranch && BRANCH_NAMES[directBranch]) {
     return directBranch;
   }
 
-  const merchantOrderId = String(obj.order?.merchant_order_id || obj.merchant_order_id || "").toLowerCase();
+  const merchantOrderId = String(
+    obj.order?.merchant_order_id || 
+    obj.merchant_order_id || 
+    reqQuery.merchant_order_id || 
+    reqBody.merchant_order_id || ""
+  ).toLowerCase();
   
   if (merchantOrderId.includes("branch2")) return "branch2";
   if (merchantOrderId.includes("branch3")) return "branch3";
@@ -108,21 +115,33 @@ function extractBranchKey(obj) {
 
 router.post("/paymob-webhook", async (req, res) => {
   try {
-    if (!verifyPaymobHmac(req)) {
+    const data = req.body;
+    const obj = data.obj || data;
+    const isPaymob = !!obj.id || req.query.hmac;
+
+    // التحقق من HMAC فقط إذا كانت البوابة هي Paymob وتم ضبط السر
+    if (isPaymob && process.env.PAYMOB_HMAC && !verifyPaymobHmac(req)) {
       console.error("⛔ [Webhook Unauthorized] فشل التحقق من HMAC إشارة غير موثوقة");
       return res.status(401).send("Unauthorized payload HMAC failed");
     }
 
-    const data = req.body;
-    const obj = data.obj || data;
-
-    if (!obj || !obj.id) {
+    if (!obj) {
       console.error("⚠️ [Webhook] استلام حمولة فارغة أو غير صالحة");
       return res.status(200).send("Invalid payload acknowledged");
     }
 
-    const isSuccess = String(obj.success) === "true";
-    const transactionId = String(obj.id);
+    // استخراج رقم المعاملة الحقيقي (يدعم Paymob و XPay مثل pi_...)
+    const transactionId = String(
+      obj.id || 
+      obj.transaction_id || 
+      obj.payment_intent || 
+      req.query.id || 
+      req.query.transaction_id || 
+      req.query.pi || 
+      `TX_${Date.now()}`
+    );
+
+    const isSuccess = String(obj.success) === "true" || obj.status === "SUCCESS" || obj.status === "paid" || req.query.success === "true";
     const orderId = obj.order?.id ? String(obj.order.id) : null;
     const merchantOrderId = obj.order?.merchant_order_id ? String(obj.order.merchant_order_id) : null;
 
@@ -131,17 +150,18 @@ router.post("/paymob-webhook", async (req, res) => {
       return res.status(200).send("Transaction already processed");
     }
 
-    const amountCents = obj.amount_cents || obj.order?.amount_cents || 0;
+    const amountCents = obj.amount_cents || obj.order?.amount_cents || (obj.amount ? parseFloat(obj.amount) * 100 : 0);
     const numericAmount = parseFloat((amountCents / 100).toFixed(2));
 
-    const branchKey = extractBranchKey(obj);
+    const branchKey = extractBranchKey(obj, req.query, req.body);
     const branchDisplayName = BRANCH_NAMES[branchKey] || BRANCH_NAMES.main;
 
     const phone = obj.phone || 
-                obj.billing_data?.phone_number || 
-                obj.customer?.phone_number || 
-                obj.order?.shipping_data?.phone_number || 
-                "غير محدد";
+                  obj.billing_data?.phone_number || 
+                  obj.customer?.phone_number || 
+                  obj.order?.shipping_data?.phone_number || 
+                  req.query.phone ||
+                  "غير محدد";
 
     if (isSuccess) {
       console.log(`💳 [Webhook Debug] معاملة ناجحة: ${transactionId} | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ: ${numericAmount}ج`);
@@ -214,6 +234,7 @@ router.post("/paymob-webhook", async (req, res) => {
         obj.data_message || 
         obj.txn_response_code || 
         obj.data?.txn_response_code || 
+        req.query.error ||
         "سبب غير محدد من البوابة";
 
       console.error(`❌ [Webhook FAILED] معاملة فاشلة: ${transactionId} | السبب: [${failureReason}]`);
