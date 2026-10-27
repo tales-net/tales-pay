@@ -284,7 +284,6 @@ app.get("/api/test-create-card", async (req, res) => {
       success: false, 
       message: "⚠️ غير مسموح لك بالوصول لهذا الرابط التجريبي. مفتاح الحماية غير صحيح أو مفقود." 
     });
-  }
 
       global.generatedCardsMap.set(testTxId, cardPayload);
 
