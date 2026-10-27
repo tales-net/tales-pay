@@ -98,48 +98,78 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
 }
 
 /**
- * 4. 💳 إنشاء جلسة دفع البطاقة البنكية (Visa / Mastercard) عبر XPay
+ * استخراج رابط الدفع من استجابة XPay بمختلف أشكالها
+ */
+function extractXpayUrl(resData) {
+  if (!resData) return null;
+  return (
+    resData.url ||
+    resData.checkoutUrl ||
+    resData.checkout_url ||
+    resData.data?.url ||
+    resData.data?.checkoutUrl ||
+    resData.data?.checkout_url ||
+    resData.session?.url ||
+    null
+  );
+}
+
+/**
+ * 4. 💳 إنشاء جلسة دفع البطاقة البنكية (Visa / Mastercard) عبر XPay باستخدام المفتاح السري القياسي (sk_live_...)
  */
 async function createXpayCardPayment(amount, phone = "01000000000", branchData = {}) {
-  try {
-    const apiKey = process.env.XPAY_API_KEY;
-    if (!apiKey) {
-      throw new Error("مفتاح XPAY_API_KEY غير موجود في متغيرات البيئة (Environment Variables)");
-    }
+  // استخدام المفتاح السري sk_live_ من البيئة أو القيمة المباشرة
+  const secretKey = process.env.XPAY_SECRET_KEY || process.env.XPAY_API_KEY || "sk_live";
 
-    let sanitizedPhone = String(phone).replace(/\D/g, "");
-    if (!sanitizedPhone || sanitizedPhone.length < 11) {
-      sanitizedPhone = "01000000000";
-    }
-    const formattedPhone = sanitizedPhone.startsWith("+") ? sanitizedPhone : `+2${sanitizedPhone}`;
+  let sanitizedPhone = String(phone).replace(/\D/g, "");
+  if (!sanitizedPhone || sanitizedPhone.length < 11) {
+    sanitizedPhone = "01000000000";
+  }
 
-    const branchKey = branchData.branch || 'main';
-    const branchName = branchData.branch_name || 'حكايات نت رئيسي';
-    const numAmount = parseFloat(amount);
-    const amountCents = Math.round(numAmount * 100);
-    const baseUrl = process.env.NETWORK_HOTSPOT_URL || "https://tales-pay.onrender.com";
-    const customOrderId = `XPAY_${branchKey.toUpperCase()}_${Date.now()}`;
+  const branchKey = branchData.branch || 'main';
+  const branchName = branchData.branch_name || 'حكايات نت رئيسي';
+  const numAmount = parseFloat(amount);
+  const amountCents = Math.round(numAmount * 100);
+  const baseUrl = (process.env.NETWORK_HOTSPOT_URL || "https://tales-pay.onrender.com").replace(/\/$/, "");
+  const customOrderId = `XPAY_${branchKey.toUpperCase()}_${Date.now()}`;
 
-    // المحاولة الأولى: استخدام نظام Checkout Sessions الحديث لـ XPay (الذي يتوافق مع الـ Webhook الخاص بك)
+  const successUrl = `${baseUrl}/success?id={CHECKOUT_SESSION_ID}&branch=${branchKey}`;
+  const cancelUrl = `${baseUrl}/fail?branch=${branchKey}&amount=${numAmount}&phone=${sanitizedPhone}`;
+
+  const metadata = {
+    branch: branchKey,
+    branch_name: branchName,
+    phone: sanitizedPhone,
+    amount: String(numAmount),
+    custom_order_id: customOrderId
+  };
+
+  // ترويسة نقية بالمفتاح السري فقط كما تشترط واجهة XPay القياسية
+  const headers = {
+    "Authorization": `Bearer ${secretKey}`,
+    "Content-Type": "application/json"
+  };
+
+  const endpoints = [
+    "https://app.xpay.app/api/v1/checkout/sessions",
+    "https://app.xpay.app/v1/checkout/sessions",
+    "https://api.xpay.app/v1/checkout/sessions"
+  ];
+
+  let lastError = null;
+
+  // المرحلة 1: تجربة إنشاء الجلسة مباشرة بصيغتي snake_case و camelCase
+  for (const endpoint of endpoints) {
+    // 1.A: صيغة Stripe/XPay القياسية (snake_case)
     try {
-      const sessionPayload = {
-        success_url: `${baseUrl}/success?id={CHECKOUT_SESSION_ID}&branch=${branchKey}`,
-        cancel_url: `${baseUrl}/fail?branch=${branchKey}&amount=${numAmount}&phone=${sanitizedPhone}`,
-        currency: "EGP",
-        payment_method_types: ["card"],
-        customer_email: "customer@tales-net.com",
-        customer_phone: formattedPhone,
-        metadata: {
-          branch: branchKey,
-          branch_name: branchName,
-          phone: sanitizedPhone,
-          amount: String(numAmount),
-          custom_order_id: customOrderId
-        },
+      const payloadSnake = {
+        mode: "payment",
+        success_url: successUrl,
+        cancel_url: cancelUrl,
         line_items: [
           {
             price_data: {
-              currency: "EGP",
+              currency: "egp",
               product_data: {
                 name: `باقة إنترنت - ${branchName}`
               },
@@ -147,66 +177,123 @@ async function createXpayCardPayment(amount, phone = "01000000000", branchData =
             },
             quantity: 1
           }
-        ]
+        ],
+        metadata: metadata
       };
 
-      const res = await axios.post("https://app.xpay.app/api/v1/checkout/sessions", sessionPayload, {
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "x-api-key": apiKey,
-          "Content-Type": "application/json"
-        }
-      });
-
-      const redirectUrl = res.data?.url || res.data?.data?.url || res.data?.checkout_url;
-      if (redirectUrl) {
-        console.log(`✅ [XPay Checkout Session] تم إنشاء رابط الدفع بنجاح للفرع (${branchKey})`);
-        return { type: 'redirect', url: redirectUrl };
+      const res = await axios.post(endpoint, payloadSnake, { headers });
+      const url = extractXpayUrl(res.data);
+      if (url) {
+        console.log(`✅ [XPay Checkout] تم إنشاء جلسة الدفع بنجاح للفرع (${branchKey})`);
+        return { type: 'redirect', url };
       }
-    } catch (sessionErr) {
-      // في حال كان الحساب يستخدم نظام XPay Community API التقليدي
-      const communityId = process.env.XPAY_COMMUNITY_ID;
-      if (!communityId) {
-        throw sessionErr;
-      }
-
-      console.log("🔄 جاري استخدام XPay Community API البديل...");
-      const legacyPayload = {
-        community_id: communityId,
-        amount: numAmount,
-        currency: "EGP",
-        selected_payment_method: "card",
-        user: {
-          name: "Tales Customer",
-          email: "customer@tales-net.com",
-          mobile: formattedPhone
-        },
-        custom_fields: [
-          { field_label: "branch", field_value: branchKey },
-          { field_label: "branch_name", field_value: branchName },
-          { field_label: "phone", field_value: sanitizedPhone }
-        ]
-      };
-
-      const legacyRes = await axios.post("https://community.xpay.app/api/v1/payments/pay/variable-amount", legacyPayload, {
-        headers: {
-          "x-api-key": apiKey,
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
-        }
-      });
-
-      const legacyUrl = legacyRes.data?.data?.iframe_url || legacyRes.data?.data?.payment_url || legacyRes.data?.iframe_url;
-      if (legacyUrl) {
-        return { type: 'redirect', url: legacyUrl };
-      }
+    } catch (err) {
+      lastError = err.response?.data || err.message;
+      console.warn(`⚠️ [XPay Direct snake_case - ${endpoint}]:`, JSON.stringify(lastError));
     }
 
-    throw new Error("لم يتم استرجاع رابط إعادة التوجيه للدفع من XPay");
-  } catch (err) {
-    console.error("❌ XPay Card Payment Error Details:", JSON.stringify(err.response?.data || err.message, null, 2));
-    throw new Error(`فشل إنشاء معاملة البطاقة عبر XPay: ${err.response?.data?.message || err.message}`);
+    // 1.B: صيغة camelCase
+    try {
+      const payloadCamel = {
+        mode: "payment",
+        successUrl: successUrl,
+        cancelUrl: cancelUrl,
+        lineItems: [
+          {
+            priceData: {
+              currency: "EGP",
+              productData: {
+                name: `باقة إنترنت - ${branchName}`
+              },
+              unitAmount: amountCents
+            },
+            quantity: 1
+          }
+        ],
+        metadata: metadata
+      };
+
+      const res = await axios.post(endpoint, payloadCamel, { headers });
+      const url = extractXpayUrl(res.data);
+      if (url) {
+        console.log(`✅ [XPay Checkout camelCase] تم إنشاء جلسة الدفع بنجاح للفرع (${branchKey})`);
+        return { type: 'redirect', url };
+      }
+    } catch (err) {
+      lastError = err.response?.data || err.message;
+      console.warn(`⚠️ [XPay Direct camelCase - ${endpoint}]:`, JSON.stringify(lastError));
+    }
   }
+
+  // المرحلة 2: في حال كانت XPay تشترط إنشاء المنتج والسعر (Product & Price) أولاً قبل الجلسة
+  const baseApiList = [
+    "https://app.xpay.app/api/v1",
+    "https://app.xpay.app/v1"
+  ];
+
+  for (const baseApi of baseApiList) {
+    try {
+      // أ) إنشاء المنتج
+      const prodRes = await axios.post(`${baseApi}/products`, {
+        name: `باقة إنترنت ${numAmount} جنيه - ${branchName}`
+      }, { headers });
+      const productId = prodRes.data?.id || prodRes.data?.data?.id;
+
+      if (productId) {
+        // ب) إنشاء السعر المرتبط بالمنتج
+        let priceId = null;
+        try {
+          const priceRes = await axios.post(`${baseApi}/prices`, {
+            product: productId,
+            unit_amount: amountCents,
+            currency: "egp"
+          }, { headers });
+          priceId = priceRes.data?.id || priceRes.data?.data?.id;
+        } catch (pErr) {
+          const priceResCamel = await axios.post(`${baseApi}/prices`, {
+            productId: productId,
+            unitAmount: amountCents,
+            currency: "EGP"
+          }, { headers });
+          priceId = priceResCamel.data?.id || priceResCamel.data?.data?.id;
+        }
+
+        // ج) إنشاء جلسة الدفع باستخدام معرف السعر (priceId)
+        if (priceId) {
+          try {
+            const sessionRes = await axios.post(`${baseApi}/checkout/sessions`, {
+              mode: "payment",
+              success_url: successUrl,
+              cancel_url: cancelUrl,
+              line_items: [{ price: priceId, quantity: 1 }],
+              metadata: metadata
+            }, { headers });
+            const url = extractXpayUrl(sessionRes.data);
+            if (url) return { type: 'redirect', url };
+          } catch (sErr) {
+            const sessionResCamel = await axios.post(`${baseApi}/checkout/sessions`, {
+              mode: "payment",
+              successUrl: successUrl,
+              cancelUrl: cancelUrl,
+              lineItems: [{ price: priceId, quantity: 1 }],
+              metadata: metadata
+            }, { headers });
+            const url = extractXpayUrl(sessionResCamel.data);
+            if (url) return { type: 'redirect', url };
+          }
+        }
+      }
+    } catch (stepErr) {
+      console.warn(`⚠️ [XPay Product/Price Step - ${baseApi}]:`, JSON.stringify(stepErr.response?.data || stepErr.message));
+    }
+  }
+
+  // استخراج رسالة الخطأ التفصيلية من XPay لعرضها بوضوح
+  const errorString = typeof lastError === 'object'
+    ? JSON.stringify(lastError)
+    : String(lastError);
+
+  throw new Error(`فشل إنشاء معاملة البطاقة عبر XPay: ${errorString}`);
 }
 
 /**
