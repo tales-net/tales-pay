@@ -74,7 +74,7 @@
                         <select name="payment_method" id="payment_method" class="form-control" style="height: 48px; border-radius: 8px;" required>
                             <option value="wallet" selected>📱 محفظة إلكترونية</option>
                             <option value="valu">📦 Valu (تقسيط)</option>
-                            <option value="card">💳 بطاقة بنكية (Visa / Mastercard)</option>
+                            <option value="card">💳 بطاقة بنكية</option>
                         </select>
                     </div>
 
@@ -109,7 +109,7 @@
                         <div class="error-message" id="error_phone">يجب كتابة رقم هاتف صحيح.</div>
                     </div>
 
-                    <div id="card_section" style="display: none;">
+                    <div id="card_section">
                         <div class="input-group-custom">
                             <label for="card_number">رقم البطاقة البنكية:</label>
                             <div class="input-wrapper">
@@ -120,8 +120,7 @@
                                        id="card_number" 
                                        maxlength="19" 
                                        autocomplete="cc-number"
-                                       style="padding-right: 75px;"
-                                       disabled>
+                                       style="padding-right: 75px;">
                                 <div class="input-icon-right">
                                     <i class="fa fa-cc-visa fa-lg" style="color: #1a1f71;"></i>
                                     <i class="fa fa-cc-mastercard fa-lg" style="color: #eb001b;"></i>
@@ -136,8 +135,7 @@
                                 <input placeholder="Card Holder Name" 
                                        type="text" 
                                        name="name" 
-                                       id="card_name"
-                                       disabled>
+                                       id="card_name">
                             </div>
                             <div class="error-message" id="error_card_name">يرجى إدخال الاسم بالحروف الإنجليزية فقط.</div>
                         </div>
@@ -151,8 +149,7 @@
                                            inputmode="numeric" 
                                            name="expiry" 
                                            id="mmyy" 
-                                           maxlength="5"
-                                           disabled>
+                                           maxlength="5">
                                 </div>
                                 <div class="error-message" id="error_mmyy">تاريخ غير صحيح.</div>
                             </div>
@@ -166,8 +163,7 @@
                                            name="cvc" 
                                            id="card_cvc" 
                                            maxlength="3"
-                                           style="padding-left: 35px;"
-                                           disabled>
+                                           style="padding-left: 35px;">
                                     <button type="button" class="toggle-password" id="toggleCvvBtn" title="إظهار/إخفاء الرمز">
                                         <i class="fa fa-eye" id="cvvIcon"></i>
                                     </button>
@@ -178,7 +174,7 @@
 
                         <div class="saveCardText">
                             <label for="save_card">حفظ بيانات البطاقة للمعاملات القادمة</label>
-                            <input type="checkbox" id="save_card" value="tokenize" name="save_card" disabled>
+                            <input type="checkbox" id="save_card" value="tokenize" name="save_card">
                         </div>
                     </div>
 
@@ -207,23 +203,17 @@
         document.getElementById('payment_method').addEventListener('change', function() {
             const method = this.value;
             const phoneGroup = document.getElementById('phone_group');
-            const userPhone = document.getElementById('user_phone');
             const cardSection = document.getElementById('card_section');
             const phoneLabel = document.getElementById('phone_label');
             const valuBadge = document.getElementById('valu_badge');
             const meezaBadge = document.getElementById('meeza_badge');
-            const cardInputs = cardSection ? cardSection.querySelectorAll('input') : [];
 
             if (method === 'card') {
                 if (phoneGroup) phoneGroup.style.display = 'none';
-                if (userPhone) userPhone.disabled = true;
                 if (cardSection) cardSection.style.display = 'block';
-                cardInputs.forEach(input => input.disabled = false);
             } else {
                 if (phoneGroup) phoneGroup.style.display = 'block';
-                if (userPhone) userPhone.disabled = false;
                 if (cardSection) cardSection.style.display = 'none';
-                cardInputs.forEach(input => input.disabled = true);
 
                 if (method === 'valu') {
                     phoneLabel.textContent = 'رقم هاتف حساب فاليو (Valu):';
