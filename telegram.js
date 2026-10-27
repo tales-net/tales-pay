@@ -8,6 +8,9 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const { BRANCH_NAMES } = require('./branches');
 
+/**
+ * جلب بيانات الشبكة والموقع الجغرافي والإحداثيات بناءً على IP الخارجي
+ */
 async function fetchNetworkDetailsByIP(ip) {
   const result = {
     location: "غير معروف",
@@ -21,6 +24,7 @@ async function fetchNetworkDetailsByIP(ip) {
 
   const cleanIp = String(ip).split(",")[0].trim();
 
+  // المصدر الأول: ipwho.is (يدعم الإحداثيات بدقة عالية)
   try {
     const res = await axios.get(`https://ipwho.is/${cleanIp}?lang=ar`, { timeout: 3000 });
     if (res.data && res.data.success !== false) {
@@ -36,8 +40,11 @@ async function fetchNetworkDetailsByIP(ip) {
       }
       return result;
     }
-  } catch (e) {}
+  } catch (e) {
+    // تجاهل والانتقال للمصدر البديل
+  }
 
+  // المصدر الثاني: ip-api.com (مصدر بديل قوي للإحداثيات والـ ISP)
   try {
     const fallbackRes = await axios.get(`http://ip-api.com/json/${cleanIp}?fields=status,country,city,isp,org,lat,lon,query`, { timeout: 3000 });
     if (fallbackRes.data && fallbackRes.data.status === "success") {
@@ -74,6 +81,9 @@ function getFormattedDateTime() {
   return `${formattedDate} -${formattedTime}`;
 }
 
+/**
+ * دالة مساعدة لتحديد اسم الباقة بناءً على المبلغ (متطابقة مع mikrotikService)
+ */
 function getPackageNameByAmount(amount) {
   const numAmount = Number(amount);
   switch (numAmount) {
@@ -88,6 +98,9 @@ function getPackageNameByAmount(amount) {
   }
 }
 
+/**
+ * 1. إرسال الرسائل النصية والإشعارات لجروب التليجرام مع الأزرار التفاعلية
+ */
 async function sendTelegramMessage(data, isInitial = true) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) {
@@ -115,9 +128,7 @@ async function sendTelegramMessage(data, isInitial = true) {
                         data.billing_data?.phone_number || 
                         data.customer?.phone_number || 
                         "غير محدد";
-    
-    // تثبيت واستخراج رقم العملية بدقة شديدة (يدعم كافة البوابات ويمنع توليد رقم عشوائي جديد)
-    const txnId = data.id || data.transactionId || data.order?.id || data.merchant_order_id || data.payment_intent || data.pi || data.order_id || `TX_${Date.now()}`;
+    const txnId = data.id || data.transactionId || data.order?.id || data.merchant_order_id || `TX_${Date.now()}`;
 
     let message = "";
 
@@ -145,7 +156,6 @@ async function sendTelegramMessage(data, isInitial = true) {
 
       message = `⏳ <b>جاري عملية الدفع...</b>\n\n` +
                 `🏢 الفرع: <b>${branchName}</b>\n` +
-                `🆔 رقم العملية: <code>${txnId}</code>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المطلوب: <b>${amountEGP} جنيه</b>\n`;
 
@@ -178,6 +188,7 @@ async function sendTelegramMessage(data, isInitial = true) {
 
     } else {
       const voucher = data.voucher_code || data.cardCode || "غير متوفر";
+      // استخدام دالة تحديد الباقة الموحدة بناءً على المبلغ المدفوع
       const packageInfo = data.package_info || data.packageName || getPackageNameByAmount(amountEGP);
 
       message = `✅ <b>تمت عملية الدفع وتوليد الكارت بنجاح!</b>\n\n` +
@@ -192,6 +203,7 @@ async function sendTelegramMessage(data, isInitial = true) {
                 `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
     }
 
+    // تمرير الفرع ورمز الأمان السري في الـ callback_data ليطابق الرابط المطلوب
     const replyMarkup = {
       inline_keyboard: [
         [
@@ -213,6 +225,9 @@ async function sendTelegramMessage(data, isInitial = true) {
   }
 }
 
+/**
+ * 2. 🎯 إرسال صورة الكارت الاحترافية المصدرة آلياً إلى التليجرام مع الأزرار
+ */
 async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) {
@@ -233,7 +248,7 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
       contentType: "image/png"
     });
 
-    const txnId = paymentDetails.transactionId || paymentDetails.id || paymentDetails.order?.id || `TX_${Date.now()}`;
+    const txnId = paymentDetails.transactionId || paymentDetails.id || `TX_${Date.now()}`;
     const amountVal = paymentDetails.amount || "0";
     const branchKey = paymentDetails.branch || paymentDetails.branchKey || "main";
     const branchName = paymentDetails.branchName || BRANCH_NAMES[branchKey] || "حكايات نت رئيسي";
@@ -276,6 +291,9 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   }
 }
 
+/**
+ * 3. 🔄 معالجة الضغط على الأزرار التفاعلية (Callback Queries)
+ */
 async function handleTelegramCallback(callbackQuery) {
   try {
     const queryId = callbackQuery.id;
@@ -294,19 +312,19 @@ async function handleTelegramCallback(callbackQuery) {
     const parts = data.split("_");
 
     if (data.startsWith("create_voucher")) {
-      const branchKey = parts.pop();
-      const amount = parts.pop();
-      parts.shift(); // إزالة "create"
-      parts.shift(); // إزالة "voucher"
-      const txnId = parts.join("_"); // استعادة رقم العملية كاملاً حتى لو احتوى على شرطات سفلى
+      // استخراج المعطيات بدقة من الـ callback_data: create_voucher_TXID_AMOUNT_BRANCH
+      const txnId = parts[2] || "UNKNOWN"; 
+      const amount = parts[3] || "0";
+      const branchKey = parts[4] || "main"; // استخراج الفرع بدقة
 
-      console.log(`🎟️ [Voucher Creation Started] جارٍ إصدار الكارت للمعاملة: ${txnId} | المبلغ: ${amount} | الفرع: ${branchKey}`);
+      console.log(`🎟️ [Voucher Creation Started] جارٍ إصدار الكارت للمعاملة: ${txnId} | المبلغ: ${amount} \vert{} الفرع: ${branchKey}`);
 
       let voucherData = null;
       let errorMessage = null;
 
       try {
         if (typeof mikrotikService !== "undefined" && typeof mikrotikService.processPaymentAndCreateCard === "function") {
+          // تمرير الفرع الصحيح المستخرج للميكروتيك
           voucherData = await mikrotikService.processPaymentAndCreateCard(amount, branchKey, txnId);
         } else {
           throw new Error("دالة processPaymentAndCreateCard غير موجودة في mikrotikService");
@@ -359,10 +377,9 @@ async function handleTelegramCallback(callbackQuery) {
       }
 
     } else if (data.startsWith("contribution")) {
-      const branchKey = parts.pop();
-      const amount = parts.pop();
-      parts.shift(); // إزالة "contribution"
-      const txnId = parts.join("_");
+      const txnId = parts[1];
+      const amount = parts[2] || "0";
+      const branchKey = parts[3] || "main";
 
       if (global.generatedCardsMap) {
         global.generatedCardsMap.set(txnId, {
@@ -391,6 +408,9 @@ async function handleTelegramCallback(callbackQuery) {
   }
 }
 
+/**
+ * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع والموقع الجغرافي للشبكة
+ */
 async function sendTelegramFailNotification(errorMessage, data = {}) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) {
@@ -424,7 +444,6 @@ async function sendTelegramFailNotification(errorMessage, data = {}) {
     console.error("❌ [Telegram Fail Notification Error]:", err.response?.data || err.message);
   }
 }
-
 module.exports = {
   sendTelegramMessage,
   sendVoucherWithCardImage,
