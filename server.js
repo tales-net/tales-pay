@@ -326,9 +326,16 @@ app.get("/api/test-create-card", async (req, res) => {
 });
 
 app.get("/contribution-success", (req, res) => {
-  const amount = req.query.amount || req.query.price || 150;
-  const transactionId = req.query.tx || req.query.id || req.query.order || 'TRX-DEFAULT';
-  const htmlContent = generateContributionHtmlPage(amount, transactionId);
+  const transactionId = req.query.tx || req.query.id || req.query.order || '';
+  
+  let amount = req.query.amount || req.query.price;
+  
+  if (!amount && transactionId && global.generatedCardsMap.has(transactionId)) {
+    amount = global.generatedCardsMap.get(transactionId).amount;
+  }
+  
+  const finalAmount = amount || "50";
+  const htmlContent = generateContributionHtmlPage(finalAmount, transactionId);
   res.send(htmlContent);
 });
 
@@ -374,7 +381,6 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-// 🎯 مسار صفحة النجاح النظيف (يعتمد كلياً على الـ Webhook)
 app.get("/success", (req, res) => {
   const transactionId = req.query.id || 
                         req.query.order || 
