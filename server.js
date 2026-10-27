@@ -276,36 +276,6 @@ async function handlePaymentRequest(req, res) {
 app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
 
-app.get("/api/test-create-card", async (req, res) => {
-  const secretKey = req.query.secret;
-  
-  if (!secretKey || secretKey !== process.env.TEST_SECRET_KEY) {
-    return res.status(403).json({ 
-      success: false, 
-      message: "⚠️ غير مسموح لك بالوصول لهذا الرابط التجريبي. مفتاح الحماية غير صحيح أو مفقود." 
-    });
-
-      global.generatedCardsMap.set(testTxId, cardPayload);
-
-      return res.json({
-        success: true,
-        message: `✅ تم إضافة الكارت إلى السيرفر بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
-        data: result,
-        successPageLink: `/success?merchant_order_id=${testTxId}&branch=${result.branchKey}`
-      });
-    } else {
-      return res.json({
-        success: false,
-        message: "⚠️ فشل توليد الكارت من السيرفر",
-        details: result
-      });
-    }
-  } catch (error) {
-    console.error("❌ [TEST ERROR]:", error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 app.get("/contribution-success", (req, res) => {
   const amount = req.query.amount || req.query.price || 150;
   const transactionId = req.query.tx || req.query.id || req.query.order || 'TRX-DEFAULT';
