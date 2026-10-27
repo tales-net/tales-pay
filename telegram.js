@@ -116,8 +116,8 @@ async function sendTelegramMessage(data, isInitial = true) {
                         data.customer?.phone_number || 
                         "غير محدد";
     
-    // التقاط رقم العملية الحقيقي وتمريره بدقة في كافة الحالات
-    const txnId = data.id || data.transactionId || data.order?.id || data.merchant_order_id || data.payment_intent || data.pi || `TX_${Date.now()}`;
+    // تثبيت واستخراج رقم العملية بدقة شديدة (يدعم كافة البوابات ويمنع توليد رقم عشوائي جديد)
+    const txnId = data.id || data.transactionId || data.order?.id || data.merchant_order_id || data.payment_intent || data.pi || data.order_id || `TX_${Date.now()}`;
 
     let message = "";
 
@@ -233,7 +233,7 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
       contentType: "image/png"
     });
 
-    const txnId = paymentDetails.transactionId || paymentDetails.id || `TX_${Date.now()}`;
+    const txnId = paymentDetails.transactionId || paymentDetails.id || paymentDetails.order?.id || `TX_${Date.now()}`;
     const amountVal = paymentDetails.amount || "0";
     const branchKey = paymentDetails.branch || paymentDetails.branchKey || "main";
     const branchName = paymentDetails.branchName || BRANCH_NAMES[branchKey] || "حكايات نت رئيسي";
@@ -296,9 +296,9 @@ async function handleTelegramCallback(callbackQuery) {
     if (data.startsWith("create_voucher")) {
       const branchKey = parts.pop();
       const amount = parts.pop();
-      parts.shift(); 
-      parts.shift(); 
-      const txnId = parts.join("_");
+      parts.shift(); // إزالة "create"
+      parts.shift(); // إزالة "voucher"
+      const txnId = parts.join("_"); // استعادة رقم العملية كاملاً حتى لو احتوى على شرطات سفلى
 
       console.log(`🎟️ [Voucher Creation Started] جارٍ إصدار الكارت للمعاملة: ${txnId} | المبلغ: ${amount} | الفرع: ${branchKey}`);
 
@@ -361,7 +361,7 @@ async function handleTelegramCallback(callbackQuery) {
     } else if (data.startsWith("contribution")) {
       const branchKey = parts.pop();
       const amount = parts.pop();
-      parts.shift(); 
+      parts.shift(); // إزالة "contribution"
       const txnId = parts.join("_");
 
       if (global.generatedCardsMap) {
