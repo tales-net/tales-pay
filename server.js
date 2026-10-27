@@ -9,10 +9,11 @@ const fs = require('fs');
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
-const { sendTelegramMessage, handleTelegramCallback, sendTelegramFailNotification } = require("./telegram");
+const { sendTelegramMessage, handleTelegramCallback, sendTelegramFailNotification, sendVoucherWithCardImage } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
+const { generateCardImage } = require("./cardGenerator");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateSuccessPageHtml } = require('./successPage'); 
 const { generateFailPageHtml } = require('./failPage');       
@@ -374,12 +375,13 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-// 🎯 مسار صفحة النجاح الديناميكي لتوليد وعرض الكارت عند العودة من بوابات الدفع (مثل Xpay)
+// 🎯 مسار صفحة النجاح الديناميكي لتوليد وعرض الكارت وإرسال إشعار النجاح وصورة الكارت لتليجرام عند العودة من Xpay
 app.get("/success", async (req, res) => {
   try {
     const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
     const queryBranch = req.query.branch || req.query.shipping_method || "main";
     const amount = req.query.amount || req.query.total || req.query.price || "5";
+    const phone = req.query.phone || "01000000000";
     const branchName = BRANCH_NAMES[queryBranch] || BRANCH_NAMES.main;
 
     let cardPayload = null;
@@ -388,26 +390,98 @@ app.get("/success", async (req, res) => {
       cardPayload = global.generatedCardsMap.get(transactionId);
     }
 
+    let cardCode = null;
+    let packageName = `باقة إنترنت بقيمة ${amount} جنيه`;
+    let cardImageBuffer = null;
+
     if (!cardPayload && amount && Number(amount) > 0 && Number(amount) <= 100) {
       try {
         const mikrotikResult = await processPaymentAndCreateCard(amount, queryBranch, transactionId);
         if (mikrotikResult.success && mikrotikResult.cardCode) {
+          cardCode = mikrotikResult.cardCode;
+          packageName = mikrotikResult.packageName || packageName;
+
+          // توليد صورة الكارت الاحترافية
+          cardImageBuffer = await generateCardImage(cardCode, packageName, parseFloat(amount), transactionId, branchName);
+
           cardPayload = {
-            code: mikrotikResult.cardCode,
-            packageName: mikrotikResult.packageName || `باقة إنترنت بقيمة ${amount} جنيه`,
-            amount: amount,
+            buffer: cardImageBuffer,
+            code: cardCode,
+            packageName: packageName,
+            amount: parseFloat(amount),
+            phone: phone,
+            branchKey: queryBranch,
             branchName: branchName,
+            telegramSent: true,
             createdAt: new Date()
           };
           global.generatedCardsMap.set(transactionId, cardPayload);
+
+          // 🚀 1. إرسال إشعار النجاح النصي إلى التليجرام
+          const telegramObj = {
+            id: transactionId,
+            amount: amount,
+            payment_method: "card",
+            branch: queryBranch,
+            branchName: branchName,
+            voucher_code: cardCode,
+            package_info: packageName,
+            phone: phone
+          };
+
+          await sendTelegramMessage(telegramObj, false);
+
+          // 📸 2. إرسال صورة الكارت الاحترافية إلى التليجرام
+          if (cardImageBuffer) {
+            await sendVoucherWithCardImage({
+              amount: parseFloat(amount),
+              packageName: packageName,
+              card: { code: cardCode },
+              phone: phone,
+              transactionId: transactionId,
+              branch: queryBranch,
+              branchName: branchName
+            }, cardImageBuffer);
+          }
+
+          console.log(`✅ [Success Route] تم إصدار الكارت وإرسال إشعار التليجرام بنجاح للمعاملة: ${transactionId}`);
         }
       } catch (mikErr) {
-        console.error("❌ خطأ في توليد الكارت الفوري لصفحة النجاح:", mikErr.message);
+        console.error("❌ خطأ في توليد الكارت أو إرسال التيليجرام لصفحة النجاح:", mikErr.message);
+      }
+    } else if (cardPayload && !cardPayload.telegramSent) {
+      cardPayload.telegramSent = true;
+      cardCode = cardPayload.code;
+      packageName = cardPayload.packageName;
+
+      const telegramObj = {
+        id: transactionId,
+        amount: cardPayload.amount,
+        payment_method: "card",
+        branch: cardPayload.branchKey || queryBranch,
+        branchName: cardPayload.branchName || branchName,
+        voucher_code: cardCode,
+        package_info: packageName,
+        phone: cardPayload.phone || phone
+      };
+
+      await sendTelegramMessage(telegramObj, false);
+
+      if (cardPayload.buffer) {
+        await sendVoucherWithCardImage({
+          amount: cardPayload.amount,
+          packageName: packageName,
+          card: { code: cardCode },
+          phone: cardPayload.phone || phone,
+          transactionId: transactionId,
+          branch: cardPayload.branchKey || queryBranch,
+          branchName: cardPayload.branchName || branchName
+        }, cardPayload.buffer);
       }
     }
 
-    const cardCode = cardPayload?.code || cardPayload?.voucher?.username || "تم إرسال الكارت عبر بوت التليجرام بنجاح";
-    const packageName = cardPayload?.packageName || "باقة إنترنت شبكة حكايات";
+    const finalCardCode = cardCode || cardPayload?.code || cardPayload?.voucher?.username || "تم إرسال الكارت عبر بوت التليجرام بنجاح";
+    const finalPackageName = packageName || cardPayload?.packageName || "باقة إنترنت شبكة حكايات";
 
     const htmlResponse = `
     <!DOCTYPE html>
@@ -431,12 +505,12 @@ app.get("/success", async (req, res) => {
         <div class="container">
             <h1>🎉 تمت عملية الدفع بنجاح!</h1>
             <p class="info">فرع الشبكة: <b>${branchName}</b></p>
-            <p class="info">الباقة المفعلة: <b>${packageName}</b></p>
+            <p class="info">الباقة المفعلة: <b>${finalPackageName}</b></p>
             <p class="info">المبلغ المدفوع: <b>${amount} جنيه</b></p>
             
-            <div class="voucher-box">${cardCode}</div>
+            <div class="voucher-box">${finalCardCode}</div>
             
-            <p class="note">💡 يرجى نسخ كارت الإنترنت أعلاه واستخدامه في صفحة تسجيل الدخول الخاصة بالشبكة.</p>
+            <p class="note">💡 يرجى نسخ كارت الإنترنت أعلاه واستخدامه في صفحة تسجيل الدخول الخاصة بالشبكة. تم إرسال تفاصيل الكارت إلى إدارة الشبكة عبر تيليجرام أيضاً.</p>
             
             <a href="/" class="btn">العودة لصفحة الباقات الرئيسية</a>
         </div>
