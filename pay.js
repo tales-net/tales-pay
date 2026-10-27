@@ -1,9 +1,7 @@
 const axios = require('axios');
 const path = require('path');
 const { getCheckoutPage } = require('./checkout');
-
 const { BRANCH_NAMES } = require("./branches");
-
 
 async function getAuthToken() {
   try {
@@ -16,7 +14,6 @@ async function getAuthToken() {
     throw new Error("فشل الحصول على توكن المصادقة من Paymob");
   }
 }
-
 
 async function createOrder(authToken, amountCents, branchData = {}) {
   try {
@@ -43,7 +40,6 @@ async function createOrder(authToken, amountCents, branchData = {}) {
     throw new Error("فشل إنشاء الطلب في Paymob");
   }
 }
-
 
 async function getPaymentKey(authToken, orderId, amountCents, integrationId, phone = "01000000000", branchData = {}) {
   try {
@@ -92,11 +88,45 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
   }
 }
 
-async function createPaymobPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
+// 🌐 دالة معالجة الدفع عبر XPay للبطاقات والفيزا
+async function createXPayPayment(phone, amount, branch = '') {
   try {
-    const amountCents = Math.round(parseFloat(amount) * 100).toString();
+    const apiKey = process.env.XPAY_API_KEY;
+    const secretKey = process.env.XPAY_SECRET_KEY;
+
+    if (!apiKey || !secretKey) {
+      throw new Error("Missing XPay API Keys in environment variables");
+    }
+
+    // رابط API الخاص بإنشاء جلسة الدفع في XPay (تأكد من الرابط الرسمي المعتمد لديهم)
+    const response = await axios.post("https://staging.xpay.app/api/v1/payments/pay-via-card", {
+      amount: parseFloat(amount),
+      currency: "EGP",
+      branch: branch,
+      phone: phone
+    }, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const redirectUrl = response.data.data?.payment_url || response.data.payment_url;
+    if (!redirectUrl) {
+      throw new Error("لم يتم استرجاع رابط الدفع من XPay");
+    }
+
+    return { type: 'redirect', url: redirectUrl };
+  } catch (err) {
+    console.error('❌ XPay Payment Error:', err.response?.data || err.message);
+    throw new Error(`XPay payment failed: ${err.message}`);
+  }
+}
+
+// 🎯 دالة الدفع الرئيسية التي توجه الطلب للبوابة الصحيحة
+async function processPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
+  try {
     const cleanMethod = (method || 'wallet').toLowerCase();
-    
     let rawBranch = String(branch || '').toLowerCase().trim();
 
     if (!rawBranch && req) {
@@ -105,29 +135,34 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
 
     if (!rawBranch || !BRANCH_NAMES[rawBranch]) {
       console.warn(`⚠️ [Pay.js] رفض معاملة لدفع بفرع غير صالح أو مفقود: [${rawBranch}]`);
-      
       if (res) {
         if (req?.headers?.['content-type']?.includes('application/json')) {
           return res.status(400).json({ success: false, error: "يجب اختيار فرع صحيح للشبكة قبل إتمام الدفع." });
         }
         return res.status(400).sendFile(path.join(__dirname, 'public', 'warning.html'));
       }
-      
       throw new Error(`يجب اختيار فرع صحيح للشبكة. الفرع المحدد غير مدعوم: [${rawBranch}]`);
     }
 
     const selectedBranch = rawBranch;
     const branchDisplayName = BRANCH_NAMES[selectedBranch];
 
-    console.log(`💳 [Pay.js] إنشاء معاملة مؤكدة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amount} | الوسيلة: ${cleanMethod}`);
+    console.log(`💳 [Pay.js] إنشاء معاملة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amount} | الوسيلة: ${cleanMethod}`);
 
+    // إذا كانت الوسيلة بطاقة بنكية (Card) ونريد تفعيل XPay لها
+    if (cleanMethod === 'card' && process.env.XPAY_API_KEY) {
+      console.log(`🚀 [Pay.js] توجيه الدفع عبر بوابة XPay للبطاقة البنكية`);
+      return await createXPayPayment(phone, amount, selectedBranch);
+    }
+
+    // وإلا، يتم استخدام Paymob للمحافظ وباقي الوسائل كالمعتاد
+    const amountCents = Math.round(parseFloat(amount) * 100).toString();
     let integrationId;
+
     switch (cleanMethod) {
       case 'card':
-        integrationId = process.env.CARD_INTEGRATION_ID;
-        break;
       case 'valu':
-        integrationId = process.env.VALU_INTEGRATION_ID; // Integration ID الخاص بفاليو
+        integrationId = process.env.VALU_INTEGRATION_ID || process.env.CARD_INTEGRATION_ID;
         break;
       case 'wallet':
       default:
@@ -140,7 +175,6 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     }
 
     const token = await getAuthToken();
-    
     const orderId = await createOrder(token, amountCents, {
       branch: selectedBranch,
       branch_name: branchDisplayName
@@ -169,24 +203,8 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
         throw new Error("لم يتم استرجاع رابط إعادة توجيه المحفظة من Paymob");
       }
       return { type: 'redirect', url: redirectUrl };
-    } 
-    else if (cleanMethod === 'valu') {
-      // فاليو يعتمد غالباً على iframe المخصص أو إعادة التوجيه تماماً مثل البطاقات والـ iframes
-      const iframeId = process.env.VALU_IFRAME_ID || process.env.PAYMOB_IFRAME_ID;
-      
-      if (typeof getCheckoutPage === 'function') {
-        const htmlPage = getCheckoutPage(paymentKey, iframeId);
-        return { type: 'html', content: htmlPage };
-      }
-      
-      const iframeUrl = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymentKey}`;
-      return { type: 'redirect', url: iframeUrl };
-    } 
-    else {
-      const iframeId = cleanMethod === 'card' 
-        ? (process.env.CARD_IFRAME_ID || process.env.PAYMOB_IFRAME_ID) 
-        : process.env.PAYMOB_IFRAME_ID;
-
+    } else {
+      const iframeId = process.env.PAYMOB_IFRAME_ID;
       if (!iframeId) {
         throw new Error("Missing PAYMOB_IFRAME_ID in environment variables");
       }
@@ -201,14 +219,14 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     }
 
   } catch (err) {
-    console.error('❌ Paymob Payment Error:', err.response?.data || err.message);
+    console.error('❌ Payment Processing Error:', err.response?.data || err.message);
     throw new Error(`Payment processing failed: ${err.message}`);
   }
 }
 
 module.exports = { 
-  createPaymobPayment, 
-  processPayment: createPaymobPayment,
+  createPaymobPayment: processPayment, 
+  processPayment,
   getAuthToken,
   createOrder,
   getPaymentKey,
