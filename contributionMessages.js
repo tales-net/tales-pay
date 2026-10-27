@@ -16,9 +16,7 @@ function getRandomBlessingMessage(amount) {
 }
 
 function generateContributionHtmlPage(amount, transactionId = "") {
-  const safeAmount = amount || "150";
-  const safeTxId = transactionId || "";
-  const blessingData = getRandomBlessingMessage(safeAmount);
+  const blessingData = getRandomBlessingMessage(amount);
   
   return `
     <!DOCTYPE html>
@@ -93,7 +91,6 @@ function generateContributionHtmlPage(amount, transactionId = "") {
           font-size: 14px;
           color: #9fb3c8;
           margin-top: 15px;
-          word-break: break-all;
         }
         .footer-note {
           margin-top: 25px;
@@ -126,17 +123,15 @@ function generateContributionHtmlPage(amount, transactionId = "") {
         <div class="icon-box">🌟</div>
         <h1>${blessingData.title}</h1>
         
-        <div class="amount-badge" id="amountBadge">
-          مبلغ المساهمة: <span id="amountVal">${safeAmount}</span> جنيه
+        <div class="amount-badge">
+          ${blessingData.amountText}
         </div>
 
         <div class="message-box">
           <p>${blessingData.message}</p>
         </div>
 
-        <div class="tx-info" id="txInfoBox">
-          رقم العملية: #<span id="txVal">${safeTxId || "غير متوفر"}</span>
-        </div>
+        ${transactionId ? `<div class="tx-info">رقم العملية: #${transactionId}</div>` : ''}
 
         <div class="footer-note">
           ${blessingData.footerNote}
@@ -146,36 +141,6 @@ function generateContributionHtmlPage(amount, transactionId = "") {
           <a href="https://tales-pay.onrender.com" class="btn">العودة للرئيسية</a>
         </div>
       </div>
-
-      <script>
-        // قراءة المتغيرات مباشرة من عنوان الويب (URL) لدعم XPay و Paymob بسلاسة تامة
-        const urlParams = new URLSearchParams(window.location.search);
-        
-        const detectedAmount = urlParams.get('amount') || urlParams.get('price');
-        const detectedTxId = urlParams.get('id') || 
-                             urlParams.get('order') || 
-                             urlParams.get('transaction_id') || 
-                             urlParams.get('merchant_order_id') || 
-                             urlParams.get('payment_intent') || 
-                             urlParams.get('pi');
-
-        if (detectedAmount) {
-          document.getElementById('amountVal').innerText = detectedAmount;
-        }
-
-        if (detectedTxId) {
-          document.getElementById('txVal').innerText = detectedTxId;
-          document.getElementById('txInfoBox').style.display = 'block';
-        } else {
-          const fallbackTx = "${safeTxId}";
-          if (fallbackTx) {
-            document.getElementById('txVal').innerText = fallbackTx;
-            document.getElementById('txInfoBox').style.display = 'block';
-          } else {
-            document.getElementById('txInfoBox').style.display = 'none';
-          }
-        }
-      </script>
     </body>
     </html>
   `;
