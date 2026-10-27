@@ -106,6 +106,7 @@ function extractBranchKey(obj) {
   return "main";
 }
 
+// 🌐 Paymob Webhook
 router.post("/paymob-webhook", async (req, res) => {
   try {
     if (!verifyPaymobHmac(req)) {
@@ -144,11 +145,10 @@ router.post("/paymob-webhook", async (req, res) => {
                 "غير محدد";
 
     if (isSuccess) {
-      console.log(`💳 [Webhook Debug] معاملة ناجحة: ${transactionId} | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ: ${numericAmount}ج`);
+      console.log(`💳 [Paymob Webhook Debug] معاملة ناجحة: ${transactionId} | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ: ${numericAmount}ج`);
 
       let packageName = `باقة إنترنت بقيمة ${numericAmount} جنيه`;
 
-      console.log(`🎟️ جاري إصدار الكارت للمعاملة | الفرع: ${branchKey} | المبلغ: ${numericAmount}`);
       const cardResult = await processPaymentAndCreateCard(numericAmount, branchKey, transactionId);
 
       let cardImageBuffer = null;
@@ -206,30 +206,128 @@ router.post("/paymob-webhook", async (req, res) => {
         );
       }
 
-      console.log(`✅ [Webhook SUCCESS Completed] تم معالجة المعاملة: ${transactionId}`);
+      console.log(`✅ [Paymob Webhook SUCCESS Completed] تم معالجة المعاملة: ${transactionId}`);
 
     } else {
-      const failureReason = 
-        obj.data?.message || 
-        obj.data_message || 
-        obj.txn_response_code || 
-        obj.data?.txn_response_code || 
-        "سبب غير محدد من البوابة";
-
-      console.error(`❌ [Webhook FAILED] معاملة فاشلة: ${transactionId} | السبب: [${failureReason}]`);
-
+      const failureReason = obj.data?.message || obj.data_message || "سبب غير محدد من البوابة";
+      console.error(`❌ [Paymob Webhook FAILED] معاملة فاشلة: ${transactionId} | السبب: [${failureReason}]`);
       obj.phone = phone;
       obj.branch = branchKey;
       obj.branchName = branchDisplayName;
       obj.failure_reason = failureReason;
-
       await sendTelegramMessage(obj, false);
     }
 
     return res.status(200).send("OK");
-
   } catch (err) {
-    console.error("❌ [Webhook Error] خطأ داخلي في معالجة الإشعار:", err.message);
+    console.error("❌ [Paymob Webhook Error]:", err.message);
+    return res.status(200).send("Error handled successfully");
+  }
+});
+
+// 🌐 XPay Webhook (للتحقق والـ GET والـ POST)
+router.get("/xpay-webhook", (req, res) => {
+  console.log("🔔 [XPay Webhook GET Check] تم استلام طلب GET للتحقق من رابط XPay");
+  return res.status(200).send("XPay Webhook Endpoint Active & ready for POST requests.");
+});
+
+router.post("/xpay-webhook", async (req, res) => {
+  try {
+    const data = req.body;
+    console.log("🔔 [XPay Webhook Received]:", JSON.stringify(data));
+
+    const obj = data.data || data;
+    const isSuccess = obj.success === true || obj.status === "SUCCESS" || obj.status === "paid" || data.status === "SUCCESS";
+    const transactionId = obj.payment_intent || obj.id || obj.transaction_id || data.payment_intent || data.id || `X_TX_${Date.now()}`;
+    const amount = parseFloat(obj.amount || obj.total_amount || data.amount || 5);
+    const branchKey = obj.merchant_extra?.branch || obj.branch || data.branch || "main";
+    const branchDisplayName = BRANCH_NAMES[branchKey] || BRANCH_NAMES.main;
+    const phone = obj.phone || obj.user_phone || data.phone || "غير محدد";
+
+    if (global.generatedCardsMap.has(transactionId)) {
+      console.log(`ℹ️ [XPay Duplicate] المعاملة ${transactionId} معالجة بالفعل سلفاً.`);
+      return res.status(200).send("Transaction already processed");
+    }
+
+    if (isSuccess) {
+      console.log(`💳 [XPay Webhook] معاملة ناجحة مؤكدة: ${transactionId} | المبلغ: ${amount}ج | الفرع: ${branchKey}`);
+
+      let packageName = `باقة إنترنت بقيمة ${amount} جنيه`;
+      const cardResult = await processPaymentAndCreateCard(amount, branchKey, transactionId);
+
+      let cardImageBuffer = null;
+      let cardCode = null;
+
+      if (cardResult.success) {
+        if (cardResult.isCustomAmount) {
+          console.log(`🌸 [XPay Custom Amount] تم استقبال مساهمة بقيمة ${amount}ج`);
+          global.generatedCardsMap.set(transactionId, {
+            isContribution: true,
+            amount: amount,
+            transactionId: transactionId,
+            branchKey: branchKey,
+            createdAt: new Date()
+          });
+        } else {
+          cardCode = cardResult.cardCode;
+          packageName = cardResult.packageName || packageName;
+
+          cardImageBuffer = await generateCardImage(cardCode, packageName, amount, transactionId, branchDisplayName);
+
+          const cardPayload = {
+            buffer: cardImageBuffer,
+            code: cardCode,
+            packageName: packageName,
+            amount: amount,
+            phone: phone,
+            branchKey: branchKey,
+            branchName: branchDisplayName,
+            createdAt: new Date()
+          };
+
+          global.generatedCardsMap.set(transactionId, cardPayload);
+        }
+      } else {
+        console.error(`🚨 [XPay Webhook Error] فشل إنشاء الكارت للمبلغ ${amount}ج:`, cardResult.error);
+      }
+
+      const telegramObj = {
+        ...obj,
+        id: transactionId,
+        voucher_code: cardCode || "⚠️ تعذر الإصدار الآلي",
+        package_info: packageName,
+        phone: phone,
+        branch: branchKey,
+        branchName: branchDisplayName,
+        amount: amount
+      };
+
+      await sendTelegramMessage(telegramObj, false);
+
+      if (cardImageBuffer) {
+        await sendVoucherWithCardImage(
+          {
+            amount: amount,
+            packageName: packageName,
+            card: { code: cardCode },
+            remaining: "مبتكر تلقائياً",
+            phone: phone,
+            transactionId: transactionId,
+            branch: branchKey,
+            branchName: branchDisplayName
+          },
+          cardImageBuffer
+        );
+      }
+
+      console.log(`✅ [XPay SUCCESS Completed] تم معالجة معاملة الفيزا بنجاح: ${transactionId}`);
+    } else {
+      console.error(`❌ [XPay FAILED] معاملة فيزا فاشلة: ${transactionId}`);
+    }
+
+    return res.status(200).send("XPay Webhook Processed Successfully");
+  } catch (err) {
+    console.error("❌ [XPay Webhook Error]:", err.message);
     return res.status(200).send("Error handled successfully");
   }
 });
