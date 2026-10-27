@@ -9,13 +9,14 @@ const fs = require('fs');
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
-const { sendTelegramMessage, handleTelegramCallback, sendTelegramFailNotification } = require("./telegram");
+const { sendTelegramMessage, handleTelegramCallback, sendTelegramFailNotification, sendVoucherWithCardImage } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
+const { generateCardImage } = require("./cardGenerator");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateSuccessPageHtml } = require('./successPage'); 
-const { generateFailPageHtml } = require('./failPage');      
+const { generateFailPageHtml } = require('./failPage');       
 
 const chatSupport = require('./chat_support');
 
@@ -73,7 +74,7 @@ app.use((req, res, next) => {
     req.path === "/api/maintenance/set" ||
     req.path === "/api/maintenance/verify" ||
     req.path.startsWith("/api/") ||
-    req.path.includes(".") // ملفات CSS, JS, صور
+    req.path.includes(".") 
   ) {
     return next();
   }
@@ -359,15 +360,12 @@ app.get("/api/check-voucher/:txId", (req, res) => {
 
 app.post("/api/disable-queue", async (req, res) => {
   try {
-    // استخراج اسم المستخدم والفرع والدومين من الطلب
     const { username, branch, branch_key, domain } = req.body;
-
     const targetBranch = branch || branch_key || "main";
 
     console.log(`📡 [API] طلب تفعيل سرعة للمستخدم: ${username} | الفرع المستلم: ${targetBranch}`);
 
     if (typeof disableUserQueue === "function") {
-      // تمرير الفرع والدومين لدالة الميكروتك
       const result = await disableUserQueue(username, targetBranch, domain);
       return res.json(result);
     }
@@ -379,12 +377,115 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
-  const queryBranch = req.query.branch || "";
-  
-  const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
-  return res.send(pageHtml);
+app.get("/success", async (req, res) => {
+  try {
+    const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || req.query.session_id || "TX_" + Date.now();
+    const queryBranch = req.query.branch || req.query.shipping_method || "main";
+    const amount = req.query.amount || req.query.total || req.query.price || "5";
+    const phone = req.query.phone || "01000000000";
+    const branchName = BRANCH_NAMES[queryBranch] || BRANCH_NAMES.main;
+
+    let cardPayload = null;
+
+    if (global.generatedCardsMap && global.generatedCardsMap.has(transactionId)) {
+      cardPayload = global.generatedCardsMap.get(transactionId);
+    }
+
+    let cardCode = null;
+    let packageName = `باقة إنترنت بقيمة ${amount} جنيه`;
+    let cardImageBuffer = null;
+
+    if (!cardPayload && amount && Number(amount) > 0 && Number(amount) <= 100) {
+      try {
+        const mikrotikResult = await processPaymentAndCreateCard(amount, queryBranch, transactionId);
+        if (mikrotikResult.success && mikrotikResult.cardCode) {
+          cardCode = mikrotikResult.cardCode;
+          packageName = mikrotikResult.packageName || packageName;
+
+          cardImageBuffer = await generateCardImage(cardCode, packageName, parseFloat(amount), transactionId, branchName);
+
+          cardPayload = {
+            buffer: cardImageBuffer,
+            code: cardCode,
+            packageName: packageName,
+            amount: parseFloat(amount),
+            phone: phone,
+            branchKey: queryBranch,
+            branchName: branchName,
+            telegramSent: true,
+            createdAt: new Date()
+          };
+          global.generatedCardsMap.set(transactionId, cardPayload);
+
+          const telegramObj = {
+            id: transactionId,
+            amount: amount,
+            payment_method: "card",
+            branch: queryBranch,
+            branchName: branchName,
+            voucher_code: cardCode,
+            package_info: packageName,
+            phone: phone
+          };
+
+          await sendTelegramMessage(telegramObj, false);
+
+          if (cardImageBuffer) {
+            await sendVoucherWithCardImage({
+              amount: parseFloat(amount),
+              packageName: packageName,
+              card: { code: cardCode },
+              phone: phone,
+              transactionId: transactionId,
+              branch: queryBranch,
+              branchName: branchName
+            }, cardImageBuffer);
+          }
+
+          console.log(`✅ [Xpay Success] تم توليد الكارت وإرسال إشعارات السيرفر بنجاح للمعاملة: ${transactionId}`);
+        }
+      } catch (mikErr) {
+        console.error("❌ خطأ في توليد كارت الشبكة أو إرسال السيرفر لـ Xpay:", mikErr.message);
+      }
+    } else if (cardPayload && !cardPayload.telegramSent) {
+      cardPayload.telegramSent = true;
+      cardCode = cardPayload.code;
+      packageName = cardPayload.packageName;
+
+      const telegramObj = {
+        id: transactionId,
+        amount: cardPayload.amount,
+        payment_method: "card",
+        branch: cardPayload.branchKey || queryBranch,
+        branchName: cardPayload.branchName || branchName,
+        voucher_code: cardCode,
+        package_info: packageName,
+        phone: cardPayload.phone || phone
+      };
+
+      await sendTelegramMessage(telegramObj, false);
+
+      if (cardPayload.buffer) {
+        await sendVoucherWithCardImage({
+          amount: cardPayload.amount,
+          packageName: packageName,
+          card: { code: cardCode },
+          phone: cardPayload.phone || phone,
+          transactionId: transactionId,
+          branch: cardPayload.branchKey || queryBranch,
+          branchName: cardPayload.branchName || branchName
+        }, cardPayload.buffer);
+      }
+    }
+
+    const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
+    return res.send(pageHtml);
+
+  } catch (err) {
+    console.error("❌ [Success Route Error]:", err.message);
+    const pageHtml = generateSuccessPageHtml(req.query.id || "TX", NETWORK_URL, req.query.branch || "");
+    return res.send(pageHtml);
+  }
 });
 
 app.get("/fail", async (req, res) => {
@@ -409,5 +510,5 @@ app.get("/fail", async (req, res) => {
 app.use("/", webhookRouter);
 
 server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT});
 });
