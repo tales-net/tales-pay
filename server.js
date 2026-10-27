@@ -14,9 +14,10 @@ const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
-const { generateSuccessPageHtml } = require('./successPage'); 
-const { generateFailPageHtml } = require('./failPage');      
+const { generateSuccessPageHtml } = require('./successPage');
+const { generateFailPageHtml } = require('./failPage');
 
+// استدعاء ملف الدعم المباشر (Chat Support)
 const chatSupport = require('./chat_support');
 
 const app = express();
@@ -30,10 +31,13 @@ const { BRANCH_NAMES } = require('./branches');
 
 global.generatedCardsMap = global.generatedCardsMap || new Map();
 
+// تهيئة Socket.io للدعم المباشر
 chatSupport.initSocket(io);
 
+// إعداد Multer لاستقبال الصور والملفات المرفوعة في الشات
 const upload = multer();
 
+// مسار الملف المؤقت لحفظ وقت الصيانة على السيرفر
 const maintenanceFile = path.join(__dirname, 'maintenance_status.json');
 
 function getMaintenanceEndTime() {
@@ -48,6 +52,7 @@ function getMaintenanceEndTime() {
   return 0;
 }
 
+// تنظيف دوري للذاكرة المؤقتة كل نصف ساعة
 setInterval(() => {
   const oneHourAgo = Date.now() - (60 * 60 * 1000);
   for (let [key, value] of global.generatedCardsMap.entries()) {
@@ -58,26 +63,39 @@ setInterval(() => {
 }, 30 * 60 * 1000);
 
 app.use(cors());
-app.use(express.json());
-app.use(bodyParser.json());
+
+// حفظ الـ rawBody للتحقق الدقيق من توقيع XPay Webhook (whsec_...)
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf.toString("utf8");
+  }
+}));
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// ==========================================
+// 🛡️ Middleware للتحكم التلقائي بالموقع والصيانة للجميع
+// ==========================================
 app.use((req, res, next) => {
   const currentTime = Date.now();
   const maintenanceEndTime = getMaintenanceEndTime();
   const isMaintenanceActive = maintenanceEndTime > currentTime;
 
+  // 1. استثناءات لكي لا يحدث تعارض (بما في ذلك مسارات الـ Webhooks)
   if (
     req.path === "/dev-panel-lock" ||
+    req.path === "/paymob-webhook" ||
+    req.path === "/xpay-webhook" ||
+    req.path === "/telegram-webhook" ||
     req.path === "/api/maintenance/status" ||
     req.path === "/api/maintenance/set" ||
     req.path === "/api/maintenance/verify" ||
     req.path.startsWith("/api/") ||
-    req.path.includes(".") // ملفات CSS, JS, صور
+    req.path.includes(".")
   ) {
     return next();
   }
 
+  // 2. إذا انتهى الوقت، نقوم بمسح الملف تلقائياً ليعمل الموقع بشكل طبيعي
   if (maintenanceEndTime > 0 && currentTime >= maintenanceEndTime) {
     try {
       if (fs.existsSync(maintenanceFile)) {
@@ -87,6 +105,7 @@ app.use((req, res, next) => {
     return next();
   }
 
+  // 3. إذا كانت الصيانة مفعلة، قم بعرض صفحة الصيانة مباشرة لأي زائر
   if (isMaintenanceActive) {
     return res.sendFile(path.join(__dirname, "public", "maintenance.html"));
   }
@@ -96,6 +115,9 @@ app.use((req, res, next) => {
 
 app.use(express.static(path.join(__dirname, "public")));
 
+// ==========================================
+// 🛠️ نظام عرض صفحة الصيانة ومسارات التحكم الآمنة
+// ==========================================
 app.get("/dev-panel-lock", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "maintenance.html"));
 });
@@ -152,6 +174,9 @@ function getClientPublicIP(req) {
   );
 }
 
+// ==========================================
+// 💬 مسارات الدعم الفني المباشر (Chat Support API)
+// ==========================================
 app.post('/api/support/message', upload.single('image'), (req, res) => {
   chatSupport.handleClientMessage(req, res, chatSupport.sendSupportChatMessage);
 });
@@ -162,6 +187,9 @@ app.get('/api/support/messages/:clientId', (req, res) => {
   res.json({ success: true, messages });
 });
 
+// ==========================================
+// 🤖 مسار تليجرام الموحد (Webhook للرسائل وأزرار التفاعل)
+// ==========================================
 app.post('/telegram-webhook', async (req, res) => {
   try {
     const update = req.body;
@@ -194,6 +222,9 @@ app.post('/telegram-webhook', async (req, res) => {
   }
 });
 
+// ==========================================
+// 💳 مسارات المدفوعات وباقي الخدمة
+// ==========================================
 async function handlePaymentRequest(req, res) {
   try {
     const data = { ...req.query, ...req.body };
@@ -209,10 +240,10 @@ async function handlePaymentRequest(req, res) {
       return res.redirect("/");
     }
 
-    const selectedMethod = payment_method || method || "waitPage";
+    const selectedMethod = payment_method || method || "wallet";
     const rawBranch = branch || branch_key || "branch2";
     const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "branch2";
-    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.waitPage;
+    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.main;
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
@@ -251,7 +282,8 @@ async function handlePaymentRequest(req, res) {
       await sendTelegramMessage(paymentPayload, true);
     }
 
-    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
+    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch, req, res);
+    if (!result) return; // في حال تم إرسال رد مباشر من دالة التحقق
 
     if (result.type === "redirect") {
       if (req.method === "POST" && req.headers["content-type"]?.includes("application/json")) {
@@ -308,14 +340,14 @@ app.get("/api/test-create-card", async (req, res) => {
 
       return res.json({
         success: true,
-        message: `✅ تم إضافة الكارت إلى السيرفر بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
+        message: `✅ تم إضافة الكارت إلى الميكروتيك بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
         data: result,
         successPageLink: `/success?merchant_order_id=${testTxId}&branch=${result.branchKey}`
       });
     } else {
       return res.json({
         success: false,
-        message: "⚠️ فشل توليد الكارت من السيرفر",
+        message: "⚠️ فشل توليد الكارت من الميكروتيك",
         details: result
       });
     }
@@ -359,19 +391,11 @@ app.get("/api/check-voucher/:txId", (req, res) => {
 
 app.post("/api/disable-queue", async (req, res) => {
   try {
-    // استخراج اسم المستخدم والفرع والدومين من الطلب
-    const { username, branch, branch_key, domain } = req.body;
-
-    const targetBranch = branch || branch_key || "main";
-
-    console.log(`📡 [API] طلب تفعيل سرعة للمستخدم: ${username} | الفرع المستلم: ${targetBranch}`);
-
+    const { username } = req.body;
     if (typeof disableUserQueue === "function") {
-      // تمرير الفرع والدومين لدالة الميكروتك
-      const result = await disableUserQueue(username, targetBranch, domain);
+      const result = await disableUserQueue(username);
       return res.json(result);
     }
-
     return res.json({ success: true, message: "تم استقبال الطلب" });
   } catch (err) {
     console.error("❌ خطأ في تعطيل الـ Queue:", err.message);
@@ -379,14 +403,16 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
+// استدعاء واجهة النجاح المنفصلة وتمرير البيانات والفروع بذكاء
 app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
+  const transactionId = req.query.id || req.query.session_id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
   const queryBranch = req.query.branch || "";
   
   const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
   return res.send(pageHtml);
 });
 
+// استعراض واجهة الفشل وإرسال إشعار لتليجرام
 app.get("/fail", async (req, res) => {
   const errorMessage = req.query.data_message || req.query.error || "حدثت مشكلة أثناء عملية الدفع، حاول مرة أخرى.";
   
