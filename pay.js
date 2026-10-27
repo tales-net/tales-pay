@@ -92,11 +92,13 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
 async function createXPayPayment(phone, amount, branch = '', branchDisplayName = 'حكايات نت رئيسي') {
   try {
     const apiKey = process.env.XPAY_API_KEY;
+    const secretKey = process.env.XPAY_SECRET_KEY;
+
     if (!apiKey) {
       throw new Error("Missing XPAY_API_KEY in environment variables");
     }
 
-    // تجهيز البيانات بالصيغة القياسية لطلبات الدفع المتغيرة في XPay
+    // تجهيز الحمولة (Payload) بالبيانات المطلوبة لإنشاء معاملة دفع متغيرة المبلغ
     const payload = {
       amount: parseFloat(amount),
       currency: "EGP",
@@ -111,7 +113,7 @@ async function createXPayPayment(phone, amount, branch = '', branchDisplayName =
       }
     };
 
-    // استخدام الرابط القياسي المعتمد لإنشاء طلب دفع فوري
+    // استدعاء الـ API الخاص بـ XPay باستخدام مفتاح المصادقة
     const response = await axios.post("https://community.xpay.app/api/v1/payments/pay/variable-amount", payload, {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -119,19 +121,18 @@ async function createXPayPayment(phone, amount, branch = '', branchDisplayName =
       }
     });
 
-    // استخراج رابط الدفع بجميع الاحتمالات الممكنة في استجابة XPay
+    // استخراج رابط الدفع من الاستجابة بجميع الاحتمالات
     const redirectUrl = response.data.data?.iframe_url || 
                         response.data.data?.payment_url || 
                         response.data.payment_url || 
                         response.data.data?.url;
-                        
+
     if (!redirectUrl) {
-      throw new Error("لم يتم استرجاع رابط الدفع من XPay");
+      throw new Error("لم يتم استرجاع رابط الدفع من استجابة XPay");
     }
 
     return { type: 'redirect', url: redirectUrl };
   } catch (err) {
-    // طباعة تفاصيل الخطأ بدقة في السجلات لمعرفة السبب إن وجدت استجابة من XPay
     console.error('❌ XPay API Error Response:', JSON.stringify(err.response?.data || err.message, null, 2));
     throw new Error(`XPay payment failed: ${err.response?.data?.status?.message || err.message}`);
   }
