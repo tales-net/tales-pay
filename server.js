@@ -290,81 +290,69 @@ app.get("/api/check-voucher/:txId", async (req, res) => {
     return res.json({ success: false, message: "رقم المعاملة غير صالح" });
   }
 
-  if (global.generatedCardsMap) {
-    if (global.generatedCardsMap.has(txId)) {
-      return res.json({ success: true, data: global.generatedCardsMap.get(txId) });
-    }
-    
-    for (let [key, value] of global.generatedCardsMap.entries()) {
-      if (String(key).includes(txId) || txId.includes(String(key))) {
-        return res.json({ success: true, data: value });
-      }
-    }
+  // 1. إذا كان الكارت موجوداً مسبقاً في الذاكرة المؤقتة
+  if (global.generatedCardsMap && global.generatedCardsMap.has(txId)) {
+    return res.json({ success: true, data: global.generatedCardsMap.get(txId) });
   }
 
-  // إذا لم يتم العثور عليه في الذاكرة، محاولة الاستعلام والتحقق من جلسة Xpay تلقائياً للأمان
-  if (txId.startsWith("cs_") || txId.includes("X_") || txId.length > 20) {
-    try {
-      const xpayRes = await axios.get(`https://api.xpay.app/checkout/sessions/${txId}`, {
-        headers: { "Authorization": `Bearer ${process.env.XPAY_SECRET_KEY}` }
-      });
-      const sessionData = xpayRes.data;
-      const isPaid = sessionData.status?.type === "complete" || sessionData.paymentStatus === "paid" || sessionData.status === "paid";
-      
-      if (isPaid) {
-        const amountCents = sessionData.amountTotal || sessionData.lineItems?.[0]?.priceData?.unitAmount || 500;
-        const amount = parseFloat((amountCents / 100).toFixed(2));
-        const verifiedBranch = sessionData.metadata?.branch || "main";
-        const verifiedBranchName = BRANCH_NAMES[verifiedBranch] || BRANCH_NAMES.main;
-        const customerPhone = sessionData.metadata?.phone || "01000000000";
+  // 2. إذا لم يكن مولداً بعد، نقوم بتوليده فوراً من الميكروتيك وإرسال التيليجرام للفيزا تماماً مثل المحافظ!
+  try {
+    const queryBranch = req.query.branch || "main";
+    const amount = req.query.amount || "5";
+    const phone = req.query.phone || "01000000000";
+    const branchName = BRANCH_NAMES[queryBranch] || BRANCH_NAMES.main;
 
-        const mikrotikResult = await processPaymentAndCreateCard(amount, verifiedBranch, txId);
-        if (mikrotikResult.success && mikrotikResult.cardCode) {
-          const cardCode = mikrotikResult.cardCode;
-          const packageName = mikrotikResult.packageName || `باقة إنترنت بقيمة ${amount} جنيه`;
-          const cardImageBuffer = await generateCardImage(cardCode, packageName, amount, txId, verifiedBranchName);
+    const mikrotikResult = await processPaymentAndCreateCard(amount, queryBranch, txId);
+    if (mikrotikResult.success && mikrotikResult.cardCode) {
+      const cardCode = mikrotikResult.cardCode;
+      const packageName = mikrotikResult.packageName || `باقة إنترنت بقيمة ${amount} جنيه`;
 
-          const cardPayload = {
-            buffer: cardImageBuffer,
-            code: cardCode,
-            packageName: packageName,
-            amount: amount,
-            phone: customerPhone,
-            branchKey: verifiedBranch,
-            branchName: verifiedBranchName,
-            telegramSent: true,
-            createdAt: new Date()
-          };
+      // توليد صورة الكارت الاحترافية
+      const cardImageBuffer = await generateCardImage(cardCode, packageName, parseFloat(amount), txId, branchName);
 
-          global.generatedCardsMap.set(txId, cardPayload);
+      const cardPayload = {
+        buffer: cardImageBuffer,
+        code: cardCode,
+        packageName: packageName,
+        amount: parseFloat(amount),
+        phone: phone,
+        branchKey: queryBranch,
+        branchName: branchName,
+        createdAt: new Date()
+      };
 
-          await sendTelegramMessage({
-            id: txId,
-            amount: amount,
-            payment_method: "card",
-            branch: verifiedBranch,
-            branchName: verifiedBranchName,
-            voucher_code: cardCode,
-            package_info: packageName,
-            phone: customerPhone
-          }, false);
+      global.generatedCardsMap.set(txId, cardPayload);
 
-          if (cardImageBuffer) {
-            await sendVoucherWithCardImage({
-              amount: amount,
-              packageName: packageName,
-              card: { code: cardCode },
-              phone: customerPhone,
-              transactionId: txId,
-              branch: verifiedBranch,
-              branchName: verifiedBranchName
-            }, cardImageBuffer);
-          }
+      // 🚀 إرسال إشعار النجاح النصي "تمت عملية الدفع وتوليد الكارت بنجاح!" إلى التليجرام
+      await sendTelegramMessage({
+        id: txId,
+        amount: amount,
+        payment_method: "card",
+        branch: queryBranch,
+        branchName: branchName,
+        voucher_code: cardCode,
+        package_info: packageName,
+        phone: phone
+      }, false);
 
-          return res.json({ success: true, data: cardPayload });
-        }
+      // 📸 إرسال صورة الكارت الاحترافية إلى التليجرام
+      if (cardImageBuffer) {
+        await sendVoucherWithCardImage({
+          amount: parseFloat(amount),
+          packageName: packageName,
+          card: { code: cardCode },
+          phone: phone,
+          transactionId: txId,
+          branch: queryBranch,
+          branchName: branchName
+        }, cardImageBuffer);
       }
-    } catch (e) {}
+
+      console.log(`✅ [Card & Telegram Success] تم إصدار الكارت وإرسال الإشعارات للتليجرام بنجاح للمعاملة: ${txId}`);
+      return res.json({ success: true, data: cardPayload });
+    }
+  } catch (err) {
+    console.error("❌ خطأ في إصدار الكارت التلقائي عبر check-voucher:", err.message);
   }
 
   return res.json({ 
@@ -390,7 +378,6 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-// 🔒 مسار صفحة النجاح الآمن والذي يعتمد على صفحة الانتظار والتحقق التلقائي
 app.get("/success", (req, res) => {
   const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || req.query.session_id || "TX_" + Date.now();
   const queryBranch = req.query.branch || req.query.shipping_method || "";
