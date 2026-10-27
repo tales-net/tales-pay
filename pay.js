@@ -101,9 +101,10 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
 /**
  * 4. معالجة الدفع عبر Xpay Checkout Sessions للبطاقات البنكية (Visa / Mastercard)
  */
-async function createXpayPayment(phone, amount, branchKey, branchDisplayName) {
+async function createXpayPayment(phone, amount, branchKey, branchDisplayName, transactionId) {
   try {
-    console.log(`💳 [Xpay] إنشاء جلسة دفع بطاقة بنكية | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ: ${amount}ج`);
+    const txnId = transactionId || `TX_${Date.now()}`;
+    console.log(`💳 [Xpay] إنشاء جلسة دفع بطاقة بنكية | المعاملة: ${txnId} | الفرع: ${branchDisplayName} (${branchKey}) | المبلغ: ${amount}ج`);
 
     const amountPiasters = Math.round(parseFloat(amount) * 100);
 
@@ -123,10 +124,11 @@ async function createXpayPayment(phone, amount, branchKey, branchDisplayName) {
       afterCompletion: {
         type: "redirect",
         redirect: {
-          url: `https://tales-pay.onrender.com/success?branch=${branchKey}&amount=${amount}`
+          url: `https://tales-pay.onrender.com/success?id=${txnId}&branch=${branchKey}&amount=${amount}`
         }
       },
       metadata: {
+        transaction_id: txnId,
         branch: branchKey,
         branch_name: branchDisplayName,
         phone: phone || "01000000000"
@@ -146,7 +148,7 @@ async function createXpayPayment(phone, amount, branchKey, branchDisplayName) {
       throw new Error("لم يتم استرجاع رابط الدفع من Xpay");
     }
 
-    return { type: 'redirect', url: redirectUrl };
+    return { type: 'redirect', url: redirectUrl, transactionId: txnId };
   } catch (err) {
     console.error('❌ Xpay Payment Error Details:', err.response?.data || err.message);
     throw new Error(`Xpay payment processing failed: ${err.response?.data?.message || err.message}`);
@@ -181,10 +183,11 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
 
     const selectedBranch = rawBranch;
     const branchDisplayName = BRANCH_NAMES[selectedBranch];
+    const transactionId = "TX_" + Date.now();
 
     // توجيه البطاقات البنكية (Card) إلى بوابة Xpay الحديثة
     if (cleanMethod === 'card') {
-      return await createXpayPayment(phone, amount, selectedBranch, branchDisplayName);
+      return await createXpayPayment(phone, amount, selectedBranch, branchDisplayName, transactionId);
     }
 
     // المعاملات الأخرى (Wallet / Valu) تبقى عبر Paymob
