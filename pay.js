@@ -96,18 +96,22 @@ async function createXPayPayment(phone, amount, branch = '', branchDisplayName =
       throw new Error("Missing XPAY_API_KEY in environment variables");
     }
 
-    // استخدام الرابط الرسمي الصحيح لبيئة XPay الحية (Live)
-    const response = await axios.post("https://community.xpay.app/api/v1/payments/pay/variable-amount", {
+    // تجهيز البيانات بالصيغة القياسية المقبولة لدى XPay
+    const payload = {
       amount: parseFloat(amount),
       currency: "EGP",
-      phone: phone || "01000000000",
+      email: "customer@tales-net.com",
+      first_name: "Tales",
+      last_name: "Customer",
+      phone_number: String(phone || "01000000000").replace(/\D/g, ""),
+      shipping_method: branch,
       merchant_extra: {
         branch: branch,
         branch_name: branchDisplayName
-      },
-      redirect_url: `https://tales-pay.onrender.com/success?branch=${branch}&amount=${amount}`,
-      webhook_url: "https://tales-pay.onrender.com/xpay-webhook"
-    }, {
+      }
+    };
+
+    const response = await axios.post("https://community.xpay.app/api/v1/payments/pay/variable-amount", payload, {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
@@ -121,7 +125,7 @@ async function createXPayPayment(phone, amount, branch = '', branchDisplayName =
 
     return { type: 'redirect', url: redirectUrl };
   } catch (err) {
-    console.error('❌ XPay Payment Error:', err.response?.data || err.message);
+    console.error('❌ XPay Payment Error Details:', JSON.stringify(err.response?.data || err.message, null, 2));
     throw new Error(`XPay payment failed: ${err.message}`);
   }
 }
