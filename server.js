@@ -14,8 +14,8 @@ const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
-const { generateSuccessPageHtml } = require('./successPage');
-const { generateFailPageHtml } = require('./failPage');
+const { generateSuccessPageHtml } = require('./successPage'); 
+const { generateFailPageHtml } = require('./failPage');      
 
 const chatSupport = require('./chat_support');
 
@@ -33,6 +33,7 @@ global.generatedCardsMap = global.generatedCardsMap || new Map();
 chatSupport.initSocket(io);
 
 const upload = multer();
+
 const maintenanceFile = path.join(__dirname, 'maintenance_status.json');
 
 function getMaintenanceEndTime() {
@@ -57,13 +58,8 @@ setInterval(() => {
 }, 30 * 60 * 1000);
 
 app.use(cors());
-
-// حفظ الـ rawBody للتحقق من توقيع XPay Webhook
-app.use(express.json({
-  verify: (req, res, buf) => {
-    req.rawBody = buf.toString("utf8");
-  }
-}));
+app.use(express.json());
+app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 app.use((req, res, next) => {
@@ -73,14 +69,11 @@ app.use((req, res, next) => {
 
   if (
     req.path === "/dev-panel-lock" ||
-    req.path === "/paymob-webhook" ||
-    req.path === "/xpay-webhook" ||
-    req.path === "/telegram-webhook" ||
     req.path === "/api/maintenance/status" ||
     req.path === "/api/maintenance/set" ||
     req.path === "/api/maintenance/verify" ||
     req.path.startsWith("/api/") ||
-    req.path.includes(".")
+    req.path.includes(".") // ملفات CSS, JS, صور
   ) {
     return next();
   }
@@ -216,10 +209,10 @@ async function handlePaymentRequest(req, res) {
       return res.redirect("/");
     }
 
-    const selectedMethod = payment_method || method || "wallet";
+    const selectedMethod = payment_method || method || "waitPage";
     const rawBranch = branch || branch_key || "branch2";
     const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "branch2";
-    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.main;
+    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.waitPage;
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
@@ -258,8 +251,7 @@ async function handlePaymentRequest(req, res) {
       await sendTelegramMessage(paymentPayload, true);
     }
 
-    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch, req, res);
-    if (!result) return;
+    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
 
     if (result.type === "redirect") {
       if (req.method === "POST" && req.headers["content-type"]?.includes("application/json")) {
@@ -316,14 +308,14 @@ app.get("/api/test-create-card", async (req, res) => {
 
       return res.json({
         success: true,
-        message: `✅ تم إضافة الكارت إلى الميكروتيك بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
+        message: `✅ تم إضافة الكارت إلى السيرفر بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
         data: result,
         successPageLink: `/success?merchant_order_id=${testTxId}&branch=${result.branchKey}`
       });
     } else {
       return res.json({
         success: false,
-        message: "⚠️ فشل توليد الكارت من الميكروتيك",
+        message: "⚠️ فشل توليد الكارت من السيرفر",
         details: result
       });
     }
@@ -367,11 +359,19 @@ app.get("/api/check-voucher/:txId", (req, res) => {
 
 app.post("/api/disable-queue", async (req, res) => {
   try {
-    const { username } = req.body;
+    // استخراج اسم المستخدم والفرع والدومين من الطلب
+    const { username, branch, branch_key, domain } = req.body;
+
+    const targetBranch = branch || branch_key || "main";
+
+    console.log(`📡 [API] طلب تفعيل سرعة للمستخدم: ${username} | الفرع المستلم: ${targetBranch}`);
+
     if (typeof disableUserQueue === "function") {
-      const result = await disableUserQueue(username);
+      // تمرير الفرع والدومين لدالة الميكروتك
+      const result = await disableUserQueue(username, targetBranch, domain);
       return res.json(result);
     }
+
     return res.json({ success: true, message: "تم استقبال الطلب" });
   } catch (err) {
     console.error("❌ خطأ في تعطيل الـ Queue:", err.message);
@@ -380,7 +380,7 @@ app.post("/api/disable-queue", async (req, res) => {
 });
 
 app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.session_id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
+  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
   const queryBranch = req.query.branch || "";
   
   const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
