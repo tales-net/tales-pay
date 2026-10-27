@@ -31,7 +31,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
           .ticket-brand { font-size: 12px; background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 4px; }
           .code-box { background: #ffffff; color: #01338D; text-align: center; padding: 12px; border-radius: 8px; margin: 15px 0; font-family: monospace; font-size: 24px; font-weight: bold; letter-spacing: 2px; min-height: 50px; display: flex; align-items: center; justify-content: center; }
           .info-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: #e0e0e0; }
-          .info-row strong { color: #ffffff; }
+          .info-row strong { color: #ffffff; word-break: break-all; }
           .btn-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px; }
           .btn { flex: 1; min-width: 140px; padding: 12px; border: none; border-radius: 8px; font-weight: bold; font-size: 14px; cursor: pointer; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; }
           .btn-print { background: #27ae60; color: white; }
@@ -60,7 +60,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
             </div>
             <div class="info-row">
               <span>رقم العملية:</span>
-              <strong>${transactionId || "غير محدد"}</strong>
+              <strong id="txIdDisplay">${transactionId || "غير محدد"}</strong>
             </div>
             <div class="info-row">
               <span>حالة الدفع:</span>
@@ -75,7 +75,18 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
         </div>
         <script>
           const urlParams = new URLSearchParams(window.location.search);
-          const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
+          const txId = urlParams.get('id') || 
+                       urlParams.get('order') || 
+                       urlParams.get('transaction_id') || 
+                       urlParams.get('merchant_order_id') || 
+                       urlParams.get('payment_intent') || 
+                       urlParams.get('pi') || 
+                       "${transactionId}";
+
+          if (txId && txId !== "غير محدد") {
+            document.getElementById('txIdDisplay').innerText = txId;
+          }
+
           let attempts = 0;
           const maxAttempts = 90; 
 
@@ -108,7 +119,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
               if (attempts < maxAttempts) {
                 setTimeout(pollVoucher, 2000); 
               } else {
-                const errorMsg = encodeURIComponent("⚠️ أنتهت مهلة الانتظار ولم يتم الدفع بنجاح. تواصل مع الدعم أذا تم الدفع برقم المعاملة: " + txId);
+                const errorMsg = encodeURIComponent("⚠️ أنتهت مهلة الانتظار ولم يتم إصدار الكارت آلياً. تواصل مع الدعم الفني برقم المعاملة: " + txId);
                 window.location.href = '/fail?error=' + errorMsg;
               }
             } catch (e) {
