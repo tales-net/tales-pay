@@ -1,10 +1,11 @@
 const axios = require('axios');
 const path = require('path');
 const { getCheckoutPage } = require('./checkout');
-
 const { BRANCH_NAMES } = require("./branches");
 
-
+/**
+ * 1. المصادقة والحصول على Authentication Token من Paymob (للمحافظ وفاليو)
+ */
 async function getAuthToken() {
   try {
     const response = await axios.post("https://accept.paymob.com/api/auth/tokens", {
@@ -17,7 +18,9 @@ async function getAuthToken() {
   }
 }
 
-
+/**
+ * 2. إنشاء طلب دفع (Order Registration) في Paymob مع ربط بيانات الفرع
+ */
 async function createOrder(authToken, amountCents, branchData = {}) {
   try {
     const branchKey = branchData.branch || 'main';
@@ -44,7 +47,9 @@ async function createOrder(authToken, amountCents, branchData = {}) {
   }
 }
 
-
+/**
+ * 3. توليد مفتاح الدفع (Payment Key Request) في Paymob مع تضمين الفرع
+ */
 async function getPaymentKey(authToken, orderId, amountCents, integrationId, phone = "01000000000", branchData = {}) {
   try {
     let sanitizedPhone = String(phone).replace(/\D/g, "");
@@ -92,6 +97,121 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
   }
 }
 
+/**
+ * 4. 💳 إنشاء جلسة دفع البطاقة البنكية (Visa / Mastercard) عبر XPay
+ */
+async function createXpayCardPayment(amount, phone = "01000000000", branchData = {}) {
+  try {
+    const apiKey = process.env.XPAY_API_KEY;
+    if (!apiKey) {
+      throw new Error("مفتاح XPAY_API_KEY غير موجود في متغيرات البيئة (Environment Variables)");
+    }
+
+    let sanitizedPhone = String(phone).replace(/\D/g, "");
+    if (!sanitizedPhone || sanitizedPhone.length < 11) {
+      sanitizedPhone = "01000000000";
+    }
+    const formattedPhone = sanitizedPhone.startsWith("+") ? sanitizedPhone : `+2${sanitizedPhone}`;
+
+    const branchKey = branchData.branch || 'main';
+    const branchName = branchData.branch_name || 'حكايات نت رئيسي';
+    const numAmount = parseFloat(amount);
+    const amountCents = Math.round(numAmount * 100);
+    const baseUrl = process.env.NETWORK_HOTSPOT_URL || "https://tales-pay.onrender.com";
+    const customOrderId = `XPAY_${branchKey.toUpperCase()}_${Date.now()}`;
+
+    // المحاولة الأولى: استخدام نظام Checkout Sessions الحديث لـ XPay (الذي يتوافق مع الـ Webhook الخاص بك)
+    try {
+      const sessionPayload = {
+        success_url: `${baseUrl}/success?id={CHECKOUT_SESSION_ID}&branch=${branchKey}`,
+        cancel_url: `${baseUrl}/fail?branch=${branchKey}&amount=${numAmount}&phone=${sanitizedPhone}`,
+        currency: "EGP",
+        payment_method_types: ["card"],
+        customer_email: "customer@tales-net.com",
+        customer_phone: formattedPhone,
+        metadata: {
+          branch: branchKey,
+          branch_name: branchName,
+          phone: sanitizedPhone,
+          amount: String(numAmount),
+          custom_order_id: customOrderId
+        },
+        line_items: [
+          {
+            price_data: {
+              currency: "EGP",
+              product_data: {
+                name: `باقة إنترنت - ${branchName}`
+              },
+              unit_amount: amountCents
+            },
+            quantity: 1
+          }
+        ]
+      };
+
+      const res = await axios.post("https://app.xpay.app/api/v1/checkout/sessions", sessionPayload, {
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "x-api-key": apiKey,
+          "Content-Type": "application/json"
+        }
+      });
+
+      const redirectUrl = res.data?.url || res.data?.data?.url || res.data?.checkout_url;
+      if (redirectUrl) {
+        console.log(`✅ [XPay Checkout Session] تم إنشاء رابط الدفع بنجاح للفرع (${branchKey})`);
+        return { type: 'redirect', url: redirectUrl };
+      }
+    } catch (sessionErr) {
+      // في حال كان الحساب يستخدم نظام XPay Community API التقليدي
+      const communityId = process.env.XPAY_COMMUNITY_ID;
+      if (!communityId) {
+        throw sessionErr;
+      }
+
+      console.log("🔄 جاري استخدام XPay Community API البديل...");
+      const legacyPayload = {
+        community_id: communityId,
+        amount: numAmount,
+        currency: "EGP",
+        selected_payment_method: "card",
+        user: {
+          name: "Tales Customer",
+          email: "customer@tales-net.com",
+          mobile: formattedPhone
+        },
+        custom_fields: [
+          { field_label: "branch", field_value: branchKey },
+          { field_label: "branch_name", field_value: branchName },
+          { field_label: "phone", field_value: sanitizedPhone }
+        ]
+      };
+
+      const legacyRes = await axios.post("https://community.xpay.app/api/v1/payments/pay/variable-amount", legacyPayload, {
+        headers: {
+          "x-api-key": apiKey,
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        }
+      });
+
+      const legacyUrl = legacyRes.data?.data?.iframe_url || legacyRes.data?.data?.payment_url || legacyRes.data?.iframe_url;
+      if (legacyUrl) {
+        return { type: 'redirect', url: legacyUrl };
+      }
+    }
+
+    throw new Error("لم يتم استرجاع رابط إعادة التوجيه للدفع من XPay");
+  } catch (err) {
+    console.error("❌ XPay Card Payment Error Details:", JSON.stringify(err.response?.data || err.message, null, 2));
+    throw new Error(`فشل إنشاء معاملة البطاقة عبر XPay: ${err.response?.data?.message || err.message}`);
+  }
+}
+
+/**
+ * 5. الدالة الرئيسية لمعالجة الدفع وتوجيه البوابات (Card -> XPay | Wallet & Valu -> Paymob)
+ */
 async function createPaymobPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
   try {
     const amountCents = Math.round(parseFloat(amount) * 100).toString();
@@ -103,6 +223,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       rawBranch = String(req.body?.branch || req.query?.branch || '').toLowerCase().trim();
     }
 
+    // التحقق الصارم من الفرع
     if (!rawBranch || !BRANCH_NAMES[rawBranch]) {
       console.warn(`⚠️ [Pay.js] رفض معاملة لدفع بفرع غير صالح أو مفقود: [${rawBranch}]`);
       
@@ -121,13 +242,23 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
 
     console.log(`💳 [Pay.js] إنشاء معاملة مؤكدة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amount} | الوسيلة: ${cleanMethod}`);
 
+    // ====================================================
+    // 🚀 مسار البطاقة البنكية (الفيزا / الماستركارد) -> XPay
+    // ====================================================
+    if (cleanMethod === 'card') {
+      return await createXpayCardPayment(amount, phone, {
+        branch: selectedBranch,
+        branch_name: branchDisplayName
+      });
+    }
+
+    // ====================================================
+    // 📱 مسار المحفظة الإلكترونية وفاليو -> Paymob
+    // ====================================================
     let integrationId;
     switch (cleanMethod) {
-      case 'card':
-        integrationId = process.env.CARD_INTEGRATION_ID;
-        break;
       case 'valu':
-        integrationId = process.env.VALU_INTEGRATION_ID; // Integration ID الخاص بفاليو
+        integrationId = process.env.VALU_INTEGRATION_ID;
         break;
       case 'wallet':
       default:
@@ -136,7 +267,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     }
 
     if (!integrationId) {
-      throw new Error(`Missing Integration ID for method: ${cleanMethod}`);
+      throw new Error(`Missing Paymob Integration ID for method: ${cleanMethod}`);
     }
 
     const token = await getAuthToken();
@@ -155,6 +286,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       { branch: selectedBranch, branchName: branchDisplayName }
     );
 
+    // معالجة المحافظ الإلكترونية عبر Paymob
     if (cleanMethod === 'wallet') {
       const walletRes = await axios.post('https://accept.paymob.com/api/acceptance/payments/pay', {
         source: {
@@ -170,25 +302,12 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       }
       return { type: 'redirect', url: redirectUrl };
     } 
+    // معالجة Valu عبر Paymob
     else if (cleanMethod === 'valu') {
-      // فاليو يعتمد غالباً على iframe المخصص أو إعادة التوجيه تماماً مثل البطاقات والـ iframes
       const iframeId = process.env.VALU_IFRAME_ID || process.env.PAYMOB_IFRAME_ID;
       
-      if (typeof getCheckoutPage === 'function') {
-        const htmlPage = getCheckoutPage(paymentKey, iframeId);
-        return { type: 'html', content: htmlPage };
-      }
-      
-      const iframeUrl = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymentKey}`;
-      return { type: 'redirect', url: iframeUrl };
-    } 
-    else {
-      const iframeId = cleanMethod === 'card' 
-        ? (process.env.CARD_IFRAME_ID || process.env.PAYMOB_IFRAME_ID) 
-        : process.env.PAYMOB_IFRAME_ID;
-
       if (!iframeId) {
-        throw new Error("Missing PAYMOB_IFRAME_ID in environment variables");
+        throw new Error("Missing VALU_IFRAME_ID or PAYMOB_IFRAME_ID in environment variables");
       }
 
       if (typeof getCheckoutPage === 'function') {
@@ -201,7 +320,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     }
 
   } catch (err) {
-    console.error('❌ Paymob Payment Error:', err.response?.data || err.message);
+    console.error('❌ Payment Error:', err.response?.data || err.message);
     throw new Error(`Payment processing failed: ${err.message}`);
   }
 }
@@ -209,6 +328,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
 module.exports = { 
   createPaymobPayment, 
   processPayment: createPaymobPayment,
+  createXpayCardPayment,
   getAuthToken,
   createOrder,
   getPaymentKey,
