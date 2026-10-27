@@ -15,7 +15,7 @@ const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateSuccessPageHtml } = require('./successPage'); 
-const { generateFailPageHtml } = require('./failPage');      
+const { generateFailPageHtml } = require('./failPage');       
 
 const chatSupport = require('./chat_support');
 
@@ -209,13 +209,14 @@ async function handlePaymentRequest(req, res) {
       return res.redirect("/");
     }
 
-    const selectedMethod = payment_method || method || "wallet";
-    const rawBranch = branch || branch_key || "main";
-    const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "main";
-    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.main;
+    const selectedMethod = payment_method || method || "waitPage";
+    const rawBranch = branch || branch_key || "branch2";
+    const selectedBranch = BRANCH_NAMES[rawBranch] ? rawBranch : "branch2";
+    const branchDisplayName = BRANCH_NAMES[selectedBranch] || BRANCH_NAMES.waitPage;
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
+    const transactionId = "TX_" + Date.now();
 
     const paymentPayload = {
       phone: userPhone,
@@ -250,9 +251,7 @@ async function handlePaymentRequest(req, res) {
       await sendTelegramMessage(paymentPayload, true);
     }
 
-    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch, req, res);
-
-    if (!result) return;
+    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
 
     if (result.type === "redirect") {
       if (req.method === "POST" && req.headers["content-type"]?.includes("application/json")) {
@@ -261,6 +260,8 @@ async function handlePaymentRequest(req, res) {
       return res.redirect(result.url);
     } else if (result.type === "html") {
       return res.send(result.content);
+    } else {
+      return res.redirect(`/success?id=${transactionId}&branch=${selectedBranch}`);
     }
   } catch (err) {
     console.error("❌ خطأ في معالجة طلب الدفع:", err.response?.data || err.message);
@@ -273,6 +274,56 @@ async function handlePaymentRequest(req, res) {
 
 app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
+
+app.get("/api/test-create-card", async (req, res) => {
+  const secretKey = req.query.secret;
+  
+  if (!secretKey || secretKey !== process.env.TEST_SECRET_KEY) {
+    return res.status(403).json({ 
+      success: false, 
+      message: "⚠️ غير مسموح لك بالوصول لهذا الرابط التجريبي. مفتاح الحماية غير صحيح أو مفقود." 
+    });
+  }
+
+  try {
+    const amount = req.query.amount || "5";
+    const rawTarget = req.query.branch || req.query.branch_key || "branch2";
+    const targetBranch = BRANCH_NAMES[rawTarget] ? rawTarget : "branch2";
+    const testTxId = "TEST_" + Date.now();
+
+    const result = await processPaymentAndCreateCard(amount, targetBranch, testTxId);
+
+    if (result.success && !result.isCustomAmount) {
+      const cardPayload = {
+        code: result.cardCode,
+        packageName: result.packageName,
+        amount: parseFloat(amount),
+        phone: "01000000000",
+        branchKey: result.branchKey,
+        branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.branch2,
+        createdAt: new Date()
+      };
+
+      global.generatedCardsMap.set(testTxId, cardPayload);
+
+      return res.json({
+        success: true,
+        message: `✅ تم إضافة الكارت إلى السيرفر بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
+        data: result,
+        successPageLink: `/success?merchant_order_id=${testTxId}&branch=${result.branchKey}`
+      });
+    } else {
+      return res.json({
+        success: false,
+        message: "⚠️ فشل توليد الكارت من السيرفر",
+        details: result
+      });
+    }
+  } catch (error) {
+    console.error("❌ [TEST ERROR]:", error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 app.get("/contribution-success", (req, res) => {
   const amount = req.query.amount || req.query.price || 150;
@@ -311,8 +362,6 @@ app.post("/api/disable-queue", async (req, res) => {
     const { username, branch, branch_key, domain } = req.body;
     const targetBranch = branch || branch_key || "main";
 
-    console.log(`📡 [API] طلب تفعيل سرعة للمستخدم: ${username} | الفرع المستلم: ${targetBranch}`);
-
     if (typeof disableUserQueue === "function") {
       const result = await disableUserQueue(username, targetBranch, domain);
       return res.json(result);
@@ -325,24 +374,89 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id;
-  const queryBranch = req.query.branch || "";
-  
-  if (!transactionId) {
-    return res.status(400).send("رقم المعاملة مفقود.");
-  }
+// 🎯 مسار صفحة النجاح الديناميكي لتوليد وعرض الكارت عند العودة من بوابات الدفع (مثل Xpay)
+app.get("/success", async (req, res) => {
+  try {
+    const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
+    const queryBranch = req.query.branch || req.query.shipping_method || "main";
+    const amount = req.query.amount || req.query.total || req.query.price || "5";
+    const branchName = BRANCH_NAMES[queryBranch] || BRANCH_NAMES.main;
 
-  const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
-  return res.send(pageHtml);
+    let cardPayload = null;
+
+    if (global.generatedCardsMap && global.generatedCardsMap.has(transactionId)) {
+      cardPayload = global.generatedCardsMap.get(transactionId);
+    }
+
+    if (!cardPayload && amount && Number(amount) > 0 && Number(amount) <= 100) {
+      try {
+        const mikrotikResult = await processPaymentAndCreateCard(amount, queryBranch, transactionId);
+        if (mikrotikResult.success && mikrotikResult.cardCode) {
+          cardPayload = {
+            code: mikrotikResult.cardCode,
+            packageName: mikrotikResult.packageName || `باقة إنترنت بقيمة ${amount} جنيه`,
+            amount: amount,
+            branchName: branchName,
+            createdAt: new Date()
+          };
+          global.generatedCardsMap.set(transactionId, cardPayload);
+        }
+      } catch (mikErr) {
+        console.error("❌ خطأ في توليد الكارت الفوري لصفحة النجاح:", mikErr.message);
+      }
+    }
+
+    const cardCode = cardPayload?.code || cardPayload?.voucher?.username || "تم إرسال الكارت عبر بوت التليجرام بنجاح";
+    const packageName = cardPayload?.packageName || "باقة إنترنت شبكة حكايات";
+
+    const htmlResponse = `
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>نجاح الدفع - شبكة حكايات نت</title>
+        <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; text-align: center; padding: 40px 20px; margin: 0; }
+            .container { background: #1e293b; border: 2px solid #3b82f6; border-radius: 16px; padding: 35px 25px; max-width: 480px; margin: auto; box-shadow: 0 15px 30px rgba(0,0,0,0.6); }
+            h1 { color: #22c55e; margin-bottom: 10px; font-size: 24px; }
+            .voucher-box { background: #0f172a; border: 2px dashed #22c55e; color: #38bdf8; font-size: 28px; font-weight: bold; padding: 18px; margin: 25px 0; border-radius: 12px; letter-spacing: 2px; word-break: break-all; }
+            .info { margin: 12px 0; font-size: 16px; color: #cbd5e1; }
+            .btn { display: inline-block; background: #3b82f6; color: #fff; padding: 14px 28px; text-decoration: none; border-radius: 10px; margin-top: 25px; font-weight: bold; font-size: 16px; transition: background 0.3s; box-shadow: 0 4px 12px rgba(59,130,246,0.4); }
+            .btn:hover { background: #2563eb; }
+            .note { font-size: 13px; color: #94a3b8; margin-top: 20px; line-height: 1.5; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🎉 تمت عملية الدفع بنجاح!</h1>
+            <p class="info">فرع الشبكة: <b>${branchName}</b></p>
+            <p class="info">الباقة المفعلة: <b>${packageName}</b></p>
+            <p class="info">المبلغ المدفوع: <b>${amount} جنيه</b></p>
+            
+            <div class="voucher-box">${cardCode}</div>
+            
+            <p class="note">💡 يرجى نسخ كارت الإنترنت أعلاه واستخدامه في صفحة تسجيل الدخول الخاصة بالشبكة.</p>
+            
+            <a href="/" class="btn">العودة لصفحة الباقات الرئيسية</a>
+        </div>
+    </body>
+    </html>
+    `;
+
+    return res.send(htmlResponse);
+  } catch (err) {
+    console.error("❌ [Success Route Error]:", err.message);
+    const pageHtml = generateSuccessPageHtml(req.query.id || "TX", NETWORK_URL, req.query.branch || "");
+    return res.send(pageHtml);
+  }
 });
 
 app.get("/fail", async (req, res) => {
   const errorMessage = req.query.data_message || req.query.error || "حدثت مشكلة أثناء عملية الدفع، حاول مرة أخرى.";
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || "غير محدد";
-
+  
   const failData = {
-    transactionId: transactionId,
+    transactionId: req.query.id || req.query.order || req.query.transaction_id || `FAIL_${Date.now()}`,
     phone: req.query.phone || req.query.user_phone || "غير محدد",
     amount: req.query.amount || req.query.price || "غير محدد",
     branchName: req.query.branch || "حكايات نت رئيسي",
