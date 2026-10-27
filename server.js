@@ -9,14 +9,13 @@ const fs = require('fs');
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
-const { sendTelegramMessage, handleTelegramCallback, sendTelegramFailNotification, sendVoucherWithCardImage } = require("./telegram");
+const { sendTelegramMessage, handleTelegramCallback, sendTelegramFailNotification } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
-const { generateCardImage } = require("./cardGenerator");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateSuccessPageHtml } = require('./successPage'); 
-const { generateFailPageHtml } = require('./failPage');       
+const { generateFailPageHtml } = require('./failPage');        
 
 const chatSupport = require('./chat_support');
 
@@ -276,6 +275,56 @@ async function handlePaymentRequest(req, res) {
 app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
 
+app.get("/api/test-create-card", async (req, res) => {
+  const secretKey = req.query.secret;
+  
+  if (!secretKey || secretKey !== process.env.TEST_SECRET_KEY) {
+    return res.status(403).json({ 
+      success: false, 
+      message: "⚠️ غير مسموح لك بالوصول لهذا الرابط التجريبي. مفتاح الحماية غير صحيح أو مفقود." 
+    });
+  }
+
+  try {
+    const amount = req.query.amount || "5";
+    const rawTarget = req.query.branch || req.query.branch_key || "branch2";
+    const targetBranch = BRANCH_NAMES[rawTarget] ? rawTarget : "branch2";
+    const testTxId = "TEST_" + Date.now();
+
+    const result = await processPaymentAndCreateCard(amount, targetBranch, testTxId);
+
+    if (result.success && !result.isCustomAmount) {
+      const cardPayload = {
+        code: result.cardCode,
+        packageName: result.packageName,
+        amount: parseFloat(amount),
+        phone: "01000000000",
+        branchKey: result.branchKey,
+        branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.branch2,
+        createdAt: new Date()
+      };
+
+      global.generatedCardsMap.set(testTxId, cardPayload);
+
+      return res.json({
+        success: true,
+        message: `✅ تم إضافة الكارت إلى السيرفر بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
+        data: result,
+        successPageLink: `/success?merchant_order_id=${testTxId}&branch=${result.branchKey}`
+      });
+    } else {
+      return res.json({
+        success: false,
+        message: "⚠️ فشل توليد الكارت من السيرفر",
+        details: result
+      });
+    }
+  } catch (error) {
+    console.error("❌ [TEST ERROR]:", error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.get("/contribution-success", (req, res) => {
   const amount = req.query.amount || req.query.price || 150;
   const transactionId = req.query.tx || req.query.id || req.query.order || 'TRX-DEFAULT';
@@ -283,7 +332,7 @@ app.get("/contribution-success", (req, res) => {
   res.send(htmlContent);
 });
 
-app.get("/api/check-voucher/:txId", async (req, res) => {
+app.get("/api/check-voucher/:txId", (req, res) => {
   const txId = String(req.params.txId || "").trim();
   
   if (!txId || txId === "null" || txId === "undefined") {
@@ -300,71 +349,6 @@ app.get("/api/check-voucher/:txId", async (req, res) => {
         return res.json({ success: true, data: value });
       }
     }
-  }
-
-  // إذا لم يتم العثور عليه في الذاكرة، محاولة الاستعلام والتحقق من جلسة Xpay تلقائياً للأمان
-  if (txId.startsWith("cs_") || txId.includes("X_") || txId.length > 20) {
-    try {
-      const xpayRes = await axios.get(`https://api.xpay.app/checkout/sessions/${txId}`, {
-        headers: { "Authorization": `Bearer ${process.env.XPAY_SECRET_KEY}` }
-      });
-      const sessionData = xpayRes.data;
-      const isPaid = sessionData.status?.type === "complete" || sessionData.paymentStatus === "paid" || sessionData.status === "paid";
-      
-      if (isPaid) {
-        const amountCents = sessionData.amountTotal || sessionData.lineItems?.[0]?.priceData?.unitAmount || 500;
-        const amount = parseFloat((amountCents / 100).toFixed(2));
-        const verifiedBranch = sessionData.metadata?.branch || "main";
-        const verifiedBranchName = BRANCH_NAMES[verifiedBranch] || BRANCH_NAMES.main;
-        const customerPhone = sessionData.metadata?.phone || "01000000000";
-
-        const mikrotikResult = await processPaymentAndCreateCard(amount, verifiedBranch, txId);
-        if (mikrotikResult.success && mikrotikResult.cardCode) {
-          const cardCode = mikrotikResult.cardCode;
-          const packageName = mikrotikResult.packageName || `باقة إنترنت بقيمة ${amount} جنيه`;
-          const cardImageBuffer = await generateCardImage(cardCode, packageName, amount, txId, verifiedBranchName);
-
-          const cardPayload = {
-            buffer: cardImageBuffer,
-            code: cardCode,
-            packageName: packageName,
-            amount: amount,
-            phone: customerPhone,
-            branchKey: verifiedBranch,
-            branchName: verifiedBranchName,
-            telegramSent: true,
-            createdAt: new Date()
-          };
-
-          global.generatedCardsMap.set(txId, cardPayload);
-
-          await sendTelegramMessage({
-            id: txId,
-            amount: amount,
-            payment_method: "card",
-            branch: verifiedBranch,
-            branchName: verifiedBranchName,
-            voucher_code: cardCode,
-            package_info: packageName,
-            phone: customerPhone
-          }, false);
-
-          if (cardImageBuffer) {
-            await sendVoucherWithCardImage({
-              amount: amount,
-              packageName: packageName,
-              card: { code: cardCode },
-              phone: customerPhone,
-              transactionId: txId,
-              branch: verifiedBranch,
-              branchName: verifiedBranchName
-            }, cardImageBuffer);
-          }
-
-          return res.json({ success: true, data: cardPayload });
-        }
-      }
-    } catch (e) {}
   }
 
   return res.json({ 
@@ -390,11 +374,18 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-// 🔒 مسار صفحة النجاح الآمن والذي يعتمد على صفحة الانتظار والتحقق التلقائي
+// 🎯 مسار صفحة النجاح النظيف (يعتمد كلياً على الـ Webhook)
 app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || req.query.session_id || "TX_" + Date.now();
-  const queryBranch = req.query.branch || req.query.shipping_method || "";
-  
+  const transactionId = req.query.id || 
+                        req.query.order || 
+                        req.query.transaction_id || 
+                        req.query.merchant_order_id || 
+                        req.query.payment_intent || 
+                        req.query.pi || 
+                        "TX_" + Date.now();
+                        
+  const queryBranch = req.query.branch || req.query.shipping_method || "main";
+
   const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
   return res.send(pageHtml);
 });
