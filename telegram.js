@@ -8,9 +8,6 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const { BRANCH_NAMES } = require('./branches');
 
-/**
- * جلب بيانات الشبكة والموقع الجغرافي والإحداثيات بناءً على IP الخارجي
- */
 async function fetchNetworkDetailsByIP(ip) {
   const result = {
     location: "غير معروف",
@@ -118,7 +115,9 @@ async function sendTelegramMessage(data, isInitial = true) {
                         data.billing_data?.phone_number || 
                         data.customer?.phone_number || 
                         "غير محدد";
-    const txnId = data.id || data.transactionId || data.order?.id || data.merchant_order_id || `TX_${Date.now()}`;
+    
+    // التقاط رقم العملية الحقيقي وتمريره بدقة في كافة الحالات
+    const txnId = data.id || data.transactionId || data.order?.id || data.merchant_order_id || data.payment_intent || data.pi || `TX_${Date.now()}`;
 
     let message = "";
 
@@ -146,6 +145,7 @@ async function sendTelegramMessage(data, isInitial = true) {
 
       message = `⏳ <b>جاري عملية الدفع...</b>\n\n` +
                 `🏢 الفرع: <b>${branchName}</b>\n` +
+                `🆔 رقم العملية: <code>${txnId}</code>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المطلوب: <b>${amountEGP} جنيه</b>\n`;
 
@@ -276,9 +276,6 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   }
 }
 
-/**
- * 3. 🔄 معالجة الضغط على الأزرار التفاعلية (Callback Queries) بأمان تام
- */
 async function handleTelegramCallback(callbackQuery) {
   try {
     const queryId = callbackQuery.id;
@@ -297,11 +294,10 @@ async function handleTelegramCallback(callbackQuery) {
     const parts = data.split("_");
 
     if (data.startsWith("create_voucher")) {
-      // استخراج المعطيات بأمان من النهاية (branchKey أخير، amount قبل أخير، والباقي هو رقم المعاملة)
       const branchKey = parts.pop();
       const amount = parts.pop();
-      parts.shift(); // إزالة "create"
-      parts.shift(); // إزالة "voucher"
+      parts.shift(); 
+      parts.shift(); 
       const txnId = parts.join("_");
 
       console.log(`🎟️ [Voucher Creation Started] جارٍ إصدار الكارت للمعاملة: ${txnId} | المبلغ: ${amount} | الفرع: ${branchKey}`);
@@ -365,7 +361,7 @@ async function handleTelegramCallback(callbackQuery) {
     } else if (data.startsWith("contribution")) {
       const branchKey = parts.pop();
       const amount = parts.pop();
-      parts.shift(); // إزالة "contribution"
+      parts.shift(); 
       const txnId = parts.join("_");
 
       if (global.generatedCardsMap) {
