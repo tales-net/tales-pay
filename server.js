@@ -286,25 +286,6 @@ app.get("/api/test-create-card", async (req, res) => {
     });
   }
 
-  try {
-    const amount = req.query.amount || "0";
-    const rawTarget = req.query.branch || req.query.branch_key || "branch2";
-    const targetBranch = BRANCH_NAMES[rawTarget] ? rawTarget : "branch2";
-    const testTxId = "TEST_" + Date.now();
-
-    const result = await processPaymentAndCreateCard(amount, targetBranch, testTxId);
-
-    if (result.success && !result.isCustomAmount) {
-      const cardPayload = {
-        code: result.cardCode,
-        packageName: result.packageName,
-        amount: parseFloat(amount),
-        phone: "01000000000",
-        branchKey: result.branchKey,
-        branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.branch2,
-        createdAt: new Date()
-      };
-
       global.generatedCardsMap.set(testTxId, cardPayload);
 
       return res.json({
