@@ -9,10 +9,11 @@ const fs = require('fs');
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
-const { sendTelegramMessage, handleTelegramCallback, sendTelegramFailNotification } = require("./telegram");
+const { sendTelegramMessage, handleTelegramCallback, sendTelegramFailNotification, sendVoucherWithCardImage } = require("./telegram");
 const webhookRouter = require("./webhook");
 const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
+const { generateCardImage } = require("./cardGenerator");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateSuccessPageHtml } = require('./successPage'); 
 const { generateFailPageHtml } = require('./failPage');       
@@ -275,56 +276,6 @@ async function handlePaymentRequest(req, res) {
 app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
 
-app.get("/api/test-create-card", async (req, res) => {
-  const secretKey = req.query.secret;
-  
-  if (!secretKey || secretKey !== process.env.TEST_SECRET_KEY) {
-    return res.status(403).json({ 
-      success: false, 
-      message: "⚠️ غير مسموح لك بالوصول لهذا الرابط التجريبي. مفتاح الحماية غير صحيح أو مفقود." 
-    });
-  }
-
-  try {
-    const amount = req.query.amount || "5";
-    const rawTarget = req.query.branch || req.query.branch_key || "branch2";
-    const targetBranch = BRANCH_NAMES[rawTarget] ? rawTarget : "branch2";
-    const testTxId = "TEST_" + Date.now();
-
-    const result = await processPaymentAndCreateCard(amount, targetBranch, testTxId);
-
-    if (result.success && !result.isCustomAmount) {
-      const cardPayload = {
-        code: result.cardCode,
-        packageName: result.packageName,
-        amount: parseFloat(amount),
-        phone: "01000000000",
-        branchKey: result.branchKey,
-        branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.branch2,
-        createdAt: new Date()
-      };
-
-      global.generatedCardsMap.set(testTxId, cardPayload);
-
-      return res.json({
-        success: true,
-        message: `✅ تم إضافة الكارت إلى السيرفر بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
-        data: result,
-        successPageLink: `/success?merchant_order_id=${testTxId}&branch=${result.branchKey}`
-      });
-    } else {
-      return res.json({
-        success: false,
-        message: "⚠️ فشل توليد الكارت من السيرفر",
-        details: result
-      });
-    }
-  } catch (error) {
-    console.error("❌ [TEST ERROR]:", error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 app.get("/contribution-success", (req, res) => {
   const amount = req.query.amount || req.query.price || 150;
   const transactionId = req.query.tx || req.query.id || req.query.order || 'TRX-DEFAULT';
@@ -332,7 +283,7 @@ app.get("/contribution-success", (req, res) => {
   res.send(htmlContent);
 });
 
-app.get("/api/check-voucher/:txId", (req, res) => {
+app.get("/api/check-voucher/:txId", async (req, res) => {
   const txId = String(req.params.txId || "").trim();
   
   if (!txId || txId === "null" || txId === "undefined") {
@@ -349,6 +300,71 @@ app.get("/api/check-voucher/:txId", (req, res) => {
         return res.json({ success: true, data: value });
       }
     }
+  }
+
+  // إذا لم يتم العثور عليه في الذاكرة، محاولة الاستعلام والتحقق من جلسة Xpay تلقائياً للأمان
+  if (txId.startsWith("cs_") || txId.includes("X_") || txId.length > 20) {
+    try {
+      const xpayRes = await axios.get(`https://api.xpay.app/checkout/sessions/${txId}`, {
+        headers: { "Authorization": `Bearer ${process.env.XPAY_SECRET_KEY}` }
+      });
+      const sessionData = xpayRes.data;
+      const isPaid = sessionData.status?.type === "complete" || sessionData.paymentStatus === "paid" || sessionData.status === "paid";
+      
+      if (isPaid) {
+        const amountCents = sessionData.amountTotal || sessionData.lineItems?.[0]?.priceData?.unitAmount || 500;
+        const amount = parseFloat((amountCents / 100).toFixed(2));
+        const verifiedBranch = sessionData.metadata?.branch || "main";
+        const verifiedBranchName = BRANCH_NAMES[verifiedBranch] || BRANCH_NAMES.main;
+        const customerPhone = sessionData.metadata?.phone || "01000000000";
+
+        const mikrotikResult = await processPaymentAndCreateCard(amount, verifiedBranch, txId);
+        if (mikrotikResult.success && mikrotikResult.cardCode) {
+          const cardCode = mikrotikResult.cardCode;
+          const packageName = mikrotikResult.packageName || `باقة إنترنت بقيمة ${amount} جنيه`;
+          const cardImageBuffer = await generateCardImage(cardCode, packageName, amount, txId, verifiedBranchName);
+
+          const cardPayload = {
+            buffer: cardImageBuffer,
+            code: cardCode,
+            packageName: packageName,
+            amount: amount,
+            phone: customerPhone,
+            branchKey: verifiedBranch,
+            branchName: verifiedBranchName,
+            telegramSent: true,
+            createdAt: new Date()
+          };
+
+          global.generatedCardsMap.set(txId, cardPayload);
+
+          await sendTelegramMessage({
+            id: txId,
+            amount: amount,
+            payment_method: "card",
+            branch: verifiedBranch,
+            branchName: verifiedBranchName,
+            voucher_code: cardCode,
+            package_info: packageName,
+            phone: customerPhone
+          }, false);
+
+          if (cardImageBuffer) {
+            await sendVoucherWithCardImage({
+              amount: amount,
+              packageName: packageName,
+              card: { code: cardCode },
+              phone: customerPhone,
+              transactionId: txId,
+              branch: verifiedBranch,
+              branchName: verifiedBranchName
+            }, cardImageBuffer);
+          }
+
+          return res.json({ success: true, data: cardPayload });
+        }
+      }
+    } catch (e) {}
   }
 
   return res.json({ 
@@ -374,82 +390,13 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-// 🎯 مسار صفحة النجاح الديناميكي لتوليد وعرض الكارت عند العودة من بوابات الدفع (مثل Xpay)
-app.get("/success", async (req, res) => {
-  try {
-    const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
-    const queryBranch = req.query.branch || req.query.shipping_method || "main";
-    const amount = req.query.amount || req.query.total || req.query.price || "5";
-    const branchName = BRANCH_NAMES[queryBranch] || BRANCH_NAMES.main;
-
-    let cardPayload = null;
-
-    if (global.generatedCardsMap && global.generatedCardsMap.has(transactionId)) {
-      cardPayload = global.generatedCardsMap.get(transactionId);
-    }
-
-    if (!cardPayload && amount && Number(amount) > 0 && Number(amount) <= 100) {
-      try {
-        const mikrotikResult = await processPaymentAndCreateCard(amount, queryBranch, transactionId);
-        if (mikrotikResult.success && mikrotikResult.cardCode) {
-          cardPayload = {
-            code: mikrotikResult.cardCode,
-            packageName: mikrotikResult.packageName || `باقة إنترنت بقيمة ${amount} جنيه`,
-            amount: amount,
-            branchName: branchName,
-            createdAt: new Date()
-          };
-          global.generatedCardsMap.set(transactionId, cardPayload);
-        }
-      } catch (mikErr) {
-        console.error("❌ خطأ في توليد الكارت الفوري لصفحة النجاح:", mikErr.message);
-      }
-    }
-
-    const cardCode = cardPayload?.code || cardPayload?.voucher?.username || "تم إرسال الكارت عبر بوت التليجرام بنجاح";
-    const packageName = cardPayload?.packageName || "باقة إنترنت شبكة حكايات";
-
-    const htmlResponse = `
-    <!DOCTYPE html>
-    <html lang="ar" dir="rtl">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>نجاح الدفع - شبكة حكايات نت</title>
-        <style>
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; text-align: center; padding: 40px 20px; margin: 0; }
-            .container { background: #1e293b; border: 2px solid #3b82f6; border-radius: 16px; padding: 35px 25px; max-width: 480px; margin: auto; box-shadow: 0 15px 30px rgba(0,0,0,0.6); }
-            h1 { color: #22c55e; margin-bottom: 10px; font-size: 24px; }
-            .voucher-box { background: #0f172a; border: 2px dashed #22c55e; color: #38bdf8; font-size: 28px; font-weight: bold; padding: 18px; margin: 25px 0; border-radius: 12px; letter-spacing: 2px; word-break: break-all; }
-            .info { margin: 12px 0; font-size: 16px; color: #cbd5e1; }
-            .btn { display: inline-block; background: #3b82f6; color: #fff; padding: 14px 28px; text-decoration: none; border-radius: 10px; margin-top: 25px; font-weight: bold; font-size: 16px; transition: background 0.3s; box-shadow: 0 4px 12px rgba(59,130,246,0.4); }
-            .btn:hover { background: #2563eb; }
-            .note { font-size: 13px; color: #94a3b8; margin-top: 20px; line-height: 1.5; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>🎉 تمت عملية الدفع بنجاح!</h1>
-            <p class="info">فرع الشبكة: <b>${branchName}</b></p>
-            <p class="info">الباقة المفعلة: <b>${packageName}</b></p>
-            <p class="info">المبلغ المدفوع: <b>${amount} جنيه</b></p>
-            
-            <div class="voucher-box">${cardCode}</div>
-            
-            <p class="note">💡 يرجى نسخ كارت الإنترنت أعلاه واستخدامه في صفحة تسجيل الدخول الخاصة بالشبكة.</p>
-            
-            <a href="/" class="btn">العودة لصفحة الباقات الرئيسية</a>
-        </div>
-    </body>
-    </html>
-    `;
-
-    return res.send(htmlResponse);
-  } catch (err) {
-    console.error("❌ [Success Route Error]:", err.message);
-    const pageHtml = generateSuccessPageHtml(req.query.id || "TX", NETWORK_URL, req.query.branch || "");
-    return res.send(pageHtml);
-  }
+// 🔒 مسار صفحة النجاح الآمن والذي يعتمد على صفحة الانتظار والتحقق التلقائي
+app.get("/success", (req, res) => {
+  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || req.query.session_id || "TX_" + Date.now();
+  const queryBranch = req.query.branch || req.query.shipping_method || "";
+  
+  const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
+  return res.send(pageHtml);
 });
 
 app.get("/fail", async (req, res) => {
