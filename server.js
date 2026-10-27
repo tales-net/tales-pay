@@ -287,7 +287,7 @@ app.get("/api/test-create-card", async (req, res) => {
   }
 
   try {
-    const amount = req.query.amount || "5";
+    const amount = req.query.amount || "0";
     const rawTarget = req.query.branch || req.query.branch_key || "branch2";
     const targetBranch = BRANCH_NAMES[rawTarget] ? rawTarget : "branch2";
     const testTxId = "TEST_" + Date.now();
