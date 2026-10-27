@@ -98,8 +98,8 @@ async function createXPayPayment(phone, amount, branch = '') {
       throw new Error("Missing XPay API Keys in environment variables");
     }
 
-    // رابط API الخاص بإنشاء جلسة الدفع في XPay (تأكد من الرابط الرسمي المعتمد لديهم)
-    const response = await axios.post("https://staging.xpay.app/api/v1/payments/pay-via-card", {
+    // الرابط الرسمي لإنشاء طلب دفع / جلسة في XPay مصر
+    const response = await axios.post("https://community.xpay.app/api/v1/v2/payments/pay-via-card", {
       amount: parseFloat(amount),
       currency: "EGP",
       branch: branch,
@@ -111,7 +111,7 @@ async function createXPayPayment(phone, amount, branch = '') {
       }
     });
 
-    const redirectUrl = response.data.data?.payment_url || response.data.payment_url;
+    const redirectUrl = response.data.data?.payment_url || response.data.payment_url || response.data.iframe_url;
     if (!redirectUrl) {
       throw new Error("لم يتم استرجاع رابط الدفع من XPay");
     }
