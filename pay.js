@@ -96,7 +96,7 @@ async function createXPayPayment(phone, amount, branch = '', branchDisplayName =
       throw new Error("Missing XPAY_API_KEY in environment variables");
     }
 
-    // تجهيز البيانات بالصيغة القياسية المقبولة لدى XPay
+    // تجهيز البيانات بالصيغة القياسية لطلبات الدفع المتغيرة في XPay
     const payload = {
       amount: parseFloat(amount),
       currency: "EGP",
@@ -111,6 +111,7 @@ async function createXPayPayment(phone, amount, branch = '', branchDisplayName =
       }
     };
 
+    // استخدام الرابط القياسي المعتمد لإنشاء طلب دفع فوري
     const response = await axios.post("https://community.xpay.app/api/v1/payments/pay/variable-amount", payload, {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -118,15 +119,21 @@ async function createXPayPayment(phone, amount, branch = '', branchDisplayName =
       }
     });
 
-    const redirectUrl = response.data.data?.iframe_url || response.data.data?.payment_url || response.data.payment_url;
+    // استخراج رابط الدفع بجميع الاحتمالات الممكنة في استجابة XPay
+    const redirectUrl = response.data.data?.iframe_url || 
+                        response.data.data?.payment_url || 
+                        response.data.payment_url || 
+                        response.data.data?.url;
+                        
     if (!redirectUrl) {
       throw new Error("لم يتم استرجاع رابط الدفع من XPay");
     }
 
     return { type: 'redirect', url: redirectUrl };
   } catch (err) {
-    console.error('❌ XPay Payment Error Details:', JSON.stringify(err.response?.data || err.message, null, 2));
-    throw new Error(`XPay payment failed: ${err.message}`);
+    // طباعة تفاصيل الخطأ بدقة في السجلات لمعرفة السبب إن وجدت استجابة من XPay
+    console.error('❌ XPay API Error Response:', JSON.stringify(err.response?.data || err.message, null, 2));
+    throw new Error(`XPay payment failed: ${err.response?.data?.status?.message || err.message}`);
   }
 }
 
