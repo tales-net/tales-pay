@@ -6,7 +6,6 @@ const bodyParser = require("body-parser");
 const path = require("path");
 const multer = require("multer");
 const fs = require('fs');
-const axios = require('axios');
 require("dotenv").config();
 
 const { processPayment } = require("./pay");
@@ -277,56 +276,6 @@ async function handlePaymentRequest(req, res) {
 app.get("/api/pay", handlePaymentRequest);
 app.post("/api/pay", handlePaymentRequest);
 
-app.get("/api/test-create-card", async (req, res) => {
-  const secretKey = req.query.secret;
-  
-  if (!secretKey || secretKey !== process.env.TEST_SECRET_KEY) {
-    return res.status(403).json({ 
-      success: false, 
-      message: "⚠️ غير مسموح لك بالوصول لهذا الرابط التجريبي. مفتاح الحماية غير صحيح أو مفقود." 
-    });
-  }
-
-  try {
-    const amount = req.query.amount || "5";
-    const rawTarget = req.query.branch || req.query.branch_key || "branch2";
-    const targetBranch = BRANCH_NAMES[rawTarget] ? rawTarget : "branch2";
-    const testTxId = "TEST_" + Date.now();
-
-    const result = await processPaymentAndCreateCard(amount, targetBranch, testTxId);
-
-    if (result.success && !result.isCustomAmount) {
-      const cardPayload = {
-        code: result.cardCode,
-        packageName: result.packageName,
-        amount: parseFloat(amount),
-        phone: "01000000000",
-        branchKey: result.branchKey,
-        branchName: BRANCH_NAMES[result.branchKey] || BRANCH_NAMES.branch2,
-        createdAt: new Date()
-      };
-
-      global.generatedCardsMap.set(testTxId, cardPayload);
-
-      return res.json({
-        success: true,
-        message: `✅ تم إضافة الكارت إلى السيرفر بنجاح وتوليده لفرع (${result.branchKey}) تحت الحماية!`,
-        data: result,
-        successPageLink: `/success?merchant_order_id=${testTxId}&branch=${result.branchKey}`
-      });
-    } else {
-      return res.json({
-        success: false,
-        message: "⚠️ فشل توليد الكارت من السيرفر",
-        details: result
-      });
-    }
-  } catch (error) {
-    console.error("❌ [TEST ERROR]:", error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 app.get("/contribution-success", (req, res) => {
   const amount = req.query.amount || req.query.price || 150;
   const transactionId = req.query.tx || req.query.id || req.query.order || 'TRX-DEFAULT';
@@ -334,7 +283,7 @@ app.get("/contribution-success", (req, res) => {
   res.send(htmlContent);
 });
 
-app.get("/api/check-voucher/:txId", (req, res) => {
+app.get("/api/check-voucher/:txId", async (req, res) => {
   const txId = String(req.params.txId || "").trim();
   
   if (!txId || txId === "null" || txId === "undefined") {
@@ -353,6 +302,71 @@ app.get("/api/check-voucher/:txId", (req, res) => {
     }
   }
 
+  // إذا لم يتم العثور عليه في الذاكرة، محاولة الاستعلام والتحقق من جلسة Xpay تلقائياً للأمان
+  if (txId.startsWith("cs_") || txId.includes("X_") || txId.length > 20) {
+    try {
+      const xpayRes = await axios.get(`https://api.xpay.app/checkout/sessions/${txId}`, {
+        headers: { "Authorization": `Bearer ${process.env.XPAY_SECRET_KEY}` }
+      });
+      const sessionData = xpayRes.data;
+      const isPaid = sessionData.status?.type === "complete" || sessionData.paymentStatus === "paid" || sessionData.status === "paid";
+      
+      if (isPaid) {
+        const amountCents = sessionData.amountTotal || sessionData.lineItems?.[0]?.priceData?.unitAmount || 500;
+        const amount = parseFloat((amountCents / 100).toFixed(2));
+        const verifiedBranch = sessionData.metadata?.branch || "main";
+        const verifiedBranchName = BRANCH_NAMES[verifiedBranch] || BRANCH_NAMES.main;
+        const customerPhone = sessionData.metadata?.phone || "01000000000";
+
+        const mikrotikResult = await processPaymentAndCreateCard(amount, verifiedBranch, txId);
+        if (mikrotikResult.success && mikrotikResult.cardCode) {
+          const cardCode = mikrotikResult.cardCode;
+          const packageName = mikrotikResult.packageName || `باقة إنترنت بقيمة ${amount} جنيه`;
+          const cardImageBuffer = await generateCardImage(cardCode, packageName, amount, txId, verifiedBranchName);
+
+          const cardPayload = {
+            buffer: cardImageBuffer,
+            code: cardCode,
+            packageName: packageName,
+            amount: amount,
+            phone: customerPhone,
+            branchKey: verifiedBranch,
+            branchName: verifiedBranchName,
+            telegramSent: true,
+            createdAt: new Date()
+          };
+
+          global.generatedCardsMap.set(txId, cardPayload);
+
+          await sendTelegramMessage({
+            id: txId,
+            amount: amount,
+            payment_method: "card",
+            branch: verifiedBranch,
+            branchName: verifiedBranchName,
+            voucher_code: cardCode,
+            package_info: packageName,
+            phone: customerPhone
+          }, false);
+
+          if (cardImageBuffer) {
+            await sendVoucherWithCardImage({
+              amount: amount,
+              packageName: packageName,
+              card: { code: cardCode },
+              phone: customerPhone,
+              transactionId: txId,
+              branch: verifiedBranch,
+              branchName: verifiedBranchName
+            }, cardImageBuffer);
+          }
+
+          return res.json({ success: true, data: cardPayload });
+        }
+      }
+    } catch (e) {}
+  }
+
   return res.json({ 
     success: false, 
     message: "جاري تأكيد عملية الدفع وتوليد الكارت من السيرفر..." 
@@ -363,8 +377,6 @@ app.post("/api/disable-queue", async (req, res) => {
   try {
     const { username, branch, branch_key, domain } = req.body;
     const targetBranch = branch || branch_key || "main";
-
-    console.log(`📡 [API] طلب تفعيل سرعة للمستخدم: ${username} | الفرع المستلم: ${targetBranch}`);
 
     if (typeof disableUserQueue === "function") {
       const result = await disableUserQueue(username, targetBranch, domain);
@@ -378,112 +390,13 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-// 🔒 مسار صفحة النجاح المحمي ضد التلاعب وتوليد الكروت الوهمية
-app.get("/success", async (req, res) => {
-  try {
-    const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || req.query.session_id;
-    const xpaySessionId = req.query.session_id; 
-    const queryBranch = req.query.branch || req.query.shipping_method || "main";
-    const branchName = BRANCH_NAMES[queryBranch] || BRANCH_NAMES.main;
-
-    if (!transactionId && !xpaySessionId) {
-      return res.redirect("/fail?error=" + encodeURIComponent("رقم المعاملة أو جلسة الدفع غير صالحة."));
-    }
-
-    let cardPayload = null;
-
-    if (global.generatedCardsMap && global.generatedCardsMap.has(transactionId)) {
-      cardPayload = global.generatedCardsMap.get(transactionId);
-    } else if (global.generatedCardsMap && xpaySessionId && global.generatedCardsMap.has(xpaySessionId)) {
-      cardPayload = global.generatedCardsMap.get(xpaySessionId);
-    }
-
-    if (!cardPayload && xpaySessionId) {
-      try {
-        const xpayRes = await axios.get(`https://api.xpay.app/checkout/sessions/${xpaySessionId}`, {
-          headers: {
-            "Authorization": `Bearer ${process.env.XPAY_SECRET_KEY}`
-          }
-        });
-
-        const sessionData = xpayRes.data;
-        const isPaid = sessionData.status?.type === "complete" || sessionData.paymentStatus === "paid" || sessionData.status === "paid";
-        
-        if (isPaid) {
-          const amountCents = sessionData.amountTotal || sessionData.lineItems?.[0]?.priceData?.unitAmount || 500;
-          const amount = parseFloat((amountCents / 100).toFixed(2));
-          const verifiedBranch = sessionData.metadata?.branch || queryBranch;
-          const verifiedBranchName = BRANCH_NAMES[verifiedBranch] || branchName;
-          const customerPhone = sessionData.metadata?.phone || "01000000000";
-
-          const mikrotikResult = await processPaymentAndCreateCard(amount, verifiedBranch, xpaySessionId);
-          if (mikrotikResult.success && mikrotikResult.cardCode) {
-            const cardCode = mikrotikResult.cardCode;
-            const packageName = mikrotikResult.packageName || `باقة إنترنت بقيمة ${amount} جنيه`;
-
-            const cardImageBuffer = await generateCardImage(cardCode, packageName, amount, xpaySessionId, verifiedBranchName);
-
-            cardPayload = {
-              buffer: cardImageBuffer,
-              code: cardCode,
-              packageName: packageName,
-              amount: amount,
-              phone: customerPhone,
-              branchKey: verifiedBranch,
-              branchName: verifiedBranchName,
-              telegramSent: true,
-              createdAt: new Date()
-            };
-
-            global.generatedCardsMap.set(xpaySessionId, cardPayload);
-            global.generatedCardsMap.set(transactionId, cardPayload);
-
-            await sendTelegramMessage({
-              id: xpaySessionId,
-              amount: amount,
-              payment_method: "card",
-              branch: verifiedBranch,
-              branchName: verifiedBranchName,
-              voucher_code: cardCode,
-              package_info: packageName,
-              phone: customerPhone
-            }, false);
-
-            if (cardImageBuffer) {
-              await sendVoucherWithCardImage({
-                amount: amount,
-                packageName: packageName,
-                card: { code: cardCode },
-                phone: customerPhone,
-                transactionId: xpaySessionId,
-                branch: verifiedBranch,
-                branchName: verifiedBranchName
-              }, cardImageBuffer);
-            }
-
-            console.log(`🔒 [Secure Xpay Success] تم التحقق وتوليد الكارت وإرسال التيليجرام بنجاح للجلسة: ${xpaySessionId}`);
-          }
-        } else {
-          return res.redirect("/fail?error=" + encodeURIComponent("لم يتم اكتمال عملية الدفع بنجاح من البوابة."));
-        }
-      } catch (xpayErr) {
-        console.error("❌ خطأ في التحقق الأمني من جلسة Xpay:", xpayErr.response?.data || xpayErr.message);
-        return res.redirect("/fail?error=" + encodeURIComponent("فشل التحقق من صحة معاملة الدفع عبر Xpay."));
-      }
-    }
-
-    if (!cardPayload) {
-      console.warn("⚠️ [Security Warning] محاولة وصول غير مصرح بها أو مزورة لصفحة النجاح بدون دفع مؤكد.");
-      return res.redirect("/fail?error=" + encodeURIComponent("عذراً، لا يمكن الوصول لهذه الصفحة مباشرة بدون عملية دفع صحيحة ومؤكدة."));
-    }
-
-    const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
-    return res.send(pageHtml);
-
-  } catch (err) {
-    console.error("❌ [Secure Success Route Error]:", err.message);
-    return res.redirect("/fail?error=" + encodeURIComponent("حدث خطأ أمني أثناء معالجة الصفحة."));
-  }
+// 🔒 مسار صفحة النجاح الآمن والذي يعتمد على صفحة الانتظار والتحقق التلقائي
+app.get("/success", (req, res) => {
+  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || req.query.session_id || "TX_" + Date.now();
+  const queryBranch = req.query.branch || req.query.shipping_method || "";
+  
+  const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
+  return res.send(pageHtml);
 });
 
 app.get("/fail", async (req, res) => {
