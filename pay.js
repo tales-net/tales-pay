@@ -92,13 +92,12 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
 async function createXPayPayment(phone, amount, branch = '', branchDisplayName = 'حكايات نت رئيسي') {
   try {
     const apiKey = process.env.XPAY_API_KEY;
-    const secretKey = process.env.XPAY_SECRET_KEY;
-
-    if (!apiKey || !secretKey) {
-      throw new Error("Missing XPay API Keys in environment variables");
+    if (!apiKey) {
+      throw new Error("Missing XPAY_API_KEY in environment variables");
     }
 
-    const response = await axios.post("https://portal.xpay.app/api/v1/v2/communities/pay-via-card", {
+    // استخدام الرابط الرسمي الصحيح لبيئة XPay الحية (Live)
+    const response = await axios.post("https://community.xpay.app/api/v1/payments/pay/variable-amount", {
       amount: parseFloat(amount),
       currency: "EGP",
       phone: phone || "01000000000",
@@ -115,7 +114,7 @@ async function createXPayPayment(phone, amount, branch = '', branchDisplayName =
       }
     });
 
-    const redirectUrl = response.data.data?.payment_url || response.data.payment_url || response.data.data?.url;
+    const redirectUrl = response.data.data?.iframe_url || response.data.data?.payment_url || response.data.payment_url;
     if (!redirectUrl) {
       throw new Error("لم يتم استرجاع رابط الدفع من XPay");
     }
