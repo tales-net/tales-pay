@@ -218,7 +218,6 @@ async function handlePaymentRequest(req, res) {
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
-    const transactionId = "TX_" + Date.now();
 
     const paymentPayload = {
       phone: userPhone,
@@ -263,7 +262,7 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      return res.redirect(`/success?id=${transactionId}&branch=${selectedBranch}`);
+      return res.redirect(`/success?branch=${selectedBranch}`);
     }
   } catch (err) {
     console.error("❌ خطأ في معالجة طلب الدفع:", err.response?.data || err.message);
@@ -291,7 +290,6 @@ app.get("/api/check-voucher/:txId", async (req, res) => {
     return res.json({ success: false, message: "رقم المعاملة غير صالح" });
   }
 
-  // 1. التحقق من الذاكرة المؤقتة أولاً
   if (global.generatedCardsMap && global.generatedCardsMap.has(txId)) {
     return res.json({ success: true, data: global.generatedCardsMap.get(txId) });
   }
@@ -302,7 +300,6 @@ app.get("/api/check-voucher/:txId", async (req, res) => {
     let queryBranch = req.query.branch || "main";
     let customerPhone = req.query.phone || "01000000000";
 
-    // 2. إذا كانت المعاملة قادمة من جلسة Xpay (تبدأ بـ cs_ أو طويلة)
     if (txId.startsWith("cs_") || txId.length > 20) {
       const xpayRes = await axios.get(`https://api.xpay.app/checkout/sessions/${txId}`, {
         headers: { "Authorization": `Bearer ${process.env.XPAY_SECRET_KEY}` }
@@ -319,13 +316,11 @@ app.get("/api/check-voucher/:txId", async (req, res) => {
       queryBranch = sessionData.metadata?.branch || queryBranch;
       customerPhone = sessionData.metadata?.phone || customerPhone;
       
-      // استخراج رقم العملية الحقيقي من Xpay (مثل pi_71EsZvw0Pr7fMSV0z6f1pf)
       realTxId = sessionData.paymentIntentId || sessionData.payment_intent || sessionData.id || txId;
     }
 
     const branchName = BRANCH_NAMES[queryBranch] || BRANCH_NAMES.main;
 
-    // 3. التحقق هل العملية مساهمة (أكبر من 100 جنيه) لتوجيهها لصفحة المساهمة
     if (Number(amount) > 100) {
       const contributionPayload = {
         isContribution: true,
@@ -340,7 +335,6 @@ app.get("/api/check-voucher/:txId", async (req, res) => {
       return res.json({ success: true, data: contributionPayload });
     }
 
-    // 4. إصدار كارت الإنترنت للباقات العادية باستخدام رقم المعاملة الحقيقي (pi_...)
     const mikrotikResult = await processPaymentAndCreateCard(amount, queryBranch, realTxId);
     if (mikrotikResult.success && mikrotikResult.cardCode) {
       const cardCode = mikrotikResult.cardCode;
@@ -362,7 +356,6 @@ app.get("/api/check-voucher/:txId", async (req, res) => {
       global.generatedCardsMap.set(txId, cardPayload);
       global.generatedCardsMap.set(realTxId, cardPayload);
 
-      // إرسال إشعار النجاح النصي "تمت عملية الدفع وتوليد الكارت بنجاح!" مع رقم المعاملة الحقيقي (pi_...)
       await sendTelegramMessage({
         id: realTxId,
         amount: amount,
@@ -374,7 +367,6 @@ app.get("/api/check-voucher/:txId", async (req, res) => {
         phone: customerPhone
       }, false);
 
-      // إرسال صورة الكارت الاحترافية إلى التليجرام
       if (cardImageBuffer) {
         await sendVoucherWithCardImage({
           amount: parseFloat(amount),
@@ -418,7 +410,7 @@ app.post("/api/disable-queue", async (req, res) => {
 });
 
 app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || req.query.session_id || "TX_" + Date.now();
+  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || req.query.session_id || req.query.payment_intent || "";
   const queryBranch = req.query.branch || req.query.shipping_method || "";
   
   const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
