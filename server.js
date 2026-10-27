@@ -291,69 +291,107 @@ app.get("/api/check-voucher/:txId", async (req, res) => {
     return res.json({ success: false, message: "رقم المعاملة غير صالح" });
   }
 
-  // 1. إذا كان الكارت موجوداً مسبقاً في الذاكرة المؤقتة
+  // 1. التحقق من الذاكرة المؤقتة أولاً
   if (global.generatedCardsMap && global.generatedCardsMap.has(txId)) {
     return res.json({ success: true, data: global.generatedCardsMap.get(txId) });
   }
 
-  // 2. إذا لم يكن مولداً بعد، نقوم بتوليده فوراً من الميكروتيك وإرسال التيليجرام للفيزا تماماً مثل المحافظ!
   try {
-    const queryBranch = req.query.branch || "main";
-    const amount = req.query.amount || "5";
-    const phone = req.query.phone || "01000000000";
+    let realTxId = txId;
+    let amount = req.query.amount || "5";
+    let queryBranch = req.query.branch || "main";
+    let customerPhone = req.query.phone || "01000000000";
+
+    // 2. إذا كانت المعاملة قادمة من جلسة Xpay (تبدأ بـ cs_ أو طويلة)
+    if (txId.startsWith("cs_") || txId.length > 20) {
+      const xpayRes = await axios.get(`https://api.xpay.app/checkout/sessions/${txId}`, {
+        headers: { "Authorization": `Bearer ${process.env.XPAY_SECRET_KEY}` }
+      });
+      const sessionData = xpayRes.data;
+      const isPaid = sessionData.status?.type === "complete" || sessionData.paymentStatus === "paid" || sessionData.status === "paid";
+      
+      if (!isPaid) {
+        return res.json({ success: false, message: "جاري تأكيد عملية الدفع من البوابة..." });
+      }
+
+      const amountCents = sessionData.amountTotal || sessionData.lineItems?.[0]?.priceData?.unitAmount || 500;
+      amount = parseFloat((amountCents / 100).toFixed(2));
+      queryBranch = sessionData.metadata?.branch || queryBranch;
+      customerPhone = sessionData.metadata?.phone || customerPhone;
+      
+      // استخراج رقم العملية الحقيقي من Xpay (مثل pi_71EsZvw0Pr7fMSV0z6f1pf)
+      realTxId = sessionData.paymentIntentId || sessionData.payment_intent || sessionData.id || txId;
+    }
+
     const branchName = BRANCH_NAMES[queryBranch] || BRANCH_NAMES.main;
 
-    const mikrotikResult = await processPaymentAndCreateCard(amount, queryBranch, txId);
+    // 3. التحقق هل العملية مساهمة (أكبر من 100 جنيه) لتوجيهها لصفحة المساهمة
+    if (Number(amount) > 100) {
+      const contributionPayload = {
+        isContribution: true,
+        amount: amount,
+        transactionId: realTxId,
+        branchKey: queryBranch,
+        branchName: branchName,
+        createdAt: new Date()
+      };
+      global.generatedCardsMap.set(txId, contributionPayload);
+      global.generatedCardsMap.set(realTxId, contributionPayload);
+      return res.json({ success: true, data: contributionPayload });
+    }
+
+    // 4. إصدار كارت الإنترنت للباقات العادية باستخدام رقم المعاملة الحقيقي (pi_...)
+    const mikrotikResult = await processPaymentAndCreateCard(amount, queryBranch, realTxId);
     if (mikrotikResult.success && mikrotikResult.cardCode) {
       const cardCode = mikrotikResult.cardCode;
       const packageName = mikrotikResult.packageName || `باقة إنترنت بقيمة ${amount} جنيه`;
 
-      // توليد صورة الكارت الاحترافية
-      const cardImageBuffer = await generateCardImage(cardCode, packageName, parseFloat(amount), txId, branchName);
+      const cardImageBuffer = await generateCardImage(cardCode, packageName, parseFloat(amount), realTxId, branchName);
 
       const cardPayload = {
         buffer: cardImageBuffer,
         code: cardCode,
         packageName: packageName,
         amount: parseFloat(amount),
-        phone: phone,
+        phone: customerPhone,
         branchKey: queryBranch,
         branchName: branchName,
         createdAt: new Date()
       };
 
       global.generatedCardsMap.set(txId, cardPayload);
+      global.generatedCardsMap.set(realTxId, cardPayload);
 
-      // 🚀 إرسال إشعار النجاح النصي "تمت عملية الدفع وتوليد الكارت بنجاح!" إلى التليجرام
+      // إرسال إشعار النجاح النصي "تمت عملية الدفع وتوليد الكارت بنجاح!" مع رقم المعاملة الحقيقي (pi_...)
       await sendTelegramMessage({
-        id: txId,
+        id: realTxId,
         amount: amount,
         payment_method: "card",
         branch: queryBranch,
         branchName: branchName,
         voucher_code: cardCode,
         package_info: packageName,
-        phone: phone
+        phone: customerPhone
       }, false);
 
-      // 📸 إرسال صورة الكارت الاحترافية إلى التليجرام
+      // إرسال صورة الكارت الاحترافية إلى التليجرام
       if (cardImageBuffer) {
         await sendVoucherWithCardImage({
           amount: parseFloat(amount),
           packageName: packageName,
           card: { code: cardCode },
-          phone: phone,
-          transactionId: txId,
+          phone: customerPhone,
+          transactionId: realTxId,
           branch: queryBranch,
           branchName: branchName
         }, cardImageBuffer);
       }
 
-      console.log(`✅ [Card & Telegram Success] تم إصدار الكارت وإرسال الإشعارات للتليجرام بنجاح للمعاملة: ${txId}`);
+      console.log(`✅ [Xpay Card & Telegram Success] تم إصدار الكارت برقم المعاملة الحقيقي (${realTxId}) وإرسال الإشعارات للتليجرام بنجاح.`);
       return res.json({ success: true, data: cardPayload });
     }
   } catch (err) {
-    console.error("❌ خطأ في إصدار الكارت التلقائي عبر check-voucher:", err.message);
+    console.error("❌ خطأ في التحقق وتوليد الكارت عبر check-voucher:", err.response?.data || err.message);
   }
 
   return res.json({ 
