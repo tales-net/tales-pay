@@ -112,6 +112,7 @@ async function createXpayPayment(phone, amount, branchKey, branchDisplayName) {
       first_name: "Tales",
       last_name: "Customer",
       phone_number: phone || "01000000000",
+      redirect_url: "https://tales-pay.onrender.com/success", // 👈 توجيه العميل لصفحة النجاح بعد السداد
       extra_info: {
         branch: branchKey,
         branch_name: branchDisplayName
@@ -167,7 +168,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     const selectedBranch = rawBranch;
     const branchDisplayName = BRANCH_NAMES[selectedBranch];
 
-    // توجيه البطاقات البنكية (Card) إلى بوابة Xpay
+    // توجيه البطاقات البنكية (Card) إلى بوابة Xpay حصرياً
     if (cleanMethod === 'card') {
       return await createXpayPayment(phone, amount, selectedBranch, branchDisplayName);
     }
