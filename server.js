@@ -280,7 +280,7 @@ app.get("/contribution-success", (req, res) => {
   const amount = req.query.amount || req.query.price || 150;
   const transactionId = req.query.tx || req.query.id || req.query.order || req.query.session_id || 'TRX-DEFAULT';
   const htmlContent = generateContributionHtmlPage(amount, transactionId);
-  res.send(htmlContent);
+  return res.send(htmlContent);
 });
 
 app.get("/api/check-voucher/:txId", async (req, res) => {
@@ -291,7 +291,11 @@ app.get("/api/check-voucher/:txId", async (req, res) => {
   }
 
   if (global.generatedCardsMap && global.generatedCardsMap.has(txId)) {
-    return res.json({ success: true, data: global.generatedCardsMap.get(txId) });
+    const cachedData = global.generatedCardsMap.get(txId);
+    if (cachedData.isContribution) {
+      return res.json({ success: true, data: { isContribution: true, amount: cachedData.amount, transactionId: cachedData.transactionId } });
+    }
+    return res.json({ success: true, data: cachedData });
   }
 
   try {
@@ -300,7 +304,6 @@ app.get("/api/check-voucher/:txId", async (req, res) => {
     let queryBranch = req.query.branch || "main";
     let customerPhone = req.query.phone || "01000000000";
 
-    // إذا كانت المعاملة قادمة من جلسة Xpay، يتم جلب رقم المعاملة الحقيقي (pi_...) من سيرفر Xpay
     if (txId.startsWith("cs_") || txId.length > 20) {
       const xpayRes = await axios.get(`https://api.xpay.app/checkout/sessions/${txId}`, {
         headers: { "Authorization": `Bearer ${process.env.XPAY_SECRET_KEY}` }
@@ -322,7 +325,7 @@ app.get("/api/check-voucher/:txId", async (req, res) => {
 
     const branchName = BRANCH_NAMES[queryBranch] || BRANCH_NAMES.main;
 
-    // توجيه المساهمات (أكبر من 100 جنيه) لصفحة المساهمة
+    // توجيه المساهمات (أكبر من 100 جنيه) لصفحة المساهمة وتمرير البيانات
     if (Number(amount) > 100) {
       const contributionPayload = {
         isContribution: true,
