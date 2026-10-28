@@ -148,7 +148,8 @@ async function sendTelegramMessage(data, isInitial = true) {
                 `🏢 الفرع: <b>${branchName}</b>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المطلوب: <b>${amountEGP} جنيه</b>\n`;
-
+                `🆔 رقم العملية: <code>${txnId}</code>\n` +
+      
       if (userPhone && userPhone !== "غير محدد") {
         message += `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n`;
       }
