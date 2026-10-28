@@ -88,13 +88,10 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
   }
 }
 
-// 🌐 دالة إنشاء جلسة الدفع عبر XPay الرسمية وتمرير المبلغ والفرع
-async function createXPayPayment(phone, amount, branch = '', branchDisplayName = 'حكايات نت رئيسي') {
+// 🌐 دالة إنشاء جلسة الدفع عبر XPay (بنفس أسلوب فاليو)
+async function createXPayPayment(phone, amount, branch = '', branchDisplayName = 'حkايات نت رئيسي') {
   try {
     const apiKey = process.env.XPAY_API_KEY;
-    const communityId = process.env.XPAY_COMMUNITY_ID;
-    const variableAmountId = process.env.XPAY_VARIABLE_AMOUNT_ID;
-
     if (!apiKey) {
       throw new Error("Missing XPAY_API_KEY in environment variables");
     }
@@ -102,22 +99,18 @@ async function createXPayPayment(phone, amount, branch = '', branchDisplayName =
     const cleanedPhone = String(phone || "01000000000").replace(/\D/g, "");
 
     const payload = {
-      community_id: communityId || "",
       amount: parseFloat(amount),
       currency: "EGP",
-      pay_using: "card",
-      variable_amount_id: variableAmountId || "1",
+      email: "customer@tales-net.com",
+      first_name: "Tales",
+      last_name: "Customer",
+      phone_number: cleanedPhone,
       billing_data: {
-        email: "customer@tales-net.com",
-        first_name: "Tales",
-        last_name: "Customer",
-        phone_number: cleanedPhone,
-        street: branchDisplayName,
+        apartment: "NA",
         building: "NA",
         floor: "NA",
-        apartment: "NA",
+        street: branchDisplayName,
         city: "Cairo",
-        state: "NA",
         country: "EG"
       },
       merchant_extra: {
@@ -128,7 +121,6 @@ async function createXPayPayment(phone, amount, branch = '', branchDisplayName =
       webhook_url: "https://tales-pay.onrender.com/xpay-webhook"
     };
 
-    // استخدام الرابط الرسمي المعتمد لـ XPay API
     const response = await axios.post("https://app.xpay.app/api/v1/payments/pay/variable-amount", payload, {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -143,6 +135,12 @@ async function createXPayPayment(phone, amount, branch = '', branchDisplayName =
 
     if (!redirectUrl) {
       throw new Error("لم يتم استرجاع رابط الدفع من XPay");
+    }
+
+    // تماماً مثل طريقة فاليو: إذا توفرت دالة getCheckoutPage يمكننا استخدامها أو إرجاع Redirect
+    if (typeof getCheckoutPage === 'function' && response.data.data?.iframe_id) {
+      const htmlPage = getCheckoutPage(redirectUrl, response.data.data.iframe_id);
+      return { type: 'html', content: htmlPage };
     }
 
     return { type: 'redirect', url: redirectUrl };
