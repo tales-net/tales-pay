@@ -92,8 +92,7 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
 async function createXPayPayment(phone, amount, branch = '', branchDisplayName = 'حكايات نت رئيسي') {
   try {
     const apiKey = process.env.XPAY_API_KEY;
-    const communityId = process.env.XPAY_COMMUNITY_ID;
-    const variableAmountId = process.env.XPAY_VARIABLE_AMOUNT_ID;
+    const secretKey = process.env.XPAY_SECRET_KEY;
 
     if (!apiKey) {
       throw new Error("Missing XPAY_API_KEY in environment variables");
@@ -101,23 +100,20 @@ async function createXPayPayment(phone, amount, branch = '', branchDisplayName =
 
     const cleanedPhone = String(phone || "01000000000").replace(/\D/g, "");
 
+    // تجهيز الحمولة بالبيانات الأساسية التي تتطلبها بوابة XPay
     const payload = {
-      community_id: communityId || "",
       amount: parseFloat(amount),
       currency: "EGP",
-      pay_using: "card",
-      variable_amount_id: variableAmountId || "1",
+      email: "customer@tales-net.com",
+      first_name: "Tales",
+      last_name: "Customer",
+      phone_number: cleanedPhone,
       billing_data: {
-        email: "customer@tales-net.com",
-        first_name: "Tales",
-        last_name: "Customer",
-        phone_number: cleanedPhone,
-        street: branchDisplayName,
+        apartment: "NA",
         building: "NA",
         floor: "NA",
-        apartment: "NA",
+        street: branchDisplayName,
         city: "Cairo",
-        state: "NA",
         country: "EG"
       },
       merchant_extra: {
@@ -128,7 +124,6 @@ async function createXPayPayment(phone, amount, branch = '', branchDisplayName =
       webhook_url: "https://tales-pay.onrender.com/xpay-webhook"
     };
 
-    // استخدام الرابط الرسمي المعتمد لـ XPay API
     const response = await axios.post("https://app.xpay.app/api/v1/payments/pay/variable-amount", payload, {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
