@@ -6,7 +6,6 @@ const { BRANCH_NAMES } = require("./branches");
 // مفاتيح وإعدادات XPay (للبطاقات البنكية / الفيزا)
 const XPAY_API_KEY = process.env.XPAY_API_KEY;
 const XPAY_SECRET_KEY = process.env.XPAY_SECRET_KEY;
-const XPAY_COMMUNITY_ID = process.env.XPAY_COMMUNITY_ID || ""; 
 
 async function getAuthToken() {
   try {
@@ -23,7 +22,7 @@ async function getAuthToken() {
 async function createOrder(authToken, amountCents, branchData = {}) {
   try {
     const branchKey = branchData.branch || 'main';
-    const branchName = branchData.branch_name || 'حكايات رئيسي';
+    const branchName = branchData.branch_name || 'حكايات نت رئيسي';
 
     const payload = {
       auth_token: authToken,
@@ -94,7 +93,7 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
 }
 
 /**
- * دالة معالجة الدفع الموحدة: تدعم XPay للبطاقات و Paymob للمحافظ وفاليو مع التحقق السليم للفرع
+ * دالة معالجة الدفع الموحدة: XPay للبطاقات و Paymob للمحافظ وفاليو
  */
 async function processPayment(userPhone, payAmount, selectedMethod, branch, req, res) {
   try {
@@ -130,19 +129,23 @@ async function processPayment(userPhone, payAmount, selectedMethod, branch, req,
     if (cleanMethod === "card" || cleanMethod === "visa" || cleanMethod === "mastercard") {
       console.log("🚀 [XPay] جاري إنشاء جلسة دفع بالبطاقة البنكية...");
 
+      const networkUrl = process.env.NETWORK_HOTSPOT_URL || "https://tales-pay.onrender.com";
+
       const xpayResponse = await axios.post(
-        "https://api.xpay.eg/api/v1/payments/pay/online/", // (استخدم الرابط الفعلي لـ XPay)
+        "https://api.xpay.app/v1/checkout/sessions",
         {
           amount: amountEGP,
-          currency: "EGP",
-          email: "customer@tales-net.com",
-          first_name: "عميل",
-          last_name: "حكايات",
-          phone_number: userPhone !== "غير محدد" && userPhone ? userPhone : "01000000000",
+          currency: "egp",
+          customer_details: {
+            email: "customer@tales-net.com",
+            phone: userPhone !== "غير محدد" && userPhone ? userPhone : "01000000000"
+          },
           merchant_extra: {
             branch: selectedBranch,
             branch_name: branchDisplayName
-          }
+          },
+          success_url: `${networkUrl}/success?branch=${selectedBranch}`,
+          cancel_url: `${networkUrl}/fail?branch=${selectedBranch}`
         },
         {
           headers: {
@@ -152,11 +155,12 @@ async function processPayment(userPhone, payAmount, selectedMethod, branch, req,
         }
       );
 
-      if (xpayResponse.data && (xpayResponse.data.data?.redirect_url || xpayResponse.data.redirect_url)) {
-        const paymentUrl = xpayResponse.data.data?.redirect_url || xpayResponse.data.redirect_url;
-        return { type: "redirect", url: paymentUrl };
+      const checkoutUrl = xpayResponse.data?.url || xpayResponse.data?.data?.url || xpayResponse.data?.redirect_url;
+      
+      if (checkoutUrl) {
+        return { type: "redirect", url: checkoutUrl };
       } else {
-        throw new Error("تعذر الحصول على رابط التوجيه من بوابة XPay");
+        throw new Error("تعذر الحصول على رابط التوجيه من استجابة XPay");
       }
     }
 
