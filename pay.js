@@ -88,26 +88,25 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
   }
 }
 
-// 🌐 دالة إنشاء جلسة الدفع عبر XPay للبطاقات والفيزا لكل الفروع
+// 🌐 دالة إنشاء جلسة الدفع عبر XPay الرسمية وتمرير المبلغ والفرع
 async function createXPayPayment(phone, amount, branch = '', branchDisplayName = 'حكايات نت رئيسي') {
   try {
     const apiKey = process.env.XPAY_API_KEY;
     const communityId = process.env.XPAY_COMMUNITY_ID;
     const variableAmountId = process.env.XPAY_VARIABLE_AMOUNT_ID;
 
-    if (!apiKey || !communityId) {
-      throw new Error("Missing XPay API Key or Community ID in environment variables");
+    if (!apiKey) {
+      throw new Error("Missing XPAY_API_KEY in environment variables");
     }
 
     const cleanedPhone = String(phone || "01000000000").replace(/\D/g, "");
 
-    // تجهيز البيانات بالهيكل الدقيق الذي تتطلبه استجابة XPay API
     const payload = {
-      community_id: communityId,
+      community_id: communityId || "",
       amount: parseFloat(amount),
       currency: "EGP",
-      pay_using: "card", // أو الطريقة المعتمدة لديهم للبطاقات
-      variable_amount_id: variableAmountId || "1", 
+      pay_using: "card",
+      variable_amount_id: variableAmountId || "1",
       billing_data: {
         email: "customer@tales-net.com",
         first_name: "Tales",
@@ -129,7 +128,8 @@ async function createXPayPayment(phone, amount, branch = '', branchDisplayName =
       webhook_url: "https://tales-pay.onrender.com/xpay-webhook"
     };
 
-    const response = await axios.post("https://community.xpay.app/api/v1/payments/pay/variable-amount", payload, {
+    // استخدام الرابط الرسمي المعتمد لـ XPay API
+    const response = await axios.post("https://app.xpay.app/api/v1/payments/pay/variable-amount", payload, {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
@@ -152,7 +152,7 @@ async function createXPayPayment(phone, amount, branch = '', branchDisplayName =
   }
 }
 
-// 🎯 دالة معالجة الدفع الشاملة (توجيه الفيزا لـ XPay والباقي لـ Paymob)
+// 🎯 دالة معالجة الدفع الشاملة
 async function createPaymobPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
   try {
     const cleanMethod = (method || 'wallet').toLowerCase();
@@ -180,13 +180,11 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
 
     console.log(`💳 [Pay.js] إنشاء معاملة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amount} | الوسيلة: ${cleanMethod}`);
 
-    // إذا تم اختيار البطاقة البنكية (Card) ومفاتيح XPay موجودة، يتم توجيه الدفع عبر XPay
     if (cleanMethod === 'card' && process.env.XPAY_API_KEY) {
-      console.log(`🚀 [Pay.js] توجيه الدفع عبر بوابة XPay للبطاقة البنكية لفرع: ${branchDisplayName}`);
+      console.log(`🚀 [Pay.js] توجيه الدفع عبر XPay للبطاقة لفرع: ${branchDisplayName}`);
       return await createXPayPayment(phone, amount, selectedBranch, branchDisplayName);
     }
 
-    // وإلا، يتم استخدام Paymob للمحافظ وباقي الوسائل
     const amountCents = Math.round(parseFloat(amount) * 100).toString();
     let integrationId;
 
