@@ -217,7 +217,7 @@ async function handlePaymentRequest(req, res) {
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
     
-    // 💡 استخدام رقم العملية القادم من الفورم لضمان التطابق التام 100%
+    // التقاط رقم العملية الثابت المرسل من الفورم لضمان التطابق التام 100%
     const transactionId = transaction_id || req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
 
     const paymentPayload = {
@@ -254,7 +254,7 @@ async function handlePaymentRequest(req, res) {
       await sendTelegramMessage(paymentPayload, true);
     }
 
-    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
+    const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch, req, res, transactionId);
 
     if (result.type === "redirect") {
       if (req.method === "POST" && req.headers["content-type"]?.includes("application/json")) {
