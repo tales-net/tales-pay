@@ -3,9 +3,6 @@ const path = require('path');
 const { getCheckoutPage } = require('./checkout');
 const { BRANCH_NAMES } = require("./branches");
 
-const XPAY_API_KEY = process.env.XPAY_API_KEY;
-const XPAY_SECRET_KEY = process.env.XPAY_SECRET_KEY;
-
 async function getAuthToken() {
   try {
     const response = await axios.post("https://accept.paymob.com/api/auth/tokens", {
@@ -119,54 +116,20 @@ async function processPayment(userPhone, payAmount, selectedMethod, branch, req,
     console.log(`💳 [Payment Router] وسيلة الدفع: ${cleanMethod} | المبلغ: ${amountEGP}ج | الفرع: ${branchDisplayName} (${selectedBranch})`);
 
     // ==========================================
-    // 1. الدفع بالبطاقة البنكية (Visa / MasterCard) عبر XPay
+    // 1. الدفع بالبطاقة البنكية (Visa / MasterCard) عبر XPay (توجيه مباشر للصفحة المستضافة)
     // ==========================================
     if (cleanMethod === "card" || cleanMethod === "visa" || cleanMethod === "mastercard") {
-      console.log("🚀 [XPay] جاري تمرير المبلغ وإنشاء جلسة دفع بالبطاقة البنكية...");
+      console.log("🚀 [XPay] جاري توجيه العميل إلى صفحة الدفع المستضافة لـ XPay...");
 
-      const networkUrl = process.env.NETWORK_HOTSPOT_URL || "https://tales-pay.onrender.com";
       const isContribution = amountEGP > 100;
-
       if (isContribution) {
         console.log(`🌸 [XPay المساهمات] المبلغ ${amountEGP}ج أكبر من 100ج، سيتم معالجته كمساهمة.`);
       }
 
-      // إضافة رؤوس طلبيات تحاكي متصفح حقيقي لتجنب حظر WAF
-      const xpayResponse = await axios.post(
-        "https://api.xpay.app/v1/checkout/sessions",
-        {
-          amount: amountEGP,
-          currency: "egp",
-          customer_details: {
-            email: "customer@tales-net.com",
-            phone: userPhone !== "غير محدد" && userPhone ? userPhone : "01000000000"
-          },
-          merchant_extra: {
-            branch: selectedBranch,
-            branch_name: branchDisplayName,
-            is_contribution: isContribution ? "true" : "false"
-          },
-          success_url: `${networkUrl}/success?branch=${selectedBranch}&amount=${amountEGP}`,
-          cancel_url: `${networkUrl}/fail?branch=${selectedBranch}`
-        },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${XPAY_SECRET_KEY || XPAY_API_KEY}`,
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept": "application/json, text/plain, */*",
-            "Referer": "https://tales-pay.onrender.com"
-          }
-        }
-      );
+      // رابط صفحة الدفع المستضافة مع تمرير المبلغ والفرع
+      const xpayHostedUrl = `https://app.xpay.app/checkout?amount=${amountEGP}&currency=EGP&branch=${selectedBranch}&is_contribution=${isContribution}`;
 
-      const checkoutUrl = xpayResponse.data?.url || xpayResponse.data?.data?.url || xpayResponse.data?.redirect_url;
-      
-      if (checkoutUrl) {
-        return { type: "redirect", url: checkoutUrl };
-      } else {
-        throw new Error("تعذر الحصول على رابط التوجيه من استجابة XPay");
-      }
+      return { type: "redirect", url: xpayHostedUrl };
     }
 
     // ==========================================
