@@ -193,7 +193,7 @@ const XPAY_API_KEY = process.env.XPAY_API_KEY;
 const XPAY_BASE_URL = "https://api.xpay.app"; 
 
 /**
- * إنشاء جلسة دفع حقيقية عبر XPay Checkout Sessions وتمرير رقم المعاملة والمبلغ
+ * إنشاء جلسة دفع حقيقية عبر XPay Checkout Sessions وتمرير المبلغ ورقم المعاملة
  */
 async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
   try {
@@ -204,13 +204,24 @@ async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
     const hotspotUrl = process.env.NETWORK_HOTSPOT_URL || "https://tales-pay.onrender.com";
     const successRedirectionUrl = `${hotspotUrl}/success?id=${transactionId}&branch=${branchKey}&amount=${amountNumber}`;
 
-    // إرسال الطلب بالصيغة القياسية البسيطة والمستقرة لـ XPay API
+    // إرسال الطلب بالهيكل القياسي الصحيح لـ XPay API
     const response = await axios.post(`${XPAY_BASE_URL}/checkout/sessions`, {
       mode: "payment",
       uiMode: "hosted",
       currency: "EGP",
-      paymentMethodTypes: ["card"],
-      amount: amountNumber, // تمرير المبلغ المباشر
+      paymentMethodTypes: ["card"], // مخصص للبطاقات والفيزا
+      lineItems: [
+        {
+          priceData: {
+            currency: "EGP",
+            unitAmount: Math.round(amountNumber * 100), // المبلغ بالقروش (أصغر وحدة عملة)
+            productData: {
+              name: `باقة إنترنت شبكة حكايات - فرع ${branchKey}`
+            }
+          },
+          quantity: 1
+        }
+      ],
       afterCompletion: {
         type: "redirect",
         redirect: {
