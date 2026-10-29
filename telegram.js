@@ -74,7 +74,7 @@ function getFormattedDateTime() {
   const now = new Date();
   const formattedDate = now.toLocaleDateString("ar-EG", { timeZone: "Africa/Cairo" });
   const formattedTime = now.toLocaleTimeString("ar-EG", { timeZone: "Africa/Cairo" });
-  return `${formattedDate} - ${formattedTime}`;
+  return `${formattedDate} -${formattedTime}`;
 }
 
 function getPackageNameByAmount(amount) {
@@ -118,8 +118,6 @@ async function sendTelegramMessage(data, isInitial = true) {
                         data.billing_data?.phone_number || 
                         data.customer?.phone_number || 
                         "غير محدد";
-
-    // 💡 توحيد التقاط رقم العملية من كائن البيانات المُمرر لضمان ثباته وعدم توليد رقم جديد عشوائي
     const txnId = data.id || data.transactionId || data.order?.id || data.merchant_order_id || `TX_${Date.now()}`;
 
     let message = "";
@@ -279,6 +277,9 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   }
 }
 
+/**
+ * 3. 🔄 معالجة الضغط على الأزرار التفاعلية (Callback Queries)
+ */
 async function handleTelegramCallback(callbackQuery) {
   try {
     const queryId = callbackQuery.id;
@@ -299,8 +300,8 @@ async function handleTelegramCallback(callbackQuery) {
     if (data.startsWith("create_voucher")) {
       const branchKey = parts.pop();
       const amount = parts.pop();
-      parts.shift(); 
-      parts.shift(); 
+      parts.shift(); // إزالة "create"
+      parts.shift(); // إزالة "voucher"
       const txnId = parts.join("_");
 
       console.log(`🎟️ [Voucher Creation Started] جارٍ إصدار الكارت للمعاملة: ${txnId} | المبلغ: ${amount} | الفرع: ${branchKey}`);
@@ -364,7 +365,7 @@ async function handleTelegramCallback(callbackQuery) {
     } else if (data.startsWith("contribution")) {
       const branchKey = parts.pop();
       const amount = parts.pop();
-      parts.shift(); 
+      parts.shift(); // إزالة "contribution"
       const txnId = parts.join("_");
 
       if (global.generatedCardsMap) {
@@ -394,6 +395,9 @@ async function handleTelegramCallback(callbackQuery) {
   }
 }
 
+/**
+ * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع والموقع الجغرافي للشبكة
+ */
 async function sendTelegramFailNotification(errorMessage, data = {}) {
   try {
     if (!BOT_TOKEN || !CHAT_ID) {
