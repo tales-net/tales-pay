@@ -7,6 +7,9 @@ const { BRANCH_NAMES } = require("./branches");
 // إعدادات وبوابات Paymob (المحافظ وفاليو)
 // ==========================================
 
+/**
+ * الحصول على توكن المصادقة من Paymob
+ */
 async function getAuthToken() {
   try {
     const response = await axios.post("https://accept.paymob.com/api/auth/tokens", {
@@ -19,6 +22,9 @@ async function getAuthToken() {
   }
 }
 
+/**
+ * إنشاء طلب جديد في Paymob
+ */
 async function createOrder(authToken, amountCents, branchData = {}) {
   try {
     const branchKey = branchData.branch || 'main';
@@ -45,6 +51,9 @@ async function createOrder(authToken, amountCents, branchData = {}) {
   }
 }
 
+/**
+ * توليد مفتاح الدفع (Payment Key) من Paymob
+ */
 async function getPaymentKey(authToken, orderId, amountCents, integrationId, phone = "01000000000", branchData = {}) {
   try {
     let sanitizedPhone = String(phone).replace(/\D/g, "");
@@ -92,11 +101,14 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
   }
 }
 
+/**
+ * معالجة المدفوعات عبر Paymob (المحافظ وفاليو)
+ */
 async function createPaymobPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
   try {
     const amountCents = Math.round(parseFloat(amount) * 100).toString();
     const cleanMethod = (method || 'wallet').toLowerCase();
-    
+
     let rawBranch = String(branch || '').toLowerCase().trim();
 
     if (!rawBranch && req) {
@@ -104,15 +116,15 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     }
 
     if (!rawBranch || !BRANCH_NAMES[rawBranch]) {
-      console.warn(`⚠️ [Pay.js] رفض معاملة لدفع بفرع غير صالح أو مفقود: [${rawBranch}]`);
-      
+      console.warn(`⚠️ [Pay.js] رفض معاملة دفع بفرع غير صالح أو مفقود: [${rawBranch}]`);
+
       if (res) {
         if (req?.headers?.['content-type']?.includes('application/json')) {
           return res.status(400).json({ success: false, error: "يجب اختيار فرع صحيح للشبكة قبل إتمام الدفع." });
         }
         return res.status(400).sendFile(path.join(__dirname, 'public', 'warning.html'));
       }
-      
+
       throw new Error(`يجب اختيار فرع صحيح للشبكة. الفرع المحدد غير مدعوم: [${rawBranch}]`);
     }
 
@@ -137,7 +149,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     }
 
     const token = await getAuthToken();
-    
+
     const orderId = await createOrder(token, amountCents, {
       branch: selectedBranch,
       branch_name: branchDisplayName
@@ -177,7 +189,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
         const htmlPage = getCheckoutPage(paymentKey, iframeId);
         return { type: 'html', content: htmlPage };
       }
-      
+
       const iframeUrl = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymentKey}`;
       return { type: 'redirect', url: iframeUrl };
     }
@@ -194,7 +206,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
 
 const XPAY_API_KEY = process.env.XPAY_API_KEY;
 const XPAY_SECRET_KEY = process.env.XPAY_SECRET_KEY;
-const XPAY_BASE_URL = "https://core.xpay.app/v1"; 
+const XPAY_BASE_URL = "https://core.xpay.app"; 
 
 /**
  * إنشاء طلب دفع حقيقي عبر XPay وتمرير رقم المعاملة الثابت
