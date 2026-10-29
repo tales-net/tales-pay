@@ -15,7 +15,7 @@ const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateSuccessPageHtml } = require('./successPage'); 
-const { generateFailPageHtml } = require('./failPage');      
+const { generateFailPageHtml } = require('./failPage');       
 
 const chatSupport = require('./chat_support');
 
@@ -73,7 +73,7 @@ app.use((req, res, next) => {
     req.path === "/api/maintenance/set" ||
     req.path === "/api/maintenance/verify" ||
     req.path.startsWith("/api/") ||
-    req.path.includes(".") // ملفات CSS, JS, صور
+    req.path.includes(".") 
   ) {
     return next();
   }
@@ -216,6 +216,8 @@ async function handlePaymentRequest(req, res) {
 
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
+    
+    // 💡 توليد رقم العملية الثابت والموحد
     const transactionId = "TX_" + Date.now();
 
     const paymentPayload = {
@@ -248,8 +250,18 @@ async function handlePaymentRequest(req, res) {
       lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
     };
 
+    // 1. إرسال إشعار "جاري عملية الدفع" إلى تليجرام برقم العملية الثابت
     if (typeof sendTelegramMessage === "function") {
-      await sendTelegramMessage(paymentPayload, true);
+      await sendTelegramMessage({
+        ...paymentPayload,
+        id: transactionId,
+        amount: payAmount,
+        branch: selectedBranch,
+        branchName: branchDisplayName,
+        method: selectedMethod,
+        phone: userPhone,
+        publicIP: getClientPublicIP(req)
+      }, true);
     }
 
     const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
@@ -262,7 +274,8 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      return res.redirect(`/success?id=${transactionId}&branch=${selectedBranch}`);
+      // 2. إعادة التوجيه لصفحة النجاح مع تمرير نفس رقم العملية في الرابط
+      return res.redirect(`/success?id=${transactionId}&branch=${selectedBranch}&amount=${payAmount}`);
     }
   } catch (err) {
     console.error("❌ خطأ في معالجة طلب الدفع:", err.response?.data || err.message);
