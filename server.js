@@ -217,7 +217,7 @@ async function handlePaymentRequest(req, res) {
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
     
-    // 💡 التقاط رقم العملية المرسل من الفورم أو إنشاؤه إذا لم يوجد لضمان الثبات التام
+    // التقاط رقم العملية الثابت المرسل من الفورم لضمان التطابق التام 100%
     const transactionId = data.transaction_id || req.query.id || "TX_" + Date.now();
 
     const paymentPayload = {
