@@ -128,7 +128,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     console.log(`💳 [Pay.js] إنشاء معاملة مؤكدة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amountEGP}ج | الوسيلة: ${cleanMethod}`);
 
     // ====================================================
-    // 1. الدفع بالفيزا / البطاقة البنكية عبر XPay (من السيرفر مباشرة لتخطي CORS)
+    // 1. الدفع بالفيزا / البطاقة البنكية عبر XPay (بنظام الجلسات المطابق لـ Stripe)
     // ====================================================
     if (cleanMethod === 'card' || cleanMethod === 'visa' || cleanMethod === 'mastercard') {
       const isContribution = amountEGP > 100;
@@ -140,7 +140,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
         : `${networkUrl}/success?id=${txId}&branch=${selectedBranch}&amount=${amountEGP}`;
       const failRedirect = `${networkUrl}/fail?id=${txId}&branch=${selectedBranch}&amount=${amountEGP}&phone=${sanitizedPhone}`;
 
-      console.log(`🚀 [XPay] جاري إنشاء جلسة الدفع للبطاقة عبر السيرفر للمبلغ (${amountEGP}ج)...`);
+      console.log(`🚀 [XPay] جاري إنشاء جلسة Checkout لـ XPay بالمبلغ (${amountEGP}ج)...`);
 
       const secretOrPublic = XPAY_SECRET_KEY || XPAY_API_KEY;
       const baseUrl = XPAY_BASE_URL.replace(/\/$/, "");
@@ -152,7 +152,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
             currency: "EGP",
             unit_amount: Number(amountCents),
             product_data: {
-              name: "Internet Package - " + branchDisplayName
+              name: `حكايات نت - ${branchDisplayName} (${isContribution ? 'مساهمة' : 'باقة إنترنت'})`
             }
           },
           quantity: 1
@@ -172,7 +172,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       const endpoints = [
         `${baseUrl}/v1/checkout/sessions`,
         `${baseUrl}/api/v1/checkout/sessions`,
-        `${baseUrl}/v1/sessions`
+        `https://api.xpay.app/v1/checkout/sessions`
       ];
 
       let checkoutUrl = null;
@@ -184,8 +184,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
             headers: {
               "Content-Type": "application/json",
               "Authorization": `Bearer ${secretOrPublic}`,
-              "Accept": "application/json",
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+              "Accept": "application/json"
             },
             timeout: 10000
           });
@@ -193,7 +192,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
           const resData = response.data;
           checkoutUrl = resData.url || resData.data?.url || resData.payment_url || resData.redirect_url;
           if (checkoutUrl) {
-            console.log(`✅ [XPay] تم إنشاء جلسة الدفع بنجاح عبر السيرفر: ${checkoutUrl}`);
+            console.log(`✅ [XPay] تم إنشاء جلسة الدفع بنجاح: ${checkoutUrl}`);
             break;
           }
         } catch (err) {
@@ -205,7 +204,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       if (checkoutUrl) {
         return { type: 'redirect', url: checkoutUrl };
       } else {
-        throw new Error(`فشل إنشاء جلسة XPay من السيرفر. تفاصيل الخطأ: ${lastErr}`);
+        throw new Error(`فشل إنشاء جلسة XPay. الخطأ: ${lastErr}`);
       }
     }
 
