@@ -9,34 +9,59 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
 
   const activeBranchKey = queryBranch || inferredBranch;
   const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.waitPage;
+  const safeTxId = transactionId || "غير محدد";
 
   return `
     <!DOCTYPE html>
     <html lang="ar" dir="rtl">
       <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <script src="protection.js" defer></script>
-        <title>تم الدفع بنجاح - حكايات</title>
+        <title>تم الدفع بنجاح - شبكة حكايات</title>
         <link rel="icon" type="image/svg+xml" href="/favicon.svg">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
         <style>
-          body { font-family: 'Segoe UI', Tahoma, Cairo, sans-serif; background: #f0f2f5; text-align: center; padding: 20px 10px; direction: rtl; }
-          .card-container { background: white; max-width: 480px; margin: auto; padding: 25px 20px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
-          .success-badge { color: #27ae60; font-size: 45px; margin-bottom: 5px; }
-          h1 { color: #2c3e50; font-size: 20px; margin-bottom: 15px; }
+          * { box-sizing: border-box; }
+          body { 
+            font-family: 'Segoe UI', Tahoma, Cairo, sans-serif; 
+            background: #f0f2f5; 
+            text-align: center; 
+            margin: 0; 
+            padding: 15px; 
+            direction: rtl; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            min-height: 100vh; 
+            overflow-x: hidden; 
+          }
+          .card-container { 
+            background: white; 
+            width: 100%; 
+            max-width: 440px; 
+            margin: auto; 
+            padding: 25px 20px; 
+            border-radius: 16px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08); 
+          }
+          .success-badge { color: #27ae60; font-size: 55px; margin-bottom: 8px; }
+          h1 { color: #2c3e50; font-size: 22px; font-weight: 800; margin-bottom: 12px; }
           .ticket-card { background: linear-gradient(135deg, #01338D 0%, #001f5c 100%); color: #ffffff; border-radius: 12px; padding: 20px; margin: 20px 0; box-shadow: 0 6px 18px rgba(1, 51, 141, 0.25); text-align: right; }
           .ticket-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px; margin-bottom: 15px; }
           .ticket-title { font-size: 16px; font-weight: bold; }
           .ticket-brand { font-size: 12px; background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 4px; }
-          .code-box { background: #ffffff; color: #01338D; text-align: center; padding: 12px; border-radius: 8px; margin: 15px 0; font-family: monospace; font-size: 24px; font-weight: bold; letter-spacing: 2px; min-height: 50px; display: flex; align-items: center; justify-content: center; }
-          .info-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: #e0e0e0; }
-          .info-row strong { color: #ffffff; }
+          .code-box { background: #ffffff; color: #01338D; text-align: center; padding: 12px; border-radius: 8px; margin: 15px 0; font-family: monospace; font-size: 24px; font-weight: bold; letter-spacing: 2px; min-height: 50px; display: flex; align-items: center; justify-content: center; word-break: break-all; }
+          .info-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; color: #e0e0e0; }
+          .info-row strong { color: #ffffff; font-family: monospace; }
           .btn-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px; }
-          .btn { flex: 1; min-width: 140px; padding: 12px; border: none; border-radius: 8px; font-weight: bold; font-size: 14px; cursor: pointer; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; }
-          .btn-print { background: #27ae60; color: white; }
-          .btn-download { background: #01338D; color: white; }
-          .btn-home { background: #e9ecef; color: #333; width: 95%; margin-top: 10px; text-decoration: none; text-align: center; padding: 12px; border-radius: 8px; font-weight: bold; display: block; }
+          .btn { flex: 1; min-width: 140px; padding: 12px; border: none; border-radius: 8px; font-weight: bold; font-size: 14px; cursor: pointer; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; color: white; }
+          .btn-print { background: #27ae60; }
+          .btn-print:hover { background: #219653; }
+          .btn-download { background: #01338D; }
+          .btn-download:hover { background: #002266; }
+          .btn-home { background: #e9ecef; color: #333; width: 100%; margin-top: 12px; text-decoration: none; text-align: center; padding: 12px; border-radius: 8px; font-weight: bold; display: block; }
+          .btn-home:hover { background: #dde2e6; }
           .spinner { border: 4px solid rgba(1, 51, 141, 0.2); border-radius: 50%; border-top: 4px solid #01338D; width: 26px; height: 26px; animation: spin 1s linear infinite; margin-left: 10px; display: inline-block; }
           @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         </style>
@@ -60,7 +85,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
             </div>
             <div class="info-row">
               <span>رقم العملية:</span>
-              <strong>${transactionId || "غير محدد"}</strong>
+              <strong>${safeTxId}</strong>
             </div>
             <div class="info-row">
               <span>حالة الدفع:</span>
@@ -68,14 +93,14 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
             </div>
           </div>
           <div class="btn-actions">
-            <button onclick="window.print()" class="btn btn-print"><i class="fa fa-print"></i> طباعة / حفظ PDF</button>
+            <button onclick="window.print()" class="btn btn-print"><i class="fa fa-print"></i> طباعة / حفظ</button>
             <button onclick="downloadHTML()" class="btn btn-download"><i class="fa fa-download"></i> تنزيل الكارت</button>
           </div>
-          <a href="${networkUrl}" class="btn-home"><i class="fa fa-globe"></i> التوجه للدفع مرة أخري</a>
+          <a href="${networkUrl}" class="btn-home"><i class="fa fa-globe"></i> التوجه للدفع مرة أخرى</a>
         </div>
         <script>
           const urlParams = new URLSearchParams(window.location.search);
-          const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
+          const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${safeTxId}";
           let attempts = 0;
           const maxAttempts = 90; 
 
@@ -108,7 +133,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
               if (attempts < maxAttempts) {
                 setTimeout(pollVoucher, 2000); 
               } else {
-                const errorMsg = encodeURIComponent("⚠️ أنتهت مهلة الانتظار ولم يتم الدفع بنجاح. تواصل مع الدعم أذا تم الدفع برقم المعاملة: " + txId);
+                const errorMsg = encodeURIComponent("⚠️ أنتهت مهلة الانتظار ولم يتم الدفع بنجاح. رقم المعاملة: " + txId);
                 window.location.href = '/fail?error=' + errorMsg;
               }
             } catch (e) {
