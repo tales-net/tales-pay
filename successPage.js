@@ -108,13 +108,15 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
               if (attempts < maxAttempts) {
                 setTimeout(pollVoucher, 2000); 
               } else {
-                window.location.href = '/fail?error=' + encodeURIComponent("⚠️ أنتهت مهلة الانتظار ولم يتم الدفع بنجاح. رقم المعاملة: " + txId);
+                const errorMsg = encodeURIComponent("⚠️ أنتهت مهلة الانتظار ولم يتم الدفع بنجاح. تواصل مع الدعم أذا تم الدفع برقم المعاملة: " + txId);
+                window.location.href = '/fail?error=' + errorMsg;
               }
             } catch (e) {
               if (attempts < maxAttempts) {
                 setTimeout(pollVoucher, 2500);
               } else {
-                window.location.href = '/fail?error=' + encodeURIComponent("خطأ في الاتصال بالسيرفر للمعاملة: " + txId);
+                const errorMsg = encodeURIComponent("خطأ في الاتصال بالسيرفر أثناء جلب الكارت للمعاملة: " + txId);
+                window.location.href = '/fail?error=' + errorMsg;
               }
             }
           }
