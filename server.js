@@ -219,6 +219,7 @@ async function handlePaymentRequest(req, res) {
     const transactionId = "TX_" + Date.now();
 
     const paymentPayload = {
+      id: transactionId,
       phone: userPhone,
       amount_cents: parseFloat(payAmount) * 100,
       payment_method: selectedMethod,
@@ -359,15 +360,12 @@ app.get("/api/check-voucher/:txId", (req, res) => {
 
 app.post("/api/disable-queue", async (req, res) => {
   try {
-    // استخراج اسم المستخدم والفرع والدومين من الطلب
     const { username, branch, branch_key, domain } = req.body;
-
     const targetBranch = branch || branch_key || "main";
 
     console.log(`📡 [API] طلب تفعيل سرعة للمستخدم: ${username} | الفرع المستلم: ${targetBranch}`);
 
     if (typeof disableUserQueue === "function") {
-      // تمرير الفرع والدومين لدالة الميكروتك
       const result = await disableUserQueue(username, targetBranch, domain);
       return res.json(result);
     }
@@ -379,10 +377,15 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-app.get("/success", (req, res) => {
-  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
-  const queryBranch = req.query.branch || "";
-  
+app.get("/success", async (req, res) => {
+  const transactionId = req.query.id || 
+                        req.query.order || 
+                        req.query.transaction_id || 
+                        req.query.merchant_order_id || 
+                        "TX_" + Date.now();
+                        
+  const queryBranch = req.query.branch || req.query.shipping_method || "main";
+
   const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
   return res.send(pageHtml);
 });
