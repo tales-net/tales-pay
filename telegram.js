@@ -118,6 +118,8 @@ async function sendTelegramMessage(data, isInitial = true) {
                         data.billing_data?.phone_number || 
                         data.customer?.phone_number || 
                         "غير محدد";
+    
+    // التقاط رقم المعاملة المولد مسبقاً وتثبيته دون توليد رقم جديد عشوائي
     const txnId = data.id || data.transactionId || data.order?.id || data.merchant_order_id || `TX_${Date.now()}`;
 
     let message = "";
