@@ -200,6 +200,9 @@ async function createXPayPayment(phone, amount, branchKey) {
   try {
     console.log(`💳 [Xpay] بدء إنشاء جلسة دفع | المبلغ: ${amount}ج | الفرع: ${branchKey}`);
 
+    const transactionId = "TX_" + Date.now();
+    
+    // إذا كنت تود استخدام رابط شيلد أو صفحة الدفع الخاصة بـ XPay مباشرة
     const payload = {
       amount: parseFloat(amount),
       currency: "EGP",
@@ -212,7 +215,7 @@ async function createXPayPayment(phone, amount, branchKey) {
       }
     };
 
-    // مثال لطلب إنشاء الجلسة (يمكن تفعيله بربط الـ Endpoint الفعلي لـ XPay عند توفره)
+    // يمكنك تفعيل الطلب الفعلي هنا عبر API الخاص بـ XPay عند الحاجة
     /*
     const response = await axios.post(`${XPAY_BASE_URL}/payments/pay`, payload, {
       headers: {
@@ -220,14 +223,20 @@ async function createXPayPayment(phone, amount, branchKey) {
         'Content-Type': 'application/json'
       }
     });
+    const paymentUrl = response.data.data.payment_url;
     */
 
-    const transactionId = "TX_" + Date.now();
-    const successRedirectUrl = `/success?id=${transactionId}&branch=${branchKey}&amount=${amount}`;
+    // توجيه العميل لرابط الدفع أو صفحة الـ Checkout
+    const checkoutUrl = `/success?id=${transactionId}&branch=${branchKey}&amount=${amount}`;
+
+    if (typeof getCheckoutPage === 'function') {
+      const htmlPage = getCheckoutPage({ url: checkoutUrl });
+      return { type: 'html', content: htmlPage };
+    }
 
     return {
       type: "redirect",
-      url: successRedirectUrl
+      url: checkoutUrl
     };
 
   } catch (err) {
@@ -236,16 +245,14 @@ async function createXPayPayment(phone, amount, branchKey) {
   }
 }
 
-// دالة المعالجة الموحدة التي تتحقق من بوابة الدفع أو الطريقة المختارة
+// دالة المعالجة الموحدة للبوابات
 async function processPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
   const cleanMethod = (method || '').toLowerCase();
 
-  // إذا كانت الطريقة خاصة بـ XPay أو تم تمرير إعداداتها
   if (cleanMethod === 'xpay' || cleanMethod === 'xpay_card') {
     return await createXPayPayment(phone, amount, branch || 'main');
   }
 
-  // الافتراضي هو العمل عبر Paymob
   return await createPaymobPayment(phone, amount, cleanMethod, branch, req, res);
 }
 
