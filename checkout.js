@@ -1,24 +1,11 @@
 /**
- * إنشاء صفحة HTML لإتمام الدفع (تدعم Paymob عبر Iframe و XPay عبر توجيه أو iframe مخصص)
- * @param {Object|string} options - إما رابط التوجيه لـ XPay أو مفتاح الدفع لـ Paymob
- * @param {string} [iframeId] - رقم الـ Iframe الخاص بـ Paymob (إن وجد)
+ * إنشاء صفحة HTML تضم الـ Iframe الخاص بـ Paymob مع تصميم متناسق
+ * @param {string} paymentToken - مفتاح الدفع المستلم من Paymob
+ * @param {string} iframeId - رقم الـ Iframe الخاص بالبطاقات
  * @returns {string} - كود الصفحة HTML الكامل
  */
-function getCheckoutPage(options, iframeId) {
-  let checkoutContentUrl = "";
-  let isXPay = false;
-
-  // التحقق مما إذا كانت الخيارات عبارة عن كائن أو رابط موجه لـ XPay
-  if (typeof options === "object" && options !== null) {
-    checkoutContentUrl = options.url || options.checkout_url || "";
-    isXPay = true;
-  } else if (typeof options === "string" && options.startsWith("http")) {
-    checkoutContentUrl = options;
-    isXPay = true;
-  } else if (iframeId) {
-    // الطريقة التقليدية لـ Paymob عبر Iframe
-    checkoutContentUrl = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${options}`;
-  }
+function getCheckoutPage(paymentToken, iframeId) {
+  const iframeUrl = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymentToken}`;
 
   return `
     <!DOCTYPE html>
@@ -48,7 +35,6 @@ function getCheckoutPage(options, iframeId) {
                 overflow: hidden;
                 padding: 10px;
                 box-sizing: border-box;
-                text-align: center;
             }
             iframe {
                 width: 100%;
@@ -57,43 +43,18 @@ function getCheckoutPage(options, iframeId) {
                 border-radius: 8px;
             }
             .header {
-                padding: 12px 0;
+                text-align: center;
+                padding: 10px 0;
                 color: #01338D;
                 font-size: 18px;
                 font-weight: bold;
-            }
-            .xpay-container {
-                padding: 40px 20px;
-            }
-            .btn-pay {
-                display: inline-block;
-                background: #27ae60;
-                color: white;
-                padding: 14px 30px;
-                border-radius: 8px;
-                text-decoration: none;
-                font-weight: bold;
-                font-size: 16px;
-                margin-top: 20px;
-                box-shadow: 0 4px 12px rgba(39, 174, 96, 0.3);
-            }
-            .btn-pay:hover {
-                background: #219653;
             }
         </style>
     </head>
     <body>
         <div class="iframe-card">
-            <div class="header">بوابة الدفع الآمنة ${isXPay ? "(XPay)" : "(Paymob)"}</div>
-            
-            ${isXPay ? `
-                <div class="xpay-container">
-                    <p style="color: #2c3e50; font-size: 16px; margin-bottom: 20px;">انقر بالأسفل للانتقال إلى صفحة الدفع الآمنة لإتمام المعاملة.</p>
-                    <a href="${checkoutContentUrl}" class="btn-pay" target="_blank">إتمام الدفع الآن 💳</a>
-                </div>
-            ` : `
-                <iframe src="${checkoutContentUrl}" allowfullscreen></iframe>
-            `}
+            <div class="header">بوابة الدفع الآمنة</div>
+            <iframe src="${iframeUrl}" allowfullscreen></iframe>
         </div>
     </body>
     </html>
