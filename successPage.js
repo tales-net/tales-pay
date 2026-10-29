@@ -74,6 +74,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
           <a href="${networkUrl}" class="btn-home"><i class="fa fa-globe"></i> التوجه للدفع مرة أخري</a>
         </div>
         <script>
+          // التقاط رقم العملية حصرياً من الرابط القادم من السيرفر لتجنب أي توليد عشوائي جديد
           const urlParams = new URLSearchParams(window.location.search);
           const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
           
