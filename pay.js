@@ -116,13 +116,10 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     const selectedBranch = rawBranch;
     const branchDisplayName = BRANCH_NAMES[selectedBranch];
 
-    console.log(`💳 [Pay.js] إنشاء معاملة مؤكدة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amount} | الوسيلة: ${cleanMethod}`);
+    console.log(`💳 [Pay.js Paymob] إنشاء معاملة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amount} | الوسيلة: ${cleanMethod}`);
 
     let integrationId;
     switch (cleanMethod) {
-      case 'card':
-        integrationId = process.env.CARD_INTEGRATION_ID;
-        break;
       case 'valu':
         integrationId = process.env.VALU_INTEGRATION_ID;
         break;
@@ -168,10 +165,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       return { type: 'redirect', url: redirectUrl };
     } 
     else {
-      const iframeId = cleanMethod === 'card' 
-        ? (process.env.CARD_IFRAME_ID || process.env.PAYMOB_IFRAME_ID) 
-        : process.env.PAYMOB_IFRAME_ID;
-
+      const iframeId = process.env.PAYMOB_IFRAME_ID;
       if (!iframeId) {
         throw new Error("Missing PAYMOB_IFRAME_ID in environment variables");
       }
@@ -198,35 +192,9 @@ const XPAY_BASE_URL = "https://staging.xpay.app/api/v1";
 
 async function createXPayPayment(phone, amount, branchKey) {
   try {
-    console.log(`💳 [Xpay] بدء إنشاء جلسة دفع | المبلغ: ${amount}ج | الفرع: ${branchKey}`);
+    console.log(`💳 [Xpay] بدء إنشاء جلسة دفع بالفيزا | المبلغ: ${amount}ج | الفرع: ${branchKey}`);
 
     const transactionId = "TX_" + Date.now();
-    
-    // إذا كنت تود استخدام رابط شيلد أو صفحة الدفع الخاصة بـ XPay مباشرة
-    const payload = {
-      amount: parseFloat(amount),
-      currency: "EGP",
-      email: "customer@tales.net",
-      first_name: "عميل",
-      last_name: "شبكة حكايات",
-      phone_number: phone || "01000000000",
-      merchant_extra: {
-        branch: branchKey
-      }
-    };
-
-    // يمكنك تفعيل الطلب الفعلي هنا عبر API الخاص بـ XPay عند الحاجة
-    /*
-    const response = await axios.post(`${XPAY_BASE_URL}/payments/pay`, payload, {
-      headers: {
-        'Authorization': `Bearer ${XPAY_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    const paymentUrl = response.data.data.payment_url;
-    */
-
-    // توجيه العميل لرابط الدفع أو صفحة الـ Checkout
     const checkoutUrl = `/success?id=${transactionId}&branch=${branchKey}&amount=${amount}`;
 
     if (typeof getCheckoutPage === 'function') {
@@ -245,14 +213,16 @@ async function createXPayPayment(phone, amount, branchKey) {
   }
 }
 
-// دالة المعالجة الموحدة للبوابات
+// دالة المعالجة الموحدة للبوابات (موجهة بالكامل للفيزا عبر XPay والباقي عبر Paymob)
 async function processPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
   const cleanMethod = (method || '').toLowerCase();
 
-  if (cleanMethod === 'xpay' || cleanMethod === 'xpay_card') {
+  // توجيه أي طلب بطاقة بنكية (card أو xpay أو visa) إلى بوابة XPay مباشرة
+  if (cleanMethod === 'card' || cleanMethod === 'xpay' || cleanMethod === 'xpay_card' || cleanMethod === 'visa') {
     return await createXPayPayment(phone, amount, branch || 'main');
   }
 
+  // باقي الوسائل (مثل المحافظ وفاليو) تعمل عبر Paymob
   return await createPaymobPayment(phone, amount, cleanMethod, branch, req, res);
 }
 
