@@ -44,7 +44,7 @@
         <div class="checkout-card">
             <section class="card-inputs">
                 <form id="paymob_checkout" action="/api/pay" method="POST" novalidate>
-                    <!-- 💡 حقل مخفي لتثبيت رقم العملية الموحد وإرساله مع الفورم -->
+                    <!-- حقل مخفي لتثبيت رقم العملية الموحد -->
                     <input type="hidden" name="transaction_id" id="hidden_transaction_id" value="">
 
                     <input type="hidden" id="card_expiry_mm" name="card_expiry_mm">
@@ -202,13 +202,13 @@
         </div>
     </div>
 
-    <!-- 💡 سكريبت توليد وثبات رقم العملية -->
+    <!-- سكربت توليد وتثبيت رقم العملية الموحد -->
     <script>
         document.addEventListener("DOMContentLoaded", () => {
-            let fixedTx = "TX_" + Date.now();
+            const fixedTxId = "TX_" + Date.now();
             const txInput = document.getElementById("hidden_transaction_id");
             if (txInput) {
-                txInput.value = fixedTx;
+                txInput.value = fixedTxId;
             }
         });
     </script>
@@ -244,7 +244,7 @@
 
     <script>
        window.addEventListener('load', () => {
-           setTimeout(() => {
+            setTimeout(() => {
                const topCurtain = document.querySelector('.curtain-top');
                const bottomCurtain = document.querySelector('.curtain-bottom');
                const content = document.querySelector('.curtain-content');
@@ -257,7 +257,7 @@
                setTimeout(() => {
                    if (overlay) overlay.remove();
                }, 1200);
-           }, 400);
+            }, 400);
        });
     </script>
 
