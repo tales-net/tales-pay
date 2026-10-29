@@ -62,7 +62,7 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
       order_id: Number(orderId),
       billing_data: {
         apartment: "NA",
-        email: "customer@tales-pay.com",
+        email: "customer@tales-net.com",
         floor: "NA",
         first_name: "Tales",
         street: branchName,
@@ -137,7 +137,7 @@ async function processPayment(userPhone, payAmount, selectedMethod, branch, req,
           amount: amountEGP,
           currency: "egp",
           customer_details: {
-            email: "customer@tales-pay.com",
+            email: "customer@tales-net.com",
             phone: userPhone !== "غير محدد" && userPhone ? userPhone : "01000000000"
           },
           merchant_extra: {
