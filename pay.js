@@ -116,20 +116,20 @@ async function processPayment(userPhone, payAmount, selectedMethod, branch, req,
     console.log(`💳 [Payment Router] وسيلة الدفع: ${cleanMethod} | المبلغ: ${amountEGP}ج | الفرع: ${branchDisplayName} (${selectedBranch})`);
 
     // ==========================================
-    // 1. الدفع بالبطاقة البنكية (Visa / MasterCard) عبر XPay (توجيه مباشر للصفحة المستضافة)
+    // 1. الدفع بالبطاقة البنكية (Visa / MasterCard) عبر XPay (الرابط المخصص)
     // ==========================================
     if (cleanMethod === "card" || cleanMethod === "visa" || cleanMethod === "mastercard") {
-      console.log("🚀 [XPay] جاري توجيه العميل إلى صفحة الدفع المستضافة لـ XPay...");
+      console.log("🚀 [XPay] جاري توجيه العميل إلى رابط XPay المخصص...");
 
       const isContribution = amountEGP > 100;
       if (isContribution) {
         console.log(`🌸 [XPay المساهمات] المبلغ ${amountEGP}ج أكبر من 100ج، سيتم معالجته كمساهمة.`);
       }
 
-      // رابط صفحة الدفع المستضافة مع تمرير المبلغ والفرع
-      const xpayHostedUrl = `https://app.xpay.app/checkout?amount=${amountEGP}&currency=EGP&branch=${selectedBranch}&is_contribution=${isContribution}`;
+      // 💡 استبدل هذا الرابط برابط الدفع أو الفاتورة الثابت المخصص لمتجرك من لوحة تحكم XPay
+      const customXPayUrl = `https://app.xpay.app/your-store-link?amount=${amountEGP}&branch=${selectedBranch}&is_contribution=${isContribution}`;
 
-      return { type: "redirect", url: xpayHostedUrl };
+      return { type: "redirect", url: customXPayUrl };
     }
 
     // ==========================================
