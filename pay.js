@@ -190,11 +190,12 @@ const XPAY_API_KEY = process.env.XPAY_API_KEY;
 const XPAY_SECRET_KEY = process.env.XPAY_SECRET_KEY;
 const XPAY_BASE_URL = "https://staging.xpay.app/api/v1"; 
 
-async function createXPayPayment(phone, amount, branchKey) {
+async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
   try {
-    console.log(`💳 [Xpay] بدء إنشاء جلسة دفع بالفيزا | المبلغ: ${amount}ج | الفرع: ${branchKey}`);
+    // استخدام رقم العملية الثابت إذا مررناه، وإلا إنشاء واحد جديد
+    const transactionId = customTxId || "TX_" + Date.now();
+    console.log(`💳 [Xpay] بدء إنشاء جلسة دفع بالفيزا | المعاملة: ${transactionId} | المبلغ: ${amount}ج | الفرع: ${branchKey}`);
 
-    const transactionId = "TX_" + Date.now();
     const checkoutUrl = `/success?id=${transactionId}&branch=${branchKey}&amount=${amount}`;
 
     if (typeof getCheckoutPage === 'function') {
@@ -213,13 +214,13 @@ async function createXPayPayment(phone, amount, branchKey) {
   }
 }
 
-// دالة المعالجة الموحدة للبوابات (موجهة بالكامل للفيزا عبر XPay والباقي عبر Paymob)
-async function processPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
+// دالة المعالجة الموحدة للبوابات
+async function processPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null, transactionId = null) {
   const cleanMethod = (method || '').toLowerCase();
 
-  // توجيه أي طلب بطاقة بنكية (card أو xpay أو visa) إلى بوابة XPay مباشرة
+  // توجيه أي طلب بطاقة بنكية (card أو xpay أو visa) إلى بوابة XPay مباشرة وتمرير المعرف الثابت
   if (cleanMethod === 'card' || cleanMethod === 'xpay' || cleanMethod === 'xpay_card' || cleanMethod === 'visa') {
-    return await createXPayPayment(phone, amount, branch || 'main');
+    return await createXPayPayment(phone, amount, branch || 'main', transactionId);
   }
 
   // باقي الوسائل (مثل المحافظ وفاليو) تعمل عبر Paymob
