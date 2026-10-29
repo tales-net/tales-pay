@@ -122,7 +122,7 @@ async function processPayment(userPhone, payAmount, selectedMethod, branch, req,
     // 1. الدفع بالبطاقة البنكية (Visa / MasterCard) عبر XPay
     // ==========================================
     if (cleanMethod === "card" || cleanMethod === "visa" || cleanMethod === "mastercard") {
-      console.log("🚀 [XPay] جاري إنشاء جلسة دفع بالبطاقة البنكية...");
+      console.log("🚀 [XPay] جاري تمرير المبلغ وإنشاء جلسة دفع بالبطاقة البنكية...");
 
       const networkUrl = process.env.NETWORK_HOTSPOT_URL || "https://tales-pay.onrender.com";
       const isContribution = amountEGP > 100;
@@ -131,6 +131,7 @@ async function processPayment(userPhone, payAmount, selectedMethod, branch, req,
         console.log(`🌸 [XPay المساهمات] المبلغ ${amountEGP}ج أكبر من 100ج، سيتم معالجته كمساهمة.`);
       }
 
+      // إضافة رؤوس طلبيات تحاكي متصفح حقيقي لتجنب حظر WAF
       const xpayResponse = await axios.post(
         "https://api.xpay.app/v1/checkout/sessions",
         {
@@ -152,8 +153,9 @@ async function processPayment(userPhone, payAmount, selectedMethod, branch, req,
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${XPAY_SECRET_KEY || XPAY_API_KEY}`,
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "application/json, text/plain, */*"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://tales-pay.onrender.com"
           }
         }
       );
