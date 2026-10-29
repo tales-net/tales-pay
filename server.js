@@ -217,8 +217,8 @@ async function handlePaymentRequest(req, res) {
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
     
-    // 💡 توليد رقم العملية الثابت والموحد
-    const transactionId = "TX_" + Date.now();
+    // 💡 التقاط رقم العملية المرسل من الفورم أو إنشاؤه إذا لم يوجد لضمان الثبات التام
+    const transactionId = data.transaction_id || req.query.id || "TX_" + Date.now();
 
     const paymentPayload = {
       id: transactionId,
@@ -250,18 +250,8 @@ async function handlePaymentRequest(req, res) {
       lang: lang || req.headers["accept-language"]?.split(",")[0] || "غير متوفر"
     };
 
-    // 1. إرسال إشعار "جاري عملية الدفع" إلى تليجرام برقم العملية الثابت
     if (typeof sendTelegramMessage === "function") {
-      await sendTelegramMessage({
-        ...paymentPayload,
-        id: transactionId,
-        amount: payAmount,
-        branch: selectedBranch,
-        branchName: branchDisplayName,
-        method: selectedMethod,
-        phone: userPhone,
-        publicIP: getClientPublicIP(req)
-      }, true);
+      await sendTelegramMessage(paymentPayload, true);
     }
 
     const result = await processPayment(userPhone, payAmount, selectedMethod, selectedBranch);
@@ -274,7 +264,6 @@ async function handlePaymentRequest(req, res) {
     } else if (result.type === "html") {
       return res.send(result.content);
     } else {
-      // 2. إعادة التوجيه لصفحة النجاح مع تمرير نفس رقم العملية في الرابط
       return res.redirect(`/success?id=${transactionId}&branch=${selectedBranch}&amount=${payAmount}`);
     }
   } catch (err) {
@@ -390,15 +379,10 @@ app.post("/api/disable-queue", async (req, res) => {
   }
 });
 
-app.get("/success", async (req, res) => {
-  const transactionId = req.query.id || 
-                        req.query.order || 
-                        req.query.transaction_id || 
-                        req.query.merchant_order_id || 
-                        "TX_" + Date.now();
-                        
-  const queryBranch = req.query.branch || req.query.shipping_method || "main";
-
+app.get("/success", (req, res) => {
+  const transactionId = req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
+  const queryBranch = req.query.branch || "";
+  
   const pageHtml = generateSuccessPageHtml(transactionId, NETWORK_URL, queryBranch);
   return res.send(pageHtml);
 });
