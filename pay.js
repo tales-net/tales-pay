@@ -6,7 +6,7 @@ const { BRANCH_NAMES } = require("./branches");
 const XPAY_API_KEY = process.env.XPAY_API_KEY;
 const XPAY_SECRET_KEY = process.env.XPAY_SECRET_KEY;
 
-// ضع هنا الرابط الأساسي الموجود في صفحة "التوثيق" داخل لوحة تحكم XPay
+// المسار القياسي المتوافق مع بنية الـ Webhook التي أرسلتها (Stripe-compatible)
 const XPAY_BASE_URL = process.env.XPAY_BASE_URL || "https://api.xpay.app";
 
 async function getAuthToken() {
@@ -137,15 +137,21 @@ function generateXPayClientBridgeHtml(amountEGP, sanitizedPhone, selectedBranch,
       const titleEl = document.getElementById('title');
       const backBtn = document.getElementById('back_btn');
 
+      // هيكل الطلب المتوافق مع نظام Checkout Sessions
       const sessionData = {
-        amount: ${amountEGP},
-        amount_cents: ${Math.round(amountEGP * 100)},
-        currency: "EGP",
-        customer: {
-          name: "Tales Customer",
-          email: "customer@tales-net.com",
-          phone: "${sanitizedPhone}"
-        },
+        payment_method_types: ["card"],
+        line_items: [{
+          price_data: {
+            currency: "EGP",
+            unit_amount: ${Math.round(amountEGP * 100)},
+            product_data: {
+              name: "باقة إنترنت / مساهمة - " + "${branchDisplayName}"
+            }
+          },
+          quantity: 1
+        }],
+        mode: "payment",
+        customer_email: "customer@tales-net.com",
         metadata: {
           branch: "${selectedBranch}",
           branch_name: "${branchDisplayName}",
@@ -160,7 +166,7 @@ function generateXPayClientBridgeHtml(amountEGP, sanitizedPhone, selectedBranch,
       const targets = [
         baseUrl + "/v1/checkout/sessions",
         baseUrl + "/api/v1/checkout/sessions",
-        baseUrl + "/v1/payments"
+        baseUrl + "/v1/sessions"
       ];
 
       let errorLogs = [];
@@ -172,7 +178,6 @@ function generateXPayClientBridgeHtml(amountEGP, sanitizedPhone, selectedBranch,
             headers: {
               "Content-Type": "application/json",
               "Authorization": "Bearer ${secretKey}",
-              "x-api-key": "${pubKey}",
               "Accept": "application/json"
             },
             body: JSON.stringify(sessionData)
@@ -183,7 +188,7 @@ function generateXPayClientBridgeHtml(amountEGP, sanitizedPhone, selectedBranch,
           try { data = JSON.parse(text); } catch (e) {}
 
           if (response.ok) {
-            const checkoutUrl = data.url || data.data?.url || data.payment_url || data.redirect_url || data.data?.payment_url;
+            const checkoutUrl = data.url || data.data?.url || data.payment_url || data.redirect_url;
             if (checkoutUrl) {
               window.location.replace(checkoutUrl);
               return;
@@ -197,9 +202,9 @@ function generateXPayClientBridgeHtml(amountEGP, sanitizedPhone, selectedBranch,
       }
 
       spinnerEl.style.display = "none";
-      titleEl.textContent = "يرجى ضبط رابط التوثيق الصحيح لبوابة XPay";
+      titleEl.textContent = "خطأ في اتصال الجلسة";
       statusEl.style.display = "block";
-      statusEl.innerHTML = "<strong>Attempts:</strong><br>" + errorLogs.join("<br><br>");
+      statusEl.innerHTML = "<strong>Logs:</strong><br>" + errorLogs.join("<br><br>");
       backBtn.style.display = "inline-block";
     })();
   </script>
@@ -255,28 +260,33 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
         : `${networkUrl}/success?id=${txId}&branch=${selectedBranch}&amount=${amountEGP}`;
       const failRedirect = `${networkUrl}/fail?id=${txId}&branch=${selectedBranch}&amount=${amountEGP}&phone=${sanitizedPhone}`;
 
-      console.log(`🚀 [XPay] جاري تمرير المبلغ (${amountEGP}ج) وإنشاء صفحة الدفع للفرع (${selectedBranch})...`);
+      console.log(`🚀 [XPay] جاري تمرير المبلغ (${amountEGP}ج) وإنشاء جلسة الدفع للفرع (${selectedBranch})...`);
 
       try {
         const secretOrPublic = XPAY_SECRET_KEY || XPAY_API_KEY;
         const baseUrl = XPAY_BASE_URL.replace(/\/$/, "");
+        
         const response = await fetch(`${baseUrl}/v1/checkout/sessions`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${secretOrPublic}`,
-            "x-api-key": secretOrPublic,
             "Accept": "application/json"
           },
           body: JSON.stringify({
-            amount: amountEGP,
-            amount_cents: Number(amountCents),
-            currency: "EGP",
-            customer: {
-              name: "Tales Customer",
-              email: "customer@tales-net.com",
-              phone: sanitizedPhone
-            },
+            payment_method_types: ["card"],
+            line_items: [{
+              price_data: {
+                currency: "EGP",
+                unit_amount: Number(amountCents),
+                product_data: {
+                  name: "Internet Package - " + branchDisplayName
+                }
+              },
+              quantity: 1
+            }],
+            mode: "payment",
+            customer_email: "customer@tales-net.com",
             metadata: {
               branch: selectedBranch,
               branch_name: branchDisplayName,
@@ -292,7 +302,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
           const resData = await response.json();
           const checkoutUrl = resData.url || resData.data?.url || resData.payment_url || resData.redirect_url;
           if (checkoutUrl) {
-            console.log(`✅ [XPay] تم إنشاء رابط الدفع بنجاح: ${checkoutUrl}`);
+            console.log(`✅ [XPay] تم إنشاء جلسة الدفع بنجاح: ${checkoutUrl}`);
             return { type: 'redirect', url: checkoutUrl };
           }
         }
