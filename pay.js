@@ -22,7 +22,7 @@ async function getAuthToken() {
 async function createOrder(authToken, amountCents, branchData = {}) {
   try {
     const branchKey = branchData.branch || 'main';
-    const branchName = branchData.branch_name || 'حكايات نت رئيسي';
+    const branchName = branchData.branch_name || 'حكايات رئيسي';
 
     const payload = {
       auth_token: authToken,
@@ -53,7 +53,7 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
     }
 
     const branchKey = branchData.branch || 'main';
-    const branchName = branchData.branchName || 'حكايات نت رئيسي';
+    const branchName = branchData.branchName || 'حكايات رئيسي';
 
     const payload = {
       auth_token: authToken,
@@ -62,7 +62,7 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
       order_id: Number(orderId),
       billing_data: {
         apartment: "NA",
-        email: "customer@tales-net.com",
+        email: "customer@tales-pay.com",
         floor: "NA",
         first_name: "Tales",
         street: branchName,
@@ -137,7 +137,7 @@ async function processPayment(userPhone, payAmount, selectedMethod, branch, req,
           amount: amountEGP,
           currency: "egp",
           customer_details: {
-            email: "customer@tales-net.com",
+            email: "customer@tales-pay.com",
             phone: userPhone !== "غير محدد" && userPhone ? userPhone : "01000000000"
           },
           merchant_extra: {
