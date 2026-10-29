@@ -206,8 +206,6 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
 
 const XPAY_API_KEY = process.env.XPAY_API_KEY;
 const XPAY_SECRET_KEY = process.env.XPAY_SECRET_KEY;
-// الرابط الأساسي الصحيح والمجرب للـ API الخاص بـ XPay
-const XPAY_BASE_URL = "https://staging.xpay.app/api/v1"; 
 
 /**
  * إنشاء طلب دفع حقيقي عبر XPay وتمرير رقم المعاملة الثابت
@@ -215,47 +213,13 @@ const XPAY_BASE_URL = "https://staging.xpay.app/api/v1";
 async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
   try {
     const transactionId = customTxId || "TX_" + Date.now();
-    console.log(`💳 [XPay Real] بدء إنشاء طلب دفع حقيقي | المعاملة: ${transactionId} | المبلغ: ${amount}ج | الفرع: ${branchKey}`);
+    console.log(`💳 [XPay Real] بدء تجهيز رابط الدفع المباشر | المعاملة: ${transactionId} | المبلغ: ${amount}ج | الفرع: ${branchKey}`);
 
     const hotspotUrl = process.env.NETWORK_HOTSPOT_URL || "https://tales-pay.onrender.com";
     const successRedirectionUrl = `${hotspotUrl}/success?id=${transactionId}&branch=${branchKey}&amount=${amount}`;
-    const failureRedirectionUrl = `${hotspotUrl}/fail?error=` + encodeURIComponent("فشلت عملية الدفع بالبطاقة البنكية");
 
-    let paymentUrl = "";
-    
-    try {
-      // الهيكل المتوافق مع معظم بوابات XPay لإنشاء رابط دفع فوري
-      const response = await axios.post(`${XPAY_BASE_URL}/payments/pay-via-link`, {
-        amount: Number(amount),
-        currency: "EGP",
-        merchant_order_id: transactionId,
-        success_url: successRedirectionUrl,
-        failed_url: failureRedirectionUrl,
-        customer: {
-          phone_number: phone && phone !== "غير محدد" ? phone : "01000000000",
-          first_name: "Tales",
-          last_name: "Customer",
-          email: "customer@tales-net.com"
-        }
-      }, {
-        headers: {
-          "x-api-key": XPAY_API_KEY,
-          "Content-Type": "application/json"
-        },
-        timeout: 8000
-      });
-
-      paymentUrl = response.data?.data?.redirect_url || 
-                   response.data?.data?.iframe_url || 
-                   response.data?.redirect_url;
-    } catch (apiErr) {
-      console.warn("⚠️ [XPay API Fallback] جارٍ الاعتماد على رابط الدفع المباشر لـ XPay:", apiErr.message);
-    }
-
-    // Fallback دقيق يضمن توجه العميل لصفحة الدفع مع بيانات المعاملة والمبلغ
-    if (!paymentUrl) {
-      paymentUrl = `https://app.xpay.app/?amount=${amount}&merchant_order_id=${transactionId}`;
-    }
+    // توجيه العميل مباشرة إلى بوابة XPay مع تمرير المبلغ ورقم المعاملة ورابط العودة لصفحة النجاح
+    const paymentUrl = `https://app.xpay.app/?amount=${amount}&merchant_order_id=${transactionId}&success_url=${encodeURIComponent(successRedirectionUrl)}&phone=${phone || ''}`;
 
     console.log(`🔗 [XPay Real] رابط الدفع النهائي للعميل: ${paymentUrl}`);
 
@@ -270,8 +234,8 @@ async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
     };
 
   } catch (err) {
-    console.error("❌ [XPay Real Payment Error]:", err.response?.data || err.message);
-    throw new Error(err.response?.data?.message || err.message);
+    console.error("❌ [XPay Real Payment Error]:", err.message);
+    throw new Error(err.message);
   }
 }
 
