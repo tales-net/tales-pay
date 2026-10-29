@@ -3,7 +3,6 @@ const path = require('path');
 const { getCheckoutPage } = require('./checkout');
 const { BRANCH_NAMES } = require("./branches");
 
-// مفاتيح وإعدادات XPay (للبطاقات البنكية / الفيزا)
 const XPAY_API_KEY = process.env.XPAY_API_KEY;
 const XPAY_SECRET_KEY = process.env.XPAY_SECRET_KEY;
 
@@ -22,7 +21,7 @@ async function getAuthToken() {
 async function createOrder(authToken, amountCents, branchData = {}) {
   try {
     const branchKey = branchData.branch || 'main';
-    const branchName = branchData.branch_name || 'حكايات رئيسي';
+    const branchName = branchData.branch_name || 'حكايات نت رئيسي';
 
     const payload = {
       auth_token: authToken,
@@ -53,7 +52,7 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
     }
 
     const branchKey = branchData.branch || 'main';
-    const branchName = branchData.branchName || 'حكايات رئيسي';
+    const branchName = branchData.branchName || 'حكايات نت رئيسي';
 
     const payload = {
       auth_token: authToken,
@@ -92,16 +91,12 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
   }
 }
 
-/**
- * دالة معالجة الدفع الموحدة: XPay للبطاقات و Paymob للمحافظ وفاليو
- */
 async function processPayment(userPhone, payAmount, selectedMethod, branch, req, res) {
   try {
     const cleanMethod = (selectedMethod || 'wallet').toLowerCase();
     const amountEGP = parseFloat(payAmount);
     const amountCents = Math.round(amountEGP * 100).toString();
 
-    // التحقق من صحة الفرع
     let rawBranch = String(branch || '').toLowerCase().trim();
     if (!rawBranch && req) {
       rawBranch = String(req.body?.branch || req.query?.branch || '').toLowerCase().trim();
@@ -153,12 +148,6 @@ async function processPayment(userPhone, payAmount, selectedMethod, branch, req,
             "Authorization": `Bearer ${XPAY_SECRET_KEY || XPAY_API_KEY}`,
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "application/json, text/plain, */*"
-          }
-        }
-      );
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${XPAY_SECRET_KEY || XPAY_API_KEY}`
           }
         }
       );
