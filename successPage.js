@@ -60,7 +60,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
             </div>
             <div class="info-row">
               <span>رقم العملية:</span>
-              <strong>${transactionId || "غير محدد"}</strong>
+              <strong id="txIdDisplay">${transactionId || "غير محدد"}</strong>
             </div>
             <div class="info-row">
               <span>حالة الدفع:</span>
@@ -76,6 +76,11 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
         <script>
           const urlParams = new URLSearchParams(window.location.search);
           const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
+          
+          if (txId && txId !== "غير محدد") {
+            document.getElementById('txIdDisplay').innerText = txId;
+          }
+
           let attempts = 0;
           const maxAttempts = 90; 
 
@@ -108,15 +113,13 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
               if (attempts < maxAttempts) {
                 setTimeout(pollVoucher, 2000); 
               } else {
-                const errorMsg = encodeURIComponent("⚠️ أنتهت مهلة الانتظار ولم يتم الدفع بنجاح. تواصل مع الدعم أذا تم الدفع برقم المعاملة: " + txId);
-                window.location.href = '/fail?error=' + errorMsg;
+                window.location.href = '/fail?error=' + encodeURIComponent("⚠️ أنتهت مهلة الانتظار ولم يتم الدفع بنجاح. رقم المعاملة: " + txId);
               }
             } catch (e) {
               if (attempts < maxAttempts) {
                 setTimeout(pollVoucher, 2500);
               } else {
-                const errorMsg = encodeURIComponent("خطأ في الاتصال بالسيرفر أثناء جلب الكارت للمعاملة: " + txId);
-                window.location.href = '/fail?error=' + errorMsg;
+                window.location.href = '/fail?error=' + encodeURIComponent("خطأ في الاتصال بالسيرفر للمعاملة: " + txId);
               }
             }
           }
