@@ -125,6 +125,11 @@ async function processPayment(userPhone, payAmount, selectedMethod, branch, req,
       console.log("🚀 [XPay] جاري إنشاء جلسة دفع بالبطاقة البنكية...");
 
       const networkUrl = process.env.NETWORK_HOTSPOT_URL || "https://tales-pay.onrender.com";
+      const isContribution = amountEGP > 100;
+
+      if (isContribution) {
+        console.log(`🌸 [XPay المساهمات] المبلغ ${amountEGP}ج أكبر من 100ج، سيتم معالجته كمساهمة.`);
+      }
 
       const xpayResponse = await axios.post(
         "https://api.xpay.app/v1/checkout/sessions",
@@ -137,9 +142,10 @@ async function processPayment(userPhone, payAmount, selectedMethod, branch, req,
           },
           merchant_extra: {
             branch: selectedBranch,
-            branch_name: branchDisplayName
+            branch_name: branchDisplayName,
+            is_contribution: isContribution ? "true" : "false"
           },
-          success_url: `${networkUrl}/success?branch=${selectedBranch}`,
+          success_url: `${networkUrl}/success?branch=${selectedBranch}&amount=${amountEGP}`,
           cancel_url: `${networkUrl}/fail?branch=${selectedBranch}`
         },
         {
