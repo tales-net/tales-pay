@@ -211,33 +211,104 @@ async function handleTelegramCallback(callbackQuery) {
       show_alert: false
     });
 
-    const parts = data.split("_");
-    if (data.startsWith("create_voucher")) {
-      const branchKey = parts.pop();
-      const amount = parts.pop();
-      parts.shift(); parts.shift();
-      const txnId = parts.join("_");
+    if (data.startsWith("create_voucher_")) {
+      const coreData = data.replace("create_voucher_", "");
+      const lastUnderscore = coreData.lastIndexOf("_");
+      const secondLastUnderscore = coreData.lastIndexOf("_", lastUnderscore - 1);
 
-      let voucherData = await mikrotikService.processPaymentAndCreateCard(amount, branchKey, txnId);
+      const branchKey = coreData.substring(lastUnderscore + 1);
+      const amount = coreData.substring(secondLastUnderscore + 1, lastUnderscore);
+      const txnId = coreData.substring(0, secondLastUnderscore);
+
+      console.log(`🎟️ [Voucher Creation Started] جارٍ إصدار الكارت للمعاملة: ${txnId} | المبلغ: ${amount} | الفرع: ${branchKey}`);
+
+      let voucherData = null;
+      let errorMessage = null;
+
+      try {
+        if (typeof mikrotikService !== "undefined" && typeof mikrotikService.processPaymentAndCreateCard === "function") {
+          voucherData = await mikrotikService.processPaymentAndCreateCard(amount, branchKey, txnId);
+        } else {
+          throw new Error("دالة processPaymentAndCreateCard غير موجودة في mikrotikService");
+        }
+      } catch (err) {
+        console.error("❌ خطأ أثناء توليد الكارت من ميكروتيك:", err);
+        errorMessage = err.message;
+      }
+
       if (voucherData && (voucherData.success || voucherData.cardCode)) {
+        if (global.generatedCardsMap) {
+          global.generatedCardsMap.set(txnId, {
+            isContribution: voucherData.isContribution || false,
+            success: true,
+            code: voucherData.cardCode || voucherData.username || "متاح",
+            voucher: {
+              username: voucherData.cardCode || voucherData.username || "متاح",
+              password: voucherData.password || ""
+            },
+            amount: amount,
+            transactionId: txnId,
+            packageName: voucherData.packageName || getPackageNameByAmount(amount),
+            branchKey: branchKey,
+            branchName: BRANCH_NAMES[branchKey] || "حكايات نت رئيسي",
+            createdAt: new Date()
+          });
+        }
+
         const usernameStr = voucherData.cardCode || voucherData.username || "متاح";
         const passwordStr = voucherData.password || "";
-        const updatedText = callbackQuery.message.text + `\n\n✅ <b>[تم إصدار الكارت بنجاح]</b>\n🎟️ الكارت: <code>${usernameStr}</code>` + (passwordStr ? `\n🔑 كلمة المرور: <code>${passwordStr}</code>` : ``);
+        const targetBranchName = BRANCH_NAMES[branchKey] || "حكايات نت رئيسي";
+
+        const updatedText = callbackQuery.message.text + 
+          `\n\n✅ <b>[تم إصدار الكارت بنجاح لفرع: ${targetBranchName}]</b>\n🎟️ الكارت: <code>${usernameStr}</code>` +
+          (passwordStr ? `\n🔑 كلمة المرور: <code>${passwordStr}</code>` : ``);
+
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
-          chat_id: chatId, message_id: messageId, text: updatedText, parse_mode: "HTML", reply_markup: { inline_keyboard: [] }
+          chat_id: chatId,
+          message_id: messageId,
+          text: updatedText,
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: [] }
+        });
+
+      } else {
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          chat_id: chatId,
+          text: `❌ فشل إصدار الكارت من الميكروتيك للفرع (${branchKey}) للمعاملة ${txnId}.\nالسبب: ${errorMessage || "خطأ غير معروف"}`
         });
       }
-    } else if (data.startsWith("contribution")) {
-      const branchKey = parts.pop();
-      const amount = parts.pop();
-      parts.shift();
-      const txnId = parts.join("_");
 
-      const updatedText = callbackQuery.message.text + `\n\n🤝 <b>[تم تأكيد وتحويل العملية إلى مساهمة]</b> بقيمة: <code>${amount} جنيه</code>`;
+    } else if (data.startsWith("contribution_")) {
+      const coreData = data.replace("contribution_", "");
+      const lastUnderscore = coreData.lastIndexOf("_");
+      const secondLastUnderscore = coreData.lastIndexOf("_", lastUnderscore - 1);
+
+      const branchKey = coreData.substring(lastUnderscore + 1);
+      const amount = coreData.substring(secondLastUnderscore + 1, lastUnderscore);
+      const txnId = coreData.substring(0, secondLastUnderscore);
+
+      if (global.generatedCardsMap) {
+        global.generatedCardsMap.set(txnId, {
+          isContribution: true,
+          amount: amount,
+          transactionId: txnId,
+          packageName: `مساهمة بقيمة ${amount} جنيه`,
+          branchKey: branchKey,
+          createdAt: new Date()
+        });
+      }
+
+      const updatedText = callbackQuery.message.text + `\n\n🤝 <b>[تم تأكيد وتحويل العملية إلى مساهمة]</b> بقيمة: <code>${amount} جنيه</code> (رقم المعاملة: ${txnId})`;
+
       await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
-        chat_id: chatId, message_id: messageId, text: updatedText, parse_mode: "HTML", reply_markup: { inline_keyboard: [] }
+        chat_id: chatId,
+        message_id: messageId,
+        text: updatedText,
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: [] }
       });
     }
+
   } catch (err) {
     console.error("❌ [Telegram Callback Error]:", err.message);
   }
