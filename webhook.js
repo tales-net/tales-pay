@@ -233,16 +233,27 @@ router.get("/xpay-webhook", (req, res) => {
 
 router.post("/xpay-webhook", async (req, res) => {
   try {
-    const data = req.body;
-    console.log("🔔 [XPay Webhook Received]:", JSON.stringify(data));
+    const payload = req.body;
+    console.log("🔔 [XPay Webhook Received]:", JSON.stringify(payload));
 
-    const obj = data.data || data;
-    const isSuccess = obj.success === true || obj.status === "SUCCESS" || obj.status === "paid" || data.status === "SUCCESS";
-    const transactionId = obj.payment_intent || obj.id || obj.transaction_id || data.payment_intent || data.id || `X_TX_${Date.now()}`;
-    const amount = parseFloat(obj.amount || obj.total_amount || data.amount || 5);
-    const branchKey = obj.merchant_extra?.branch || obj.branch || data.branch || "main";
+    const eventObject = payload.data?.object || payload.obj || payload.data || payload;
+    
+    const paymentStatus = eventObject.paymentStatus || eventObject.status;
+    const isSuccess = paymentStatus === "paid" || paymentStatus === "complete" || eventObject.success === true;
+
+    const metadata = eventObject.metadata || {};
+    const transactionId = metadata.transaction_id || eventObject.merchant_order_id || eventObject.id;
+
+    let amount = 5;
+    if (eventObject.amountTotal) {
+      amount = parseFloat((eventObject.amountTotal / 100).toFixed(2));
+    } else if (eventObject.amount) {
+      amount = parseFloat(eventObject.amount);
+    }
+
+    const branchKey = metadata.branch || "main";
     const branchDisplayName = BRANCH_NAMES[branchKey] || BRANCH_NAMES.main;
-    const phone = obj.phone || obj.user_phone || data.phone || "غير محدد";
+    const phone = eventObject.customerDetails?.phone || eventObject.customer?.phone || "غير محدد";
 
     if (global.generatedCardsMap.has(transactionId)) {
       console.log(`ℹ️ [XPay Duplicate] المعاملة ${transactionId} معالجة بالفعل سلفاً.`);
@@ -252,23 +263,37 @@ router.post("/xpay-webhook", async (req, res) => {
     if (isSuccess) {
       console.log(`💳 [XPay Webhook] معاملة ناجحة مؤكدة: ${transactionId} | المبلغ: ${amount}ج | الفرع: ${branchKey}`);
 
-      let packageName = `باقة إنترنت بقيمة ${amount} جنيه`;
-      const cardResult = await processPaymentAndCreateCard(amount, branchKey, transactionId);
+      if (amount > 100) {
+        console.log(`🤝 [XPay Contribution] تم تسجيل العملية كمساهمة بقيمة ${amount}ج`);
+        
+        global.generatedCardsMap.set(transactionId, {
+          isContribution: true,
+          amount: amount,
+          transactionId: transactionId,
+          packageName: `مساهمة بقيمة ${amount} جنيه`,
+          branchKey: branchKey,
+          branchName: branchDisplayName,
+          createdAt: new Date()
+        });
 
-      let cardImageBuffer = null;
-      let cardCode = null;
+        const contributionObj = {
+          id: transactionId,
+          amount: amount,
+          phone: phone,
+          branch: branchKey,
+          branchName: branchDisplayName,
+          payment_method: "💳 بطاقة بنكية (XPay)"
+        };
+        await sendTelegramMessage(contributionObj, false);
 
-      if (cardResult.success) {
-        if (cardResult.isCustomAmount) {
-          console.log(`🌸 [XPay Custom Amount] تم استقبال مساهمة بقيمة ${amount}ج`);
-          global.generatedCardsMap.set(transactionId, {
-            isContribution: true,
-            amount: amount,
-            transactionId: transactionId,
-            branchKey: branchKey,
-            createdAt: new Date()
-          });
-        } else {
+      } else {
+        let packageName = `باقة إنترنت بقيمة ${amount} جنيه`;
+        const cardResult = await processPaymentAndCreateCard(amount, branchKey, transactionId);
+
+        let cardImageBuffer = null;
+        let cardCode = null;
+
+        if (cardResult.success && cardResult.cardCode) {
           cardCode = cardResult.cardCode;
           packageName = cardResult.packageName || packageName;
 
@@ -286,43 +311,43 @@ router.post("/xpay-webhook", async (req, res) => {
           };
 
           global.generatedCardsMap.set(transactionId, cardPayload);
+        } else {
+          console.error(`🚨 [XPay Webhook Error] فشل إنشاء الكارت للمبلغ ${amount}ج:`, cardResult.error);
         }
-      } else {
-        console.error(`🚨 [XPay Webhook Error] فشل إنشاء الكارت للمبلغ ${amount}ج:`, cardResult.error);
-      }
 
-      const telegramObj = {
-        ...obj,
-        id: transactionId,
-        voucher_code: cardCode || "⚠️ تعذر الإصدار الآلي",
-        package_info: packageName,
-        phone: phone,
-        branch: branchKey,
-        branchName: branchDisplayName,
-        amount: amount
-      };
+        const telegramObj = {
+          id: transactionId,
+          voucher_code: cardCode || "⚠️ تعذر الإصدار الآلي",
+          package_info: packageName,
+          phone: phone,
+          branch: branchKey,
+          branchName: branchDisplayName,
+          amount: amount,
+          payment_method: "💳 بطاقة بنكية (XPay)"
+        };
 
-      await sendTelegramMessage(telegramObj, false);
+        await sendTelegramMessage(telegramObj, false);
 
-      if (cardImageBuffer) {
-        await sendVoucherWithCardImage(
-          {
-            amount: amount,
-            packageName: packageName,
-            card: { code: cardCode },
-            remaining: "مبتكر تلقائياً",
-            phone: phone,
-            transactionId: transactionId,
-            branch: branchKey,
-            branchName: branchDisplayName
-          },
-          cardImageBuffer
-        );
+        if (cardImageBuffer) {
+          await sendVoucherWithCardImage(
+            {
+              amount: amount,
+              packageName: packageName,
+              card: { code: cardCode },
+              remaining: "مبتكر تلقائياً",
+              phone: phone,
+              transactionId: transactionId,
+              branch: branchKey,
+              branchName: branchDisplayName
+            },
+            cardImageBuffer
+          );
+        }
       }
 
       console.log(`✅ [XPay SUCCESS Completed] تم معالجة معاملة الفيزا بنجاح: ${transactionId}`);
     } else {
-      console.error(`❌ [XPay FAILED] معاملة فيزا فاشلة: ${transactionId}`);
+      console.error(`❌ [XPay FAILED] معاملة فيزا فاشلة أو غير مكتملة: ${transactionId}`);
     }
 
     return res.status(200).send("XPay Webhook Processed Successfully");
