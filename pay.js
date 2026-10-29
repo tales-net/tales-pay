@@ -6,6 +6,9 @@ const { BRANCH_NAMES } = require("./branches");
 const XPAY_API_KEY = process.env.XPAY_API_KEY;
 const XPAY_SECRET_KEY = process.env.XPAY_SECRET_KEY;
 
+// ضع هنا الرابط الأساسي الموجود في صفحة "التوثيق" داخل لوحة تحكم XPay
+const XPAY_BASE_URL = process.env.XPAY_BASE_URL || "https://api.xpay.app";
+
 async function getAuthToken() {
   try {
     const response = await axios.post("https://accept.paymob.com/api/auth/tokens", {
@@ -91,10 +94,6 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
   }
 }
 
-/**
- * توليد صفحة HTML ذكية تقوم بإنشاء جلسة XPay من متصفح العميل مباشرة
- * مع معالجة CORS وتخطي CloudWAF 418 وفتح شاشة الدفع مثل فاليو
- */
 function generateXPayClientBridgeHtml(amountEGP, sanitizedPhone, selectedBranch, branchDisplayName, isContribution, networkUrl) {
   const secretKey = XPAY_SECRET_KEY || XPAY_API_KEY || "";
   const pubKey = XPAY_API_KEY || XPAY_SECRET_KEY || "";
@@ -113,14 +112,13 @@ function generateXPayClientBridgeHtml(amountEGP, sanitizedPhone, selectedBranch,
   <title>بوابة الدفع بالبطاقة البنكية | حكايات</title>
   <style>
     body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
-    .loader-box { text-align: center; padding: 30px; background: #1e293b; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); max-width: 440px; width: 90%; }
+    .loader-box { text-align: center; padding: 30px; background: #1e293b; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); max-width: 460px; width: 90%; }
     .spinner { width: 50px; height: 50px; border: 5px solid rgba(255,255,255,0.1); border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
     @keyframes spin { to { transform: rotate(360deg); } }
     h2 { font-size: 18px; margin: 0 0 10px; color: #f8fafc; }
     p { font-size: 14px; color: #94a3b8; margin: 0 0 15px; line-height: 1.6; }
-    .status-msg { font-size: 13px; color: #fbbf24; margin-top: 15px; background: rgba(251, 191, 36, 0.1); padding: 10px; border-radius: 8px; display: none; word-break: break-word; }
+    .status-msg { font-size: 13px; color: #fbbf24; margin-top: 15px; background: rgba(251, 191, 36, 0.1); padding: 12px; border-radius: 8px; display: none; text-align: right; direction: ltr; word-break: break-word; }
     .btn-retry { display: none; margin-top: 15px; padding: 10px 20px; background: #3b82f6; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; text-decoration: none; }
-    iframe { width: 100%; height: 100vh; border: none; display: none; position: fixed; top: 0; left: 0; z-index: 9999; background: #fff; }
   </style>
 </head>
 <body>
@@ -131,7 +129,6 @@ function generateXPayClientBridgeHtml(amountEGP, sanitizedPhone, selectedBranch,
     <div class="status-msg" id="status_msg"></div>
     <a href="/" class="btn-retry" id="back_btn">العودة لصفحة الدفع</a>
   </div>
-  <iframe id="payment_frame" allow="payment *"></iframe>
 
   <script>
     (async function startXPaySession() {
@@ -139,7 +136,6 @@ function generateXPayClientBridgeHtml(amountEGP, sanitizedPhone, selectedBranch,
       const spinnerEl = document.getElementById('spinner');
       const titleEl = document.getElementById('title');
       const backBtn = document.getElementById('back_btn');
-      const frame = document.getElementById('payment_frame');
 
       const sessionData = {
         amount: ${amountEGP},
@@ -150,36 +146,24 @@ function generateXPayClientBridgeHtml(amountEGP, sanitizedPhone, selectedBranch,
           email: "customer@tales-net.com",
           phone: "${sanitizedPhone}"
         },
-        customer_details: {
-          name: "Tales Customer",
-          email: "customer@tales-net.com",
-          phone: "${sanitizedPhone}"
-        },
         metadata: {
           branch: "${selectedBranch}",
           branch_name: "${branchDisplayName}",
           transaction_id: "${txId}",
           is_contribution: "${isContribution}"
         },
-        merchant_extra: {
-          branch: "${selectedBranch}",
-          branch_name: "${branchDisplayName}",
-          transaction_id: "${txId}",
-          is_contribution: "${isContribution}"
-        },
         success_url: "${successRedirect}",
-        cancel_url: "${failRedirect}",
-        redirect_url: "${successRedirect}"
+        cancel_url: "${failRedirect}"
       };
 
-      // قائمة مسارات XPay المحتملة (المباشرة وعبر جسر CORS لتخطي CloudWAF 418)
+      const baseUrl = "${XPAY_BASE_URL}".replace(/\\/$/, "");
       const targets = [
-        "https://api.xpay.app/v1/checkout/sessions",
-        "https://api.xpay.app/api/v1/checkout/sessions",
-        "https://corsproxy.io/?" + encodeURIComponent("https://api.xpay.app/v1/checkout/sessions")
+        baseUrl + "/v1/checkout/sessions",
+        baseUrl + "/api/v1/checkout/sessions",
+        baseUrl + "/v1/payments"
       ];
 
-      let lastError = "";
+      let errorLogs = [];
 
       for (const targetUrl of targets) {
         try {
@@ -205,18 +189,17 @@ function generateXPayClientBridgeHtml(amountEGP, sanitizedPhone, selectedBranch,
               return;
             }
           } else {
-            lastError = data.message || data.error?.message || ("Status: " + response.status);
+            errorLogs.push(targetUrl + " -> HTTP " + response.status + ": " + (data.message || text.substring(0, 80)));
           }
         } catch (err) {
-          lastError = err.message;
+          errorLogs.push(targetUrl + " -> " + err.message);
         }
       }
 
-      // إذا ظهر خطأ من XPay، نعرض السبب الدقيق للمستخدم/المطور بدلاً من صفحة Cannot GET
       spinnerEl.style.display = "none";
-      titleEl.textContent = "تعذر الاتصال المباشر ببوابة XPay";
+      titleEl.textContent = "يرجى ضبط رابط التوثيق الصحيح لبوابة XPay";
       statusEl.style.display = "block";
-      statusEl.innerHTML = "تفاصيل الاستجابة من XPay:<br>" + (lastError || "حظر جدار الحماية CloudWAF (418) - يرجى التأكد من الرابط الأساسي (Base URL) في توثيق لوحة تحكم XPay.");
+      statusEl.innerHTML = "<strong>Attempts:</strong><br>" + errorLogs.join("<br><br>");
       backBtn.style.display = "inline-block";
     })();
   </script>
@@ -260,13 +243,62 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
     console.log(`💳 [Pay.js] إنشاء معاملة مؤكدة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amountEGP}ج | الوسيلة: ${cleanMethod}`);
 
     // ====================================================
-    // 1. الدفع بالفيزا / البطاقة البنكية عبر XPay (مثل فاليو)
+    // 1. الدفع بالفيزا / البطاقة البنكية عبر XPay
     // ====================================================
     if (cleanMethod === 'card' || cleanMethod === 'visa' || cleanMethod === 'mastercard') {
       const isContribution = amountEGP > 100;
       const networkUrl = process.env.NETWORK_HOTSPOT_URL || "https://tales-pay.onrender.com";
+      const txId = `XPAY_${selectedBranch.toUpperCase()}_${Date.now()}`;
+
+      const successRedirect = isContribution 
+        ? `${networkUrl}/contribution-success?amount=${amountEGP}&tx=${txId}&branch=${selectedBranch}`
+        : `${networkUrl}/success?id=${txId}&branch=${selectedBranch}&amount=${amountEGP}`;
+      const failRedirect = `${networkUrl}/fail?id=${txId}&branch=${selectedBranch}&amount=${amountEGP}&phone=${sanitizedPhone}`;
 
       console.log(`🚀 [XPay] جاري تمرير المبلغ (${amountEGP}ج) وإنشاء صفحة الدفع للفرع (${selectedBranch})...`);
+
+      try {
+        const secretOrPublic = XPAY_SECRET_KEY || XPAY_API_KEY;
+        const baseUrl = XPAY_BASE_URL.replace(/\/$/, "");
+        const response = await fetch(`${baseUrl}/v1/checkout/sessions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${secretOrPublic}`,
+            "x-api-key": secretOrPublic,
+            "Accept": "application/json"
+          },
+          body: JSON.stringify({
+            amount: amountEGP,
+            amount_cents: Number(amountCents),
+            currency: "EGP",
+            customer: {
+              name: "Tales Customer",
+              email: "customer@tales-net.com",
+              phone: sanitizedPhone
+            },
+            metadata: {
+              branch: selectedBranch,
+              branch_name: branchDisplayName,
+              transaction_id: txId,
+              is_contribution: isContribution ? "true" : "false"
+            },
+            success_url: successRedirect,
+            cancel_url: failRedirect
+          })
+        });
+
+        if (response.ok) {
+          const resData = await response.json();
+          const checkoutUrl = resData.url || resData.data?.url || resData.payment_url || resData.redirect_url;
+          if (checkoutUrl) {
+            console.log(`✅ [XPay] تم إنشاء رابط الدفع بنجاح: ${checkoutUrl}`);
+            return { type: 'redirect', url: checkoutUrl };
+          }
+        }
+      } catch (e) {
+        console.warn(`⚠️ [XPay Server Attempt]:`, e.message);
+      }
 
       const bridgeHtml = generateXPayClientBridgeHtml(
         amountEGP,
