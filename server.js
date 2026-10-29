@@ -15,7 +15,7 @@ const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateSuccessPageHtml } = require('./successPage'); 
-const { generateFailPageHtml } = require('./failPage');      
+const { generateFailPageHtml } = require('./failPage');       
 
 const chatSupport = require('./chat_support');
 
@@ -73,7 +73,7 @@ app.use((req, res, next) => {
     req.path === "/api/maintenance/set" ||
     req.path === "/api/maintenance/verify" ||
     req.path.startsWith("/api/") ||
-    req.path.includes(".") // ملفات CSS, JS, صور
+    req.path.includes(".") 
   ) {
     return next();
   }
@@ -359,15 +359,12 @@ app.get("/api/check-voucher/:txId", (req, res) => {
 
 app.post("/api/disable-queue", async (req, res) => {
   try {
-    // استخراج اسم المستخدم والفرع والدومين من الطلب
     const { username, branch, branch_key, domain } = req.body;
-
     const targetBranch = branch || branch_key || "main";
 
     console.log(`📡 [API] طلب تفعيل سرعة للمستخدم: ${username} | الفرع المستلم: ${targetBranch}`);
 
     if (typeof disableUserQueue === "function") {
-      // تمرير الفرع والدومين لدالة الميكروتك
       const result = await disableUserQueue(username, targetBranch, domain);
       return res.json(result);
     }
