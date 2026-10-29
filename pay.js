@@ -189,10 +189,12 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
 // إعدادات وبوابات XPay الحقيقية (البطاقات والفيزا)
 // ==========================================
 
-// استخدام المفتاح السري بدلاً من مفتاح API العادي لتفادي مشاكل الصلاحيات والتوقيع
-const XPAY_SECRET_KEY = process.env.XPAY_SECRET_KEY;
+const XPAY_API_KEY = process.env.XPAY_SECRET_KEY || process.env.XPAY_API_KEY;
 const XPAY_BASE_URL = "https://api.xpay.app"; 
 
+/**
+ * إنشاء جلسة دفع حقيقية عبر XPay وتوجيه العميل مباشرة للصفحة الرسمية
+ */
 async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
   try {
     const transactionId = customTxId || "TX_" + Date.now();
@@ -237,7 +239,7 @@ async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
       }
     }, {
       headers: {
-        "Authorization": `Bearer ${XPAY_SECRET_KEY}`, // استخدام المفتاح السري هنا
+        "Authorization": `Bearer ${XPAY_API_KEY}`,
         "Content-Type": "application/json"
       },
       timeout: 10000
@@ -249,13 +251,9 @@ async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
       throw new Error("لم يتم استقبال رابط الدفع من جلسة XPay");
     }
 
-    console.log(`🔗 [XPay Checkout] تم توليد رابط الدفع بنجاح: ${paymentUrl}`);
+    console.log(`🔗 [XPay Checkout] تم توليد رابط الدفع بنجاح وتحويل العميل: ${paymentUrl}`);
 
-    if (typeof getCheckoutPage === 'function') {
-      const htmlPage = getCheckoutPage({ url: paymentUrl });
-      return { type: 'html', content: htmlPage };
-    }
-
+    // إرجاع نوع توجيه مباشر للخروج من أي Iframe وتوجيه المتصفح لصفحة XPay الرسمية
     return {
       type: "redirect",
       url: paymentUrl
