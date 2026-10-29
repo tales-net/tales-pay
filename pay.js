@@ -204,24 +204,13 @@ async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
     const hotspotUrl = process.env.NETWORK_HOTSPOT_URL || "https://tales-pay.onrender.com";
     const successRedirectionUrl = `${hotspotUrl}/success?id=${transactionId}&branch=${branchKey}&amount=${amountNumber}`;
 
-    // بناء الطلب حسب مواصفات الـ API لـ XPay مع تمرير المبلغ عبر lineItems
+    // إرسال الطلب بالصيغة القياسية البسيطة والمستقرة لـ XPay API
     const response = await axios.post(`${XPAY_BASE_URL}/checkout/sessions`, {
       mode: "payment",
       uiMode: "hosted",
       currency: "EGP",
-      paymentMethodTypes: ["card"], 
-      lineItems: [
-        {
-          priceData: {
-            currency: "EGP",
-            unitAmount: Math.round(amountNumber * 100), // القيمة بالقروش أو حسب وحدة السعر المطلوبة
-            productData: {
-              name: `باقة إنترنت شبكة حكايات - فرع ${branchKey}`
-            }
-          },
-          quantity: 1
-        }
-      ],
+      paymentMethodTypes: ["card"],
+      amount: amountNumber, // تمرير المبلغ المباشر
       afterCompletion: {
         type: "redirect",
         redirect: {
@@ -246,7 +235,7 @@ async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
       timeout: 10000
     });
 
-    const paymentUrl = response.data?.url;
+    const paymentUrl = response.data?.url || response.data?.data?.url;
 
     if (!paymentUrl) {
       throw new Error("لم يتم استقبال رابط الدفع من جلسة XPay");
