@@ -189,12 +189,10 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
 // إعدادات وبوابات XPay الحقيقية (البطاقات والفيزا)
 // ==========================================
 
-const XPAY_API_KEY = process.env.XPAY_API_KEY;
+// استخدام المفتاح السري بدلاً من مفتاح API العادي لتفادي مشاكل الصلاحيات والتوقيع
+const XPAY_SECRET_KEY = process.env.XPAY_SECRET_KEY;
 const XPAY_BASE_URL = "https://api.xpay.app"; 
 
-/**
- * إنشاء جلسة دفع حقيقية عبر XPay Checkout Sessions وتمرير المبلغ ورقم المعاملة
- */
 async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
   try {
     const transactionId = customTxId || "TX_" + Date.now();
@@ -204,17 +202,16 @@ async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
     const hotspotUrl = process.env.NETWORK_HOTSPOT_URL || "https://tales-pay.onrender.com";
     const successRedirectionUrl = `${hotspotUrl}/success?id=${transactionId}&branch=${branchKey}&amount=${amountNumber}`;
 
-    // إرسال الطلب بالهيكل القياسي الصحيح لـ XPay API
     const response = await axios.post(`${XPAY_BASE_URL}/checkout/sessions`, {
       mode: "payment",
       uiMode: "hosted",
       currency: "EGP",
-      paymentMethodTypes: ["card"], // مخصص للبطاقات والفيزا
+      paymentMethodTypes: ["card"],
       lineItems: [
         {
           priceData: {
             currency: "EGP",
-            unitAmount: Math.round(amountNumber * 100), // المبلغ بالقروش (أصغر وحدة عملة)
+            unitAmount: Math.round(amountNumber * 100),
             productData: {
               name: `باقة إنترنت شبكة حكايات - فرع ${branchKey}`
             }
@@ -240,7 +237,7 @@ async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
       }
     }, {
       headers: {
-        "Authorization": `Bearer ${XPAY_API_KEY}`,
+        "Authorization": `Bearer ${XPAY_SECRET_KEY}`, // استخدام المفتاح السري هنا
         "Content-Type": "application/json"
       },
       timeout: 10000
