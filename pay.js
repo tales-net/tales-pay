@@ -3,11 +3,7 @@ const path = require('path');
 const { getCheckoutPage } = require('./checkout');
 const { BRANCH_NAMES } = require("./branches");
 
-// إعدادات بوابة XPay
-const XPAY_API_KEY = process.env.XPAY_API_KEY || "";
-const XPAY_COMMUNITY_ID = process.env.XPAY_COMMUNITY_ID || "";
-const XPAY_BASE_URL = process.env.XPAY_BASE_URL || "https://staging.xpay.app/api/v1";
-
+// إعدادات Paymob
 async function getAuthToken() {
   try {
     const response = await axios.post("https://accept.paymob.com/api/auth/tokens", {
@@ -93,13 +89,9 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
   }
 }
 
-/**
- * دالة موحدة لمعالجة الدفع تدعم Paymob و XPay معاً
- */
-async function processPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
+async function createPaymobPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
   try {
-    const numericAmount = parseFloat(amount);
-    const amountCents = Math.round(numericAmount * 100).toString();
+    const amountCents = Math.round(parseFloat(amount) * 100).toString();
     const cleanMethod = (method || 'wallet').toLowerCase();
     
     let rawBranch = String(branch || '').toLowerCase().trim();
@@ -123,44 +115,9 @@ async function processPayment(phone, amount, method = 'wallet', branch = '', req
 
     const selectedBranch = rawBranch;
     const branchDisplayName = BRANCH_NAMES[selectedBranch];
-    const transactionId = "TX_" + Date.now();
 
-    console.log(`💳 [Pay.js] معالجة الدفع | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${numericAmount} | الوسيلة: ${cleanMethod}`);
+    console.log(`💳 [Pay.js] إنشاء معاملة مؤكدة | الفرع: ${branchDisplayName} (${selectedBranch}) | المبلغ: ${amount} | الوسيلة: ${cleanMethod}`);
 
-    // التحقق مما إذا كانت الطريقة تستخدم بوابة XPay
-    if (cleanMethod === 'xpay' || cleanMethod === 'card_xpay') {
-      console.log(`💳 [Xpay] إنشاء جلسة دفع عبر XPay | المعاملة: ${transactionId} | المبلغ: ${numericAmount}ج`);
-
-      // إذا أردت تفعيل طلب API الفعلي لـ XPay، يمكنك إزالة التعليق أدناه:
-      /*
-      const xpayPayload = {
-        amount: numericAmount,
-        currency: "EGP",
-        email: "customer@tales.net",
-        first_name: "عميل",
-        last_name: "شبكة حكايات",
-        phone_number: phone || "01000000000",
-        merchant_extra: {
-          branch: selectedBranch,
-          transaction_id: transactionId
-        }
-      };
-
-      const xpayResponse = await axios.post(`${XPAY_BASE_URL}/communities/${XPAY_COMMUNITY_ID}/orders`, xpayPayload, {
-        headers: { Authorization: `Bearer ${XPAY_API_KEY}` }
-      });
-
-      if (xpayResponse.data && xpayResponse.data.data && xpayResponse.data.data.redirect_url) {
-        return { type: "redirect", url: xpayResponse.data.data.redirect_url };
-      }
-      */
-
-      // التوجيه المباشر لصفحة النجاح مع تمرير رقم المعاملة والفرع والمبلغ
-      const successRedirectUrl = `https://tales-pay.onrender.com/success?id=${transactionId}&branch=${selectedBranch}&amount=${numericAmount}`;
-      return { type: "redirect", url: successRedirectUrl };
-    }
-
-    // الطريقة الافتراضية عبر Paymob (للبطاقات العادية، المحافظ، وفاليو)
     let integrationId;
     switch (cleanMethod) {
       case 'card':
@@ -229,13 +186,72 @@ async function processPayment(phone, amount, method = 'wallet', branch = '', req
     }
 
   } catch (err) {
-    console.error('❌ Payment Processing Error:', err.response?.data || err.message);
+    console.error('❌ Paymob Payment Error:', err.response?.data || err.message);
     throw new Error(`Payment processing failed: ${err.message}`);
   }
 }
 
+// إعدادات XPay للبطاقات والفيزا
+const XPAY_API_KEY = process.env.XPAY_API_KEY;
+const XPAY_SECRET_KEY = process.env.XPAY_SECRET_KEY;
+const XPAY_BASE_URL = "https://staging.xpay.app/api/v1"; 
+
+async function createXPayPayment(phone, amount, branchKey) {
+  try {
+    console.log(`💳 [Xpay] بدء إنشاء جلسة دفع | المبلغ: ${amount}ج | الفرع: ${branchKey}`);
+
+    const payload = {
+      amount: parseFloat(amount),
+      currency: "EGP",
+      email: "customer@tales.net",
+      first_name: "عميل",
+      last_name: "شبكة حكايات",
+      phone_number: phone || "01000000000",
+      merchant_extra: {
+        branch: branchKey
+      }
+    };
+
+    // مثال لطلب إنشاء الجلسة (يمكن تفعيله بربط الـ Endpoint الفعلي لـ XPay عند توفره)
+    /*
+    const response = await axios.post(`${XPAY_BASE_URL}/payments/pay`, payload, {
+      headers: {
+        'Authorization': `Bearer ${XPAY_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    */
+
+    const transactionId = "TX_" + Date.now();
+    const successRedirectUrl = `/success?id=${transactionId}&branch=${branchKey}&amount=${amount}`;
+
+    return {
+      type: "redirect",
+      url: successRedirectUrl
+    };
+
+  } catch (err) {
+    console.error("❌ [XPay Payment Error]:", err.response?.data || err.message);
+    throw new Error(err.response?.data?.message || err.message);
+  }
+}
+
+// دالة المعالجة الموحدة التي تتحقق من بوابة الدفع أو الطريقة المختارة
+async function processPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null) {
+  const cleanMethod = (method || '').toLowerCase();
+
+  // إذا كانت الطريقة خاصة بـ XPay أو تم تمرير إعداداتها
+  if (cleanMethod === 'xpay' || cleanMethod === 'xpay_card') {
+    return await createXPayPayment(phone, amount, branch || 'main');
+  }
+
+  // الافتراضي هو العمل عبر Paymob
+  return await createPaymobPayment(phone, amount, cleanMethod, branch, req, res);
+}
+
 module.exports = { 
-  createPaymobPayment: processPayment, 
+  createPaymobPayment,
+  createXPayPayment,
   processPayment,
   getAuthToken,
   createOrder,
