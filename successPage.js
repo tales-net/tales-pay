@@ -10,6 +10,9 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
   const activeBranchKey = queryBranch || inferredBranch;
   const defaultBranchName = BRANCH_NAMES[activeBranchKey] || BRANCH_NAMES.waitPage;
 
+  // تثبيت رقم العملية القادم من السيرفر مباشرة ليكون موحداً تماماً مع تليجرام
+  const fixedTxId = transactionId && transactionId !== "غير محدد" ? transactionId : "TX_" + Date.now();
+
   return `
     <!DOCTYPE html>
     <html lang="ar" dir="rtl">
@@ -60,7 +63,7 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
             </div>
             <div class="info-row">
               <span>رقم العملية:</span>
-              <strong id="txIdDisplay">${transactionId || "غير محدد"}</strong>
+              <strong id="txIdDisplay">${fixedTxId}</strong>
             </div>
             <div class="info-row">
               <span>حالة الدفع:</span>
@@ -74,13 +77,8 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
           <a href="${networkUrl}" class="btn-home"><i class="fa fa-globe"></i> التوجه للدفع مرة أخري</a>
         </div>
         <script>
-          // التقاط رقم العملية حصرياً من الرابط القادم من السيرفر لتجنب أي توليد عشوائي جديد
-          const urlParams = new URLSearchParams(window.location.search);
-          const txId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id') || "${transactionId}";
-          
-          if (txId && txId !== "غير محدد") {
-            document.getElementById('txIdDisplay').innerText = txId;
-          }
+          // استخدام رقم العملية الثابت المُمرر من الخادم حصرياً لضمان التطابق التام مع تليجرام
+          const txId = "${fixedTxId}";
 
           let attempts = 0;
           const maxAttempts = 90; 
