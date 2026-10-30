@@ -195,11 +195,11 @@ const XPAY_BASE_URL = "https://api.xpay.app";
 /**
  * إنشاء جلسة دفع حقيقية عبر XPay وتوجيه العميل مباشرة للصفحة الرسمية
  */
-async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
+async function createXPayPayment(phone, amount, branchKey, customTxId = null, cardHolderName = "Tales Customer") {
   try {
     const transactionId = customTxId || "TX_" + Date.now();
     const amountNumber = Number(amount) || 5;
-    console.log(`💳 [XPay Checkout] بدء إنشاء جلسة دفع | المعاملة: ${transactionId} | المبلغ: ${amountNumber}ج | الفرع: ${branchKey}`);
+    console.log(`💳 [XPay Checkout] بدء إنشاء جلسة دفع | المعاملة: ${transactionId} | المبلغ: ${amountNumber}ج | الفرع: ${branchKey} | الاسم: ${cardHolderName}`);
 
     const hotspotUrl = process.env.NETWORK_HOTSPOT_URL || "https://tales-pay.onrender.com";
     const successRedirectionUrl = `${hotspotUrl}/success?id=${transactionId}&branch=${branchKey}&amount=${amountNumber}`;
@@ -230,7 +230,7 @@ async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
       cancelUrl: `${hotspotUrl}/fail?error=` + encodeURIComponent("تم إلغاء عملية الدفع"),
       customerDetails: {
         phone: phone && phone !== "غير محدد" ? phone : "01000000000",
-        name: "Tales Customer",
+        name: cardHolderName && cardHolderName.trim() !== "" ? cardHolderName : "Tales Customer",
         email: "customer@tales-net.com"
       },
       metadata: {
@@ -253,7 +253,6 @@ async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
 
     console.log(`🔗 [XPay Checkout] تم توليد رابط الدفع بنجاح وتحويل العميل: ${paymentUrl}`);
 
-    // إرجاع نوع توجيه مباشر للخروج من أي Iframe وتوجيه المتصفح لصفحة XPay الرسمية
     return {
       type: "redirect",
       url: paymentUrl
@@ -271,10 +270,13 @@ async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
 
 async function processPayment(phone, amount, method = 'wallet', branch = '', req = null, res = null, transactionId = null) {
   const cleanMethod = (method || '').toLowerCase();
+  
+  // استخراج اسم صاحب البطاقة من الطلب إن وجد
+  const cardHolderName = req?.body?.name || req?.query?.name || "Tales Customer";
 
   // توجيه طلبات البطاقة البنكية إلى XPay الحقيقي
   if (cleanMethod === 'card' || cleanMethod === 'xpay' || cleanMethod === 'xpay_card' || cleanMethod === 'visa') {
-    return await createXPayPayment(phone, amount, branch || 'main', transactionId);
+    return await createXPayPayment(phone, amount, branch || 'main', transactionId, cardHolderName);
   }
 
   // توجيه باقي الوسائل (المحافظ وفاليو) إلى Paymob
