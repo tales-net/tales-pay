@@ -15,7 +15,7 @@ const { disableUserQueue } = require("./mikrotik");
 const { processPaymentAndCreateCard } = require("./mikrotikService");
 const { generateContributionHtmlPage } = require('./contributionMessages');
 const { generateSuccessPageHtml } = require('./successPage'); 
-const { generateFailPageHtml } = require('./failPage');       
+const { generateFailPageHtml } = require('./failPage');        
 
 const chatSupport = require('./chat_support');
 
@@ -335,9 +335,10 @@ app.get("/contribution-success", (req, res) => {
   res.send(htmlContent);
 });
 
-app.get("/api/check-voucher/:txId", (req, res) => {
+// نقطة الفحص المحدثة لمنع التكرار والانتظار بأمان
+app.get('/api/check-voucher/:txId', (req, res) => {
   const txId = String(req.params.txId || "").trim();
-  
+
   if (!txId || txId === "null" || txId === "undefined") {
     return res.json({ success: false, message: "رقم المعاملة غير صالح" });
   }
@@ -354,10 +355,8 @@ app.get("/api/check-voucher/:txId", (req, res) => {
     }
   }
 
-  return res.json({ 
-    success: false, 
-    message: "جاري تأكيد عملية الدفع وتوليد الكارت من السيرفر..." 
-  });
+  // إرجاع نجاح كاذب لكي يستمر الـ Polling في الانتظار دون إنشاء كارت جديد
+  return res.json({ success: false, message: "Pending" });
 });
 
 app.post("/api/disable-queue", async (req, res) => {
