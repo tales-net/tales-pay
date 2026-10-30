@@ -29,7 +29,51 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
           .ticket-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px; margin-bottom: 15px; }
           .ticket-title { font-size: 16px; font-weight: bold; }
           .ticket-brand { font-size: 12px; background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 4px; }
-          .code-box { background: #ffffff; color: #01338D; text-align: center; padding: 12px; border-radius: 8px; margin: 15px 0; font-family: monospace; font-size: 24px; font-weight: bold; letter-spacing: 2px; min-height: 50px; display: flex; align-items: center; justify-content: center; }
+          
+          /* تصميم خانة الكارت القابل للنسخ */
+          .code-box { 
+            background: #ffffff; 
+            color: #01338D; 
+            text-align: center; 
+            padding: 12px; 
+            border-radius: 8px; 
+            margin: 15px 0; 
+            font-family: monospace; 
+            font-size: 24px; 
+            font-weight: bold; 
+            letter-spacing: 2px; 
+            min-height: 50px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            cursor: pointer; 
+            position: relative; 
+            transition: all 0.2s ease;
+            border: 2px dashed transparent;
+          }
+          .code-box:hover {
+            background: #f8f9fa;
+            border-color: #27ae60;
+          }
+          .code-box:active {
+            transform: scale(0.98);
+          }
+          /* إشعار تم النسخ */
+          .copy-tooltip {
+            position: absolute;
+            bottom: -28px;
+            background: #27ae60;
+            color: white;
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            font-weight: normal;
+            letter-spacing: normal;
+            display: none;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+          }
+
           .info-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: #e0e0e0; }
           .info-row strong { color: #ffffff; }
           .btn-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px; }
@@ -54,10 +98,14 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
               <span>اسم الباقة:</span>
               <strong id="pkgName">جاري التحميل...</strong>
             </div>
-            <div class="code-box" id="codeContainer">
+            
+            <!-- خانة الكارت مع تفعيل خاصية النقر للنسخ -->
+            <div class="code-box" id="codeContainer" onclick="copyCardCode()" title="انقر لنسخ الكارت">
               <div class="spinner"></div>
               <span style="font-size: 14px; font-weight: normal;">جاري إصدار الكارت من السيرفر...</span>
+              <div class="copy-tooltip" id="copyTooltip"><i class="fa fa-check"></i> تم نسخ الكارت!</div>
             </div>
+
             <div class="info-row">
               <span>رقم العملية:</span>
               <strong id="txIdDisplay">${transactionId || "غير محدد"}</strong>
@@ -74,15 +122,12 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
           <a href="${networkUrl}" class="btn-home"><i class="fa fa-globe"></i> التوجه للدفع مرة أخري</a>
         </div>
         <script>
-          // تثبيت رقم العملية حصرياً من القيمة الحقيقية المُمررة من السيرفر
           const serverTxId = "${transactionId}";
           const urlParams = new URLSearchParams(window.location.search);
           const urlTxId = urlParams.get('id') || urlParams.get('order') || urlParams.get('transaction_id') || urlParams.get('merchant_order_id');
           
-          // الاعتماد على البارامتر من الرابط إذا وجد، وإلا استخدام المعرف الثابت من السيرفر لضمان عدم الاختلاف
           const txId = (urlTxId && urlTxId !== "غير محدد" && !urlTxId.includes("TX_")) ? urlTxId : serverTxId;
 
-          // تحديث العرض في الصفحة فوراً
           if (txId && txId !== "غير محدد") {
             const displayEl = document.getElementById('txIdDisplay');
             if (displayEl) displayEl.innerText = txId;
@@ -108,7 +153,8 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
                 }
 
                 if (data.data.code) {
-                  document.getElementById('codeContainer').innerText = data.data.code;
+                  const codeBox = document.getElementById('codeContainer');
+                  codeBox.innerHTML = data.data.code + '<div class="copy-tooltip" id="copyTooltip"><i class="fa fa-check"></i> تم نسخ الكارت!</div>';
                   document.getElementById('pkgName').innerText = data.data.packageName || "باقة إنترنت شبكة حكايات";
                   if (data.data.branchName) {
                     document.getElementById('bName').innerText = data.data.branchName;
@@ -131,6 +177,27 @@ function generateSuccessPageHtml(transactionId, networkUrl, queryBranch) {
             }
           }
           pollVoucher();
+
+          // دالة نسخ الكارت إلى الحافظة (Clipboard) مع إظهار رسالة النجاح
+          function copyCardCode() {
+            const codeContainer = document.getElementById('codeContainer');
+            const codeText = codeContainer.innerText.replace(' تم نسخ الكارت!', '').trim();
+            
+            // تحقق من وجود كارت فعلي وليس سبينر التحميل
+            if (!codeText || codeText.includes('جاري')) return;
+
+            navigator.clipboard.writeText(codeText).then(() => {
+              const tooltip = document.getElementById('copyTooltip');
+              if (tooltip) {
+                tooltip.style.display = 'block';
+                setTimeout(() => {
+                  tooltip.style.display = 'none';
+                }, 2000);
+              }
+            }).catch(err => {
+              console.error('فشل النسخ:', err);
+            });
+          }
 
           function downloadHTML() {
             const cardElement = document.getElementById('printableCard').outerHTML;
