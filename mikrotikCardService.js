@@ -142,9 +142,13 @@ async function activateCardProfileViaScript(routerConfig, cardCode, profileName,
 }
 
 async function processPaymentAndCreateCard(routerConfig, prefix, profileName, transactionId = "", delaySeconds = 10) {
-  if (transactionId && processedTransactions.has(String(transactionId))) {
-    console.warn(`🛑 [حماية التكرار] المعاملة برقم (${transactionId}) عולجت مسبقاً. تم منع إصدار كارت مكرر.`);
-    throw new Error(`Duplicate transaction prevented: ${transactionId}`);
+  if (transactionId) {
+    if (processedTransactions.has(String(transactionId))) {
+      console.warn(`🛑 [حماية التكرار] المعاملة برقم (${transactionId}) عُولجت أو جاري معالجتها مسبقاً. تم منع إصدار كارت مكرر.`);
+      throw new Error(`Duplicate transaction prevented: ${transactionId}`);
+    }
+    // حجز المعاملة فوراً لمنع أي طلب متزامن آخر من الدخول
+    processedTransactions.add(String(transactionId));
   }
 
   try {
@@ -152,10 +156,6 @@ async function processPaymentAndCreateCard(routerConfig, prefix, profileName, tr
     
     const cardCode = await createCardOnly(routerConfig, prefix, transactionId);
     await activateCardProfileViaScript(routerConfig, cardCode, profileName, delaySeconds);
-
-    if (transactionId) {
-      processedTransactions.add(String(transactionId));
-    }
 
     console.log(`✨ تمت العملية بنجاح كامل للكارت: ${cardCode} بالبروفايل: ${profileName}`);
     return {
@@ -165,6 +165,10 @@ async function processPaymentAndCreateCard(routerConfig, prefix, profileName, tr
     };
 
   } catch (error) {
+    // في حال فشل العملية، نزيلها من مجموعة المعالجة لكي لا تعلق إذا رغب المدير في إعادتها يدوياً
+    if (transactionId) {
+      processedTransactions.delete(String(transactionId));
+    }
     console.error(`❌ فشل في العملية المتكاملة لإنشاء وتفعيل الكارت:`, error.message);
     throw error;
   }
