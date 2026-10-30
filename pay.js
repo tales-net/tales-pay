@@ -22,7 +22,7 @@ async function getAuthToken() {
 async function createOrder(authToken, amountCents, branchData = {}) {
   try {
     const branchKey = branchData.branch || 'main';
-    const branchName = branchData.branch_name || 'حكايات نت رئيسي';
+    const branchName = branchData.branch_name || 'حكايات رئيسي';
 
     const payload = {
       auth_token: authToken,
@@ -53,7 +53,7 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
     }
 
     const branchKey = branchData.branch || 'main';
-    const branchName = branchData.branchName || 'حكايات نت رئيسي';
+    const branchName = branchData.branchName || 'حكايات رئيسي';
 
     const payload = {
       auth_token: authToken,
@@ -215,7 +215,7 @@ async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
             currency: "EGP",
             unitAmount: Math.round(amountNumber * 100),
             productData: {
-              name: `باقة إنترنت شبكة حكايات - فرع ${branchKey}`
+              name: `حكايات - فرع ${branchKey}`
             }
           },
           quantity: 1
