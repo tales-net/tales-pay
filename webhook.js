@@ -244,6 +244,20 @@ router.post("/xpay-webhook", async (req, res) => {
     const metadata = eventObject.metadata || {};
     const transactionId = metadata.transaction_id || eventObject.merchant_order_id || eventObject.id;
 
+    if (!transactionId) {
+      console.warn("⚠️ [XPay Webhook] رقم المعاملة مفقود في الحمولة المستلمة");
+      return res.status(200).send("Transaction ID missing");
+    }
+
+    // [حماية صارمة جداً ضد التكرار]: التحقق والحجز الفوري لمنع السباق البرمجي
+    if (global.generatedCardsMap.has(transactionId)) {
+      console.log(`ℹ️ [XPay Duplicate] المعاملة ${transactionId} معالجة بالفعل سلفاً.`);
+      return res.status(200).send("Transaction already processed");
+    }
+
+    // حجز مؤقت لمنع أي طلب متزامن فوري من الدخول أثناء توليد الكارت
+    global.generatedCardsMap.set(transactionId, { processing: true, createdAt: new Date() });
+
     let amount = 5;
     if (eventObject.amountTotal) {
       amount = parseFloat((eventObject.amountTotal / 100).toFixed(2));
@@ -254,11 +268,6 @@ router.post("/xpay-webhook", async (req, res) => {
     const branchKey = metadata.branch || "main";
     const branchDisplayName = BRANCH_NAMES[branchKey] || BRANCH_NAMES.main;
     const phone = eventObject.customerDetails?.phone || eventObject.customer?.phone || "غير محدد";
-
-    if (global.generatedCardsMap.has(transactionId)) {
-      console.log(`ℹ️ [XPay Duplicate] المعاملة ${transactionId} معالجة بالفعل سلفاً.`);
-      return res.status(200).send("Transaction already processed");
-    }
 
     if (isSuccess) {
       console.log(`💳 [XPay Webhook] معاملة ناجحة مؤكدة: ${transactionId} | المبلغ: ${amount}ج | الفرع: ${branchKey}`);
@@ -312,6 +321,8 @@ router.post("/xpay-webhook", async (req, res) => {
 
           global.generatedCardsMap.set(transactionId, cardPayload);
         } else {
+          // في حال فشل الإنشاء، نزيل الحجز المؤقت ليتسنى إعادة المحاولة
+          global.generatedCardsMap.delete(transactionId);
           console.error(`🚨 [XPay Webhook Error] فشل إنشاء الكارت للمبلغ ${amount}ج:`, cardResult.error);
         }
 
@@ -347,6 +358,7 @@ router.post("/xpay-webhook", async (req, res) => {
 
       console.log(`✅ [XPay SUCCESS Completed] تم معالجة معاملة الفيزا بنجاح: ${transactionId}`);
     } else {
+      global.generatedCardsMap.delete(transactionId);
       console.error(`❌ [XPay FAILED] معاملة فيزا فاشلة أو غير مكتملة: ${transactionId}`);
     }
 
