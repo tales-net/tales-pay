@@ -49,7 +49,7 @@ async function getPaymentKey(authToken, orderId, amountCents, integrationId, pho
   try {
     let sanitizedPhone = String(phone).replace(/\D/g, "");
     if (!sanitizedPhone || sanitizedPhone.length < 11) {
-      sanitizedPhone = "01000000000";
+      sanitizedPhone = "0123456789";
     }
 
     const branchKey = branchData.branch || 'main';
@@ -148,7 +148,7 @@ async function createPaymobPayment(phone, amount, method = 'wallet', branch = ''
       orderId, 
       amountCents, 
       integrationId, 
-      phone || '01000000000',
+      phone || '0123456789',
       { branch: selectedBranch, branchName: branchDisplayName }
     );
 
@@ -229,7 +229,7 @@ async function createXPayPayment(phone, amount, branchKey, customTxId = null) {
       },
       cancelUrl: `${hotspotUrl}/fail?error=` + encodeURIComponent("تم إلغاء عملية الدفع"),
       customerDetails: {
-        phone: phone && phone !== "غير محدد" ? phone : "01000000000",
+        phone: phone && phone !== "غير محدد" ? phone : "0123456789",
         name: "Tales Customer",
         email: "customer@tales-net.com"
       },
